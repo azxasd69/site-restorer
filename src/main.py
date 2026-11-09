@@ -11,7 +11,7 @@ import traceback
 from core import Cancelled, Engine
 from sanitize import sanitize_site
 
-APP_VERSION = "2.1"
+APP_VERSION = "2.4.2"
 CFG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "SiteRestorer")
 CFG_PATH = os.path.join(CFG_DIR, "config.json")
 

@@ -49,6 +49,44 @@ def _is_error_page(body):
     head = body[:2000]
     return any(m in head for m in ERROR_MARKERS)
 
+META_CHARSET_RX = re.compile(r"""(charset\s*=\s*["']?\s*)([a-zA-Z0-9_.:-]+)""", re.I)
+CSS_CHARSET_DECL_RX = re.compile(r"""(@charset\s+["'])([^"']+)(["'])""", re.I)
+
+
+def _sniff_charset(data):
+    """Кодировка, объявленная в документе (meta charset / @charset), или None."""
+    head = data[:4096].decode("latin-1", "replace")
+    for rx in (META_CHARSET_RX, CSS_CHARSET_DECL_RX):
+        m = rx.search(head)
+        if m:
+            return m.group(2).strip().lower()
+    return None
+
+
+def decode_text(data, declared=None):
+    """Байты -> (текст, кодировка).
+
+    Сначала utf-8: он строгий, поэтому корректный utf-8 проходит даже при
+    неверно объявленной кодировке. Затем объявленная кодировка, затем cp1251.
+    """
+    order = ["utf-8"]
+    if declared and declared.replace("_", "-") not in ("utf-8", "utf8"):
+        order.append(declared)
+    order.append("cp1251")
+    for enc in order:
+        try:
+            return data.decode(enc), enc
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return None, None
+
+
+def force_utf8_charset(text):
+    """Документ записан в UTF-8 — приводим объявления кодировки к utf-8."""
+    text = META_CHARSET_RX.sub(lambda m: m.group(1) + "utf-8", text)
+    text = CSS_CHARSET_DECL_RX.sub(lambda m: m.group(1) + "utf-8" + m.group(3), text)
+    return text
+
 
 def normalize_url(u, host):
     u = (u or "").strip().split("#", 1)[0]
@@ -186,9 +224,10 @@ class HttpClient:
 
     def _conn(self):
         c = getattr(self.local, "conn", None)
-        if c is not None and getattr(c, "sock", None) is None and getattr(c, "_closed", False):
+        if c is not None and c.sock is None:
+            # соединение закрыто (в т.ч. сервером по keep-alive) — открываем новое
+            self.close()
             c = None
-            self.local.conn = None
         if c is None:
             cls = http.client.HTTPSConnection if self.scheme == "https" else http.client.HTTPConnection
             c = cls(self.host, timeout=self.timeout)
@@ -884,7 +923,8 @@ class Engine:
         total = max(1, len(files))
         site_rx = re.compile(r"(?:https?:)?//(?:www\.)?" + re.escape(self.host) + r"(?::\d+)?(/[^\"'\s<>()\\]*)", re.I)
         attr_rx = re.compile(r'(?P<a>\b(?:href|src|data-src|data-bg|poster|action|data-original))'
-                             r'\s*=\s*(?P<q>["\'])(?P<v>.*?)(?P=q)', re.I | re.S)
+                             r'\s*=\s*(?:"(?P<dq>[^"]*)"|\'(?P<sq>[^\']*)\'|(?P<uq>[^\s"\'<>`=]+))',
+                             re.I)
         srcset_rx = re.compile(r'(?P<a>\bsrcset|\bdata-srcset)\s*=\s*(?P<q>["\'])(?P<v>.*?)(?P=q)', re.I | re.S)
         css_rx = re.compile(r'url\(\s*(["\']?)([^"\')]+)\1\s*\)', re.I)
         base_rx = re.compile(r"<base\b[^>]*>", re.I)
@@ -919,22 +959,25 @@ class Engine:
             rel_posix = rel.replace("\\", "/")
             src_dir = posixpath.dirname(rel_posix)
             if low.endswith((".html", ".htm", ".css", ".js")):
-                data = open(src, "rb").read()
-                text = None
-                for enc in ("utf-8", "cp1251"):
-                    try:
-                        text = data.decode(enc)
-                        break
-                    except UnicodeDecodeError:
-                        continue
+                with open(src, "rb") as fh:
+                    data = fh.read()
+                text, _codec = decode_text(data, _sniff_charset(data))
                 if text is None:
                     shutil.copy2(src, dst)
                 elif low.endswith(".js"):
                     text = re.sub(r"https?://(?:www\.)?" + re.escape(self.host) + r"(?::\d+)?/", "/", text)
-                    open(dst, "w", encoding="utf-8", newline="").write(text)
+                    with open(dst, "w", encoding="utf-8", newline="") as fh:
+                        fh.write(text)
                 else:
                     def a_sub(m):
-                        return '%s=%s%s%s' % (m.group("a"), m.group("q"), rw(m.group("v"), src_dir), m.group("q"))
+                        # значение может быть в двойных, одинарных кавычках или без кавычек
+                        if m.group("dq") is not None:
+                            val, quote = m.group("dq"), '"'
+                        elif m.group("sq") is not None:
+                            val, quote = m.group("sq"), "'"
+                        else:
+                            val, quote = m.group("uq"), '"'
+                        return '%s=%s%s%s' % (m.group("a"), quote, rw(val, src_dir), quote)
                     text = attr_rx.sub(a_sub, text)
 
                     def s_sub(m):
@@ -952,7 +995,9 @@ class Engine:
                         return "url(%s%s%s)" % (m.group(1), rw(m.group(2), src_dir), m.group(1))
                     text = css_rx.sub(c_sub, text)
                     text = base_rx.sub("", text)
-                    open(dst, "w", encoding="utf-8", newline="").write(text)
+                    text = force_utf8_charset(text)
+                    with open(dst, "w", encoding="utf-8", newline="") as fh:
+                        fh.write(text)
             else:
                 shutil.copy2(src, dst)
             if i % 25 == 0 or i == total:
@@ -962,16 +1007,17 @@ class Engine:
 
     # ---------- stage 4: verify
     def verify(self):
-        ref_rx = re.compile(r'(?:href|src|data-src|poster|action)="([^"#]+)"', re.I)
+        ref_rx = re.compile(r'(?:href|src|data-src|poster|action)=(?:"([^"#]+)"|\'([^\'#]+)\')', re.I)
         pages = refs = broken = 0
         for dp, _dn, fn in os.walk(self.build_dir):
             for f in fn:
                 if not f.lower().endswith((".html", ".htm")):
                     continue
                 pages += 1
-                txt = open(os.path.join(dp, f), encoding="utf-8", errors="replace").read()
+                with open(os.path.join(dp, f), encoding="utf-8", errors="replace") as fh:
+                    txt = fh.read()
                 for m in ref_rx.finditer(txt):
-                    u = m.group(1).strip()
+                    u = (m.group(1) or m.group(2) or "").strip()
                     if not u or u.startswith(("http://", "https://", "//", "mailto:", "tel:",
                                               "javascript:", "data:")):
                         continue
@@ -1009,7 +1055,8 @@ class Engine:
         for k, v in values.items():
             doc = doc.replace("{{%s}}" % k, v)
         path = os.path.join(self.outdir, "report.html")
-        open(path, "w", encoding="utf-8").write(doc)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(doc)
         self._progress("report", 100, "", force=True)
         return path
 
