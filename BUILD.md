@@ -8,19 +8,23 @@
 
 | Файл | Платформа | Размер | Стек | Когда брать |
 |---|---|---|---|---|
-| `SiteRestorer.exe` | Windows 10/11 x64 | 13,0 МБ | Python + Tk | Основной вариант: привычный интерфейс, RU/EN |
-| `SiteRestorer-x86.exe` | Windows 10/11 x86 | 10,5 МБ | Python + Tk | 32-битные системы |
-| `SiteRestorer-linux` | Linux x64 | 13,6 МБ | Python + Tk | Знакомый интерфейс на Linux (нужен X11) |
-| `SiteRestorer-rust-win-gui-x64.exe` | Windows x64 | 6,9 МБ | Rust + egui | Тот же функционал, вдвое меньше и быстрее старт |
-| `SiteRestorer-rust-win-gui-x86.exe` | Windows x86 | 6,2 МБ | Rust + egui | 32-битные системы, минимальный GUI |
-| `SiteRestorer-rust-win-cli-x64.exe` | Windows x64 | 2,6 МБ | Rust | Только командная строка, без GUI |
-| `SiteRestorer-rust-win-cli-x86.exe` | Windows x86 | 2,0 МБ | Rust | Самый маленький бинарник для Windows |
-| `SiteRestorer-rust-linux-cli` | Linux x64 | 3,3 МБ | Rust | Статический ELF: `ldd` → not a dynamic executable |
-| `SiteRestorer-rust-linux-gui` | Linux x64 | 8,6 МБ | Rust + egui | Нативное окно на Linux (нужны X11/GL) |
-| `siterestorer-go-linux-x64` | Linux x64 | 8,5 МБ | Go | Один файл, без зависимостей |
-| `siterestorer-go-linux-arm64` | Linux arm64 | 7,9 МБ | Go | ARM-серверы и Raspberry Pi |
-| `siterestorer-go-win-x64.exe` | Windows x64 | 8,8 МБ | Go | Альтернативная реализация |
-| `siterestorer-go-win-x86.exe` | Windows x86 | 8,5 МБ | Go | Альтернативная реализация, 32 бита |
+| `SiteRestorer.exe` | Windows 10/11 x64 | 12,6 МБ | Python + Tk | Основной вариант: привычный интерфейс, RU/EN |
+| `SiteRestorer-x86.exe` | Windows 10/11 x86 | 10,2 МБ | Python + Tk | 32-битные системы |
+| `SiteRestorer-linux` | Linux x64 | 27,1 МБ | Python + Tk | Знакомый интерфейс на Linux (нужен X11) |
+| `SiteRestorer-rust-win-gui-x64.exe` | Windows x64 | 7,3 МБ | Rust + egui | Тот же функционал, вдвое меньше и быстрее старт |
+| `SiteRestorer-rust-win-gui-x86.exe` | Windows x86 | 6,5 МБ | Rust + egui | 32-битные системы, минимальный GUI |
+| `SiteRestorer-rust-win-cli-x64.exe` | Windows x64 | 2,7 МБ | Rust | Только командная строка, без GUI |
+| `SiteRestorer-rust-win-cli-x86.exe` | Windows x86 | 2,1 МБ | Rust | Самый маленький бинарник для Windows |
+| `SiteRestorer-rust-linux-cli` | Linux x64 | 3,4 МБ | Rust | Статический ELF: `ldd` → not a dynamic executable |
+| `SiteRestorer-rust-linux-gui` | Linux x64 | 9,1 МБ | Rust + egui | Нативное окно на Linux (нужны X11/GL) |
+| `siterestorer-go-linux-x64` | Linux x64 | 8,0 МБ | Go | Один файл, без зависимостей |
+| `siterestorer-go-linux-arm64` | Linux arm64 | 7,6 МБ | Go | ARM-серверы и Raspberry Pi |
+| `siterestorer-go-win-x64.exe` | Windows x64 | 8,3 МБ | Go | Альтернативная реализация |
+| `siterestorer-go-win-x86.exe` | Windows x86 | 7,9 МБ | Go | Альтернативная реализация, 32 бита |
+
+Размеры сняты с релиза **v2.5.1** (тот же код, что в `main`). В локальной сборке
+Python-версия для Linux получается ≈13,6 МБ: CI-раннер кладёт в onefile больше
+библиотек Tcl/Tk, поэтому архив крупнее — функционально это тот же файл.
 
 Размеры — замеры на релизной сборке (`--release`, LTO, strip; для Go —
 `CGO_ENABLED=0 -trimpath -ldflags "-s -w"`). Точные значения для конкретного

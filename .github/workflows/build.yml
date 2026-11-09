@@ -127,13 +127,13 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
-            features: ""
+            features: "cli"
             apt: musl-tools
             rustflags: "-C linker=musl-gcc"
             out: SiteRestorer-rust-linux-cli
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            features: "--features gui"
+            features: "gui"
             apt: >-
               libxkbcommon-dev libgl1-mesa-dev libegl1-mesa-dev libx11-dev libxcursor-dev
               libxrandr-dev libxi-dev libwayland-dev libfontconfig1-dev
@@ -141,22 +141,22 @@ jobs:
             out: SiteRestorer-rust-linux-gui
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            features: "--features gui"
+            features: "gui"
             apt: ""
             out: SiteRestorer-rust-win-gui-x64.exe
           - os: windows-latest
             target: i686-pc-windows-msvc
-            features: "--features gui"
+            features: "gui"
             apt: ""
             out: SiteRestorer-rust-win-gui-x86.exe
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            features: ""
+            features: "cli"
             apt: ""
             out: SiteRestorer-rust-win-cli-x64.exe
           - os: windows-latest
             target: i686-pc-windows-msvc
-            features: ""
+            features: "cli"
             apt: ""
             out: SiteRestorer-rust-win-cli-x86.exe
     runs-on: ${{ matrix.os }}
@@ -178,24 +178,23 @@ jobs:
         working-directory: ports/rust
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-        run: cargo build --release --target ${{ matrix.target }} ${{ matrix.features }}
+        run: |
+          FLAGS=""
+          if [ "${{ matrix.features }}" = "cli" ]; then FLAGS="--no-default-features"; fi
+          cargo build --release --target ${{ matrix.target }} $FLAGS
 
       - name: Collect binary
         shell: pwsh
         run: |
           $dir = "ports/rust/target/${{ matrix.target }}/release"
-          $src = if ("${{ matrix.features }}" -eq "") {
-            if ($IsWindows) { "$dir/site-restorer.exe" } else { "$dir/site-restorer" }
-          } else {
-            if ($IsWindows) { "$dir/site-restorer.exe" } else { "$dir/site-restorer" }
-          }
+          $src = if ($IsWindows) { "$dir/site-restorer.exe" } else { "$dir/site-restorer" }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item $src "dist/${{ matrix.out }}"
           Get-Item "dist/${{ matrix.out }}" | Select-Object Name, Length
 
       - uses: actions/upload-artifact@v4
         with:
-          name: rust-${{ matrix.target }}-${{ matrix.features == '' && 'cli' || 'gui' }}
+          name: rust-${{ matrix.target }}-${{ matrix.features }}
           path: dist/${{ matrix.out }}
 
   go:
