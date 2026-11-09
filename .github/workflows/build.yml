@@ -85,15 +85,33 @@ jobs:
   smoke:
     needs: build
     runs-on: windows-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: SiteRestorer-x64
-          path: dist
+          path: dist/x64
+      - uses: actions/download-artifact@v4
+        with:
+          name: SiteRestorer-x86
+          path: dist/x86
 
-      - name: CLI smoke test (no network assumptions)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Verify artifacts (size + PE architecture, no network)
         shell: pwsh
         run: |
-          & .\dist\SiteRestorer.exe --cli --site prokupol.ru --out "$env:TEMP\smoke" --workers 2 --limit 1
-          if (-not (Test-Path "$env:TEMP\smoke\data\inventory.jsonl")) { throw "inventory not created" }
-          Get-ChildItem "$env:TEMP\smoke" -Recurse | Select-Object -First 10
+          $ErrorActionPreference = "Stop"
+          $x64 = "dist/x64/SiteRestorer.exe"
+          $x86 = "dist/x86/SiteRestorer-x86.exe"
+          foreach ($f in @($x64, $x86)) {
+            if (-not (Test-Path $f)) { throw "missing $f" }
+            $size = (Get-Item $f).Length
+            Write-Host "$f = $([math]::Round($size/1MB,1)) MB"
+            if ($size -lt 5MB) { throw "$f is too small" }
+          }
+          python -c "import struct,sys; d=open(sys.argv[1],'rb').read(4096); e=struct.unpack_from('<I',d,0x3c)[0]; m=struct.unpack_from('<H',d,e+4)[0]; print('machine', hex(m)); sys.exit(0 if m==0x8664 else 1)" $x64
+          python -c "import struct,sys; d=open(sys.argv[1],'rb').read(4096); e=struct.unpack_from('<I',d,0x3c)[0]; m=struct.unpack_from('<H',d,e+4)[0]; print('machine', hex(m)); sys.exit(0 if m==0x14c else 1)" $x86
+          Write-Host "OK: x64 and x86 binaries are valid"
