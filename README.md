@@ -118,6 +118,42 @@ SiteRestorer.exe --cli --site prokupol.ru --out D:\mirror --workers 16 --limit 1
 Пожалуйста, уважайте условия Internet Archive и авторские права владельцев контента:
 копия чужого сайта — не основание для его публикации.
 
+## Структура репозитория
+
+```
+site-restorer/
+├── src/                 core.py, main.py, sanitize.py, app.ico
+├── tests/               юнит-тесты (без сети)
+├── docs/screenshots/    скриншоты для README
+├── docs/prokupol-case.md
+├── .github/workflows/   CI: тесты, сборка x64/x86, релиз по тегу
+├── build.ps1            локальная сборка
+├── publish.ps1          пуш и тег одной командой
+├── ARCHITECTURE.md      как устроено внутри
+├── CHANGELOG.md         история версий
+├── CONTRIBUTING.md      как участвовать
+├── SECURITY.md          как сообщить об уязвимости
+└── LICENSE              MIT
+```
+
+## Тесты
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+Проверяются разбор адреса (14 случаев, включая русскую раскладку и IDN) и
+построение путей (детерминизм, лимит длины, запрещённые имена Windows).
+Тесты не обращаются к сети и выполняются за доли секунды.
+
+## Участие
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — окружение, правила кода, коммиты, PR.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — кодекс поведения.
+- [SECURITY.md](SECURITY.md) — как приватно сообщить об уязвимости.
+- Баги и идеи — через [issues](https://github.com/azxasd69/site-restorer/issues)
+  (есть шаблоны).
+
 ## Сборка из исходников
 
 ```powershell
@@ -131,6 +167,13 @@ py -3.14 -m venv .venv
 
 CI собирает обе архитектуры на тег `v*` и прикладывает exe к релизу —
 см. [.github/workflows/build.yml](.github/workflows/build.yml).
+
+## Благодарности
+
+- [Internet Archive](https://archive.org/) — за сам архив и CDX API.
+- [PyInstaller](https://pyinstaller.org/) — за возможность отдать один exe без зависимостей.
+- Всем, кто присылает отчёты о нестандартных сайтах: именно так появились
+  эвристики для Bitrix, MODX и WordPress.
 
 ## Лицензия
 

@@ -2,14 +2,33 @@ name: build
 
 on:
   push:
+    branches: [main]
     tags: ["v*"]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Compile check
+        run: python -m compileall -q src
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
   build:
+    needs: test
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -62,3 +81,19 @@ jobs:
         with:
           files: dist/${{ matrix.out }}
           generate_release_notes: true
+
+  smoke:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: SiteRestorer-x64
+          path: dist
+
+      - name: CLI smoke test (no network assumptions)
+        shell: pwsh
+        run: |
+          & .\dist\SiteRestorer.exe --cli --site prokupol.ru --out "$env:TEMP\smoke" --workers 2 --limit 1
+          if (-not (Test-Path "$env:TEMP\smoke\data\inventory.jsonl")) { throw "inventory not created" }
+          Get-ChildItem "$env:TEMP\smoke" -Recurse | Select-Object -First 10

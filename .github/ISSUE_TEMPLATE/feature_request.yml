@@ -1,0 +1,35 @@
+name: Feature request
+description: Предложить улучшение
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какую задачу это решает
+      description: Опишите ситуацию, а не готовое решение
+      placeholder: "При обходе сайта на MODX не подхватываются стили, потому что ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Предлагаемое решение
+      description: Как вы это видите; альтернативы приветствуются
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Область
+      options:
+        - Скачивание и лимиты архива
+        - Сборка оффлайн-копии
+        - Интерфейс и локализация
+        - Отчёты и диагностика
+        - Сборка и релизы
+        - Другое
+    validations:
+      required: true

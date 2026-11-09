@@ -1,0 +1,56 @@
+name: Bug report
+description: Сообщить о проблеме в работе Site Restorer
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо за отчёт. Пожалуйста, заполните поля — это ускорит разбор.
+        **Не прикладывайте ссылки на сайты, права на которые вам не принадлежат.**
+
+  - type: input
+    id: version
+    attributes:
+      label: Версия и разрядность
+      description: Например, 2.4 x64 (видно в имени файла или в Releases)
+      placeholder: "2.4 x64"
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Версия Windows
+      placeholder: "Windows 10 22H2 / Windows 11 24H2"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Шаги воспроизведения
+      description: Что вы сделали, что ожидали, что получилось
+      placeholder: |
+        1. Ввёл адрес ...
+        2. Нажал «Начать»
+        3. На 20 % появилось ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Фрагмент журнала
+      description: Скопируйте последние 20–30 строк из нижней панели
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Дополнительно
+      description: Скриншоты, особенности сети, прокси, антивирус
+    validations:
+      required: false
