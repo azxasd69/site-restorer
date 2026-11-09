@@ -27,7 +27,23 @@ jobs:
       - name: Unit tests
         run: python -m unittest discover -s tests -v
 
-  build:
+      - name: Go tests
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: Go vet and tests
+        working-directory: ports/go
+        run: |
+          go vet ./...
+          go test ./...
+
+      - name: Rust tests
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cargo test
+        working-directory: ports/rust
+        run: cargo test --release --no-default-features
+
+  python:
     needs: test
     runs-on: windows-latest
     strategy:
@@ -40,7 +56,6 @@ jobs:
           - arch: x86
             python_arch: x86
             out: SiteRestorer-x86.exe
-
     steps:
       - uses: actions/checkout@v4
 
@@ -72,28 +87,168 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SiteRestorer-${{ matrix.arch }}
+          name: py-${{ matrix.arch }}
           path: dist/${{ matrix.out }}
 
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+  python-linux:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
         with:
-          files: dist/${{ matrix.out }}
-          generate_release_notes: true
+          python-version: "3.13"
+
+      - name: Tk and PyInstaller
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk
+          python -m pip install --upgrade pip pyinstaller==6.22.3
+
+      - name: Build
+        run: |
+          pyinstaller --noconfirm --onefile --name SiteRestorer \
+            --distpath dist --workpath build --specpath . src/main.py
+
+      - name: Rename
+        run: mv dist/SiteRestorer dist/SiteRestorer-linux && ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: py-linux
+          path: dist/SiteRestorer-linux
+
+  rust:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            features: ""
+            apt: musl-tools
+            rustflags: "-C linker=musl-gcc"
+            out: SiteRestorer-rust-linux-cli
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            features: "--features gui"
+            apt: >-
+              libxkbcommon-dev libgl1-mesa-dev libegl1-mesa-dev libx11-dev libxcursor-dev
+              libxrandr-dev libxi-dev libwayland-dev libfontconfig1-dev
+            optional: true
+            out: SiteRestorer-rust-linux-gui
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            features: "--features gui"
+            apt: ""
+            out: SiteRestorer-rust-win-gui-x64.exe
+          - os: windows-latest
+            target: i686-pc-windows-msvc
+            features: "--features gui"
+            apt: ""
+            out: SiteRestorer-rust-win-gui-x86.exe
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            features: ""
+            apt: ""
+            out: SiteRestorer-rust-win-cli-x64.exe
+          - os: windows-latest
+            target: i686-pc-windows-msvc
+            features: ""
+            apt: ""
+            out: SiteRestorer-rust-win-cli-x86.exe
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.optional == true }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System libraries (Linux GUI)
+        if: matrix.apt != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.apt }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build
+        working-directory: ports/rust
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
+        run: cargo build --release --target ${{ matrix.target }} ${{ matrix.features }}
+
+      - name: Collect binary
+        shell: pwsh
+        run: |
+          $dir = "ports/rust/target/${{ matrix.target }}/release"
+          $src = if ("${{ matrix.features }}" -eq "") {
+            if ($IsWindows) { "$dir/site-restorer.exe" } else { "$dir/site-restorer" }
+          } else {
+            if ($IsWindows) { "$dir/site-restorer.exe" } else { "$dir/site-restorer" }
+          }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item $src "dist/${{ matrix.out }}"
+          Get-Item "dist/${{ matrix.out }}" | Select-Object Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-${{ matrix.target }}-${{ matrix.features == '' && 'cli' || 'gui' }}
+          path: dist/${{ matrix.out }}
+
+  go:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            out: siterestorer-go-linux-x64
+          - goos: linux
+            goarch: arm64
+            out: siterestorer-go-linux-arm64
+          - goos: windows
+            goarch: amd64
+            out: siterestorer-go-win-x64.exe
+          - goos: windows
+            goarch: "386"
+            out: siterestorer-go-win-x86.exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Build
+        working-directory: ports/go
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -trimpath -ldflags "-s -w" -o "$GITHUB_WORKSPACE/dist/${{ matrix.out }}" .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: go-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/${{ matrix.out }}
 
   smoke:
-    needs: build
+    needs: python
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: SiteRestorer-x64
+          name: py-x64
           path: dist/x64
       - uses: actions/download-artifact@v4
         with:
-          name: SiteRestorer-x86
+          name: py-x86
           path: dist/x86
 
       - uses: actions/setup-python@v5
@@ -115,3 +270,22 @@ jobs:
           python -c "import struct,sys; d=open(sys.argv[1],'rb').read(4096); e=struct.unpack_from('<I',d,0x3c)[0]; m=struct.unpack_from('<H',d,e+4)[0]; print('machine', hex(m)); sys.exit(0 if m==0x8664 else 1)" $x64
           python -c "import struct,sys; d=open(sys.argv[1],'rb').read(4096); e=struct.unpack_from('<I',d,0x3c)[0]; m=struct.unpack_from('<H',d,e+4)[0]; print('machine', hex(m)); sys.exit(0 if m==0x14c else 1)" $x86
           Write-Host "OK: x64 and x86 binaries are valid"
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [python, python-linux, rust, go]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: List assets
+        run: ls -lh assets
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: assets/*
+          generate_release_notes: true

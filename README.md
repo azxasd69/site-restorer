@@ -58,6 +58,38 @@
 
 ![Работа](docs/screenshots/02-running.png)
 
+## Сборки
+
+Одна и та же программа собрана на трёх стеках — выбирайте по платформе и размеру.
+Полная матрица, команды сборки и результаты живых прогонов — в [BUILD.md](BUILD.md),
+файлы — на странице [Releases](https://github.com/azxasd69/site-restorer/releases)
+(ссылки вида `releases/latest/download/<имя>` всегда ведут на последнюю версию).
+
+| Файл | Платформа | Размер | Стек |
+|---|---|---|---|
+| `SiteRestorer.exe` | Windows x64 | 13,0 МБ | Python + Tk — основной вариант |
+| `SiteRestorer-x86.exe` | Windows x86 | 10,5 МБ | Python + Tk |
+| `SiteRestorer-linux` | Linux x64 | 13,6 МБ | Python + Tk (нужен X11) |
+| `SiteRestorer-rust-win-gui-x64.exe` | Windows x64 | 6,9 МБ | Rust + egui |
+| `SiteRestorer-rust-win-gui-x86.exe` | Windows x86 | 6,2 МБ | Rust + egui |
+| `SiteRestorer-rust-win-cli-x64.exe` | Windows x64 | 2,6 МБ | Rust, только командная строка |
+| `SiteRestorer-rust-win-cli-x86.exe` | Windows x86 | 2,0 МБ | Rust, самый маленький для Windows |
+| `SiteRestorer-rust-linux-cli` | Linux x64 | 3,3 МБ | Rust, статический ELF (`ldd` → not a dynamic executable) |
+| `SiteRestorer-rust-linux-gui` | Linux x64 | 8,6 МБ | Rust + egui (X11/GL) |
+| `siterestorer-go-linux-x64` / `-linux-arm64` | Linux | 8,5 / 7,9 МБ | Go, один файл без зависимостей |
+| `siterestorer-go-win-x64.exe` / `-win-x86.exe` | Windows | 8,8 / 8,5 МБ | Go |
+
+Исходники альтернативных реализаций лежат в репозитории: `ports/rust` (19 тестов,
+`cargo test`) и `ports/go` (24 теста, `go vet` + `go test`). Все три реализации
+понимают одинаковый минимум командной строки:
+
+```
+site-restorer --cli --site <адрес> --out <папка> [--limit N] [--workers N]
+```
+
+Интерфейс есть у Python-версии (RU/EN на tkinter) и у Rust-версии (egui);
+Go-вариант — консольный.
+
 ## Установка
 
 1. Скачайте `SiteRestorer.exe` (x64) или `SiteRestorer-x86.exe` (32-бит) со страницы
@@ -68,6 +100,14 @@
 
 Требования: Windows 10 (1809+) или Windows 11, 64- или 32-бит. Python не нужен —
 интерпретатор и Tcl/Tk встроены в exe.
+
+На Linux скачайте `SiteRestorer-linux` (Python + Tk) или `SiteRestorer-rust-linux-cli`
+(статический бинарник без зависимостей), выдайте право на запуск и работайте из терминала:
+
+```bash
+chmod +x SiteRestorer-rust-linux-cli
+./SiteRestorer-rust-linux-cli --cli --site example.com --out ~/SiteRestore/site
+```
 
 ## Использование
 
@@ -143,9 +183,13 @@ SiteRestorer.exe --cli --site prokupol.ru --out D:\mirror --workers 16 --limit 1
 site-restorer/
 ├── src/                 core.py, main.py, sanitize.py, app.ico
 ├── tests/               юнит-тесты (без сети)
+├── ports/rust/          альтернативная реализация на Rust (egui GUI + CLI)
+├── ports/go/            альтернативная реализация на Go (CLI)
+├── landing/             лендинг проекта (RU/EN) для GitHub Pages
 ├── docs/screenshots/    скриншоты для README
 ├── docs/prokupol-case.md
-├── .github/workflows/   CI: тесты, сборка x64/x86, релиз по тегу
+├── .github/workflows/   CI: тесты, сборки всех стеков, релиз по тегу
+├── BUILD.md             матрица сборок и размеров
 ├── build.ps1            локальная сборка
 ├── publish.ps1          пуш и тег одной командой
 ├── ARCHITECTURE.md      как устроено внутри
