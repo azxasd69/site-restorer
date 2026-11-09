@@ -72,7 +72,7 @@
           "name": "Do I need Python or anything else?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "No. The interpreter and Tcl/Tk are packed into the executable, so it runs on a clean Windows install. Python is only useful for serving the copy with python -m http.server; any static server will do."
+            "text": "No. The main build is a single self-contained Rust binary, so it runs on a clean Windows install. Python is only useful for serving the copy with python -m http.server; any static server will do."
           }
         },
         {
@@ -433,13 +433,13 @@ python -m http.server 8080</code></pre>
       <div class="section-head">
         <p class="eyebrow">Download</p>
         <h2>One file, no installation</h2>
-        <p class="lead">Links point to the latest build in GitHub Releases. The interpreter and Tcl/Tk are bundled — no Python required on your machine.</p>
+        <p class="lead">Links point to the latest build in GitHub Releases. It is a single self-contained binary: no interpreter or libraries to install.</p>
       </div>
 
       <div class="dl-grid">
         <article class="dl-card">
           <h3>Site Restorer <span class="chip">x64</span></h3>
-          <p class="dl-meta">Windows 10/11 · ≈ 12 MB · recommended</p>
+          <p class="dl-meta">Windows 10/11 · 7.3 MB · Rust + egui, recommended</p>
           <ul>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>For 64-bit Windows 10 (1809+) and Windows 11</span></li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Portable: unzip into a folder and run</span></li>
@@ -453,7 +453,7 @@ python -m http.server 8080</code></pre>
 
         <article class="dl-card">
           <h3>Site Restorer <span class="chip">x86</span></h3>
-          <p class="dl-meta">Windows 10/11 · ≈ 10 MB · 32-bit build</p>
+          <p class="dl-meta">Windows 10/11 · 6.5 MB · Rust + egui, 32-bit build</p>
           <ul>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>For 32-bit systems and older machines</span></li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Same features, lower memory footprint</span></li>
@@ -511,7 +511,7 @@ python -m http.server 8080</code></pre>
       <div class="faq">
         <details>
           <summary>Do I need Python or anything else?</summary>
-          <div class="answer">No. The interpreter and Tcl/Tk are packed into the executable, so it runs on a clean Windows install. Python is only useful if you want to serve the copy with <code>python -m http.server</code> — any other static server will do as well.</div>
+          <div class="answer">No. The main build is a single Rust binary with no interpreter, so it runs on a clean Windows install. Python is only useful if you want to serve the copy with <code>python -m http.server</code> — any other static server will do as well.</div>
         </details>
         <details>
           <summary>What if the archive saved nothing?</summary>

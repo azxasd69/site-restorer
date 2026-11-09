@@ -13,85 +13,6 @@ permissions:
 
 jobs:
   test:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Compile check
-        run: python -m compileall -q src
-
-      - name: Unit tests
-        run: python -m unittest discover -s tests -v
-
-      - name: Go tests
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.24"
-      - name: Go vet and tests
-        working-directory: ports/go
-        run: |
-          go vet ./...
-          go test ./...
-
-      - name: Rust tests
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cargo test
-        working-directory: ports/rust
-        run: cargo test --release --no-default-features
-
-  python:
-    needs: test
-    runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x64
-            python_arch: x64
-            out: SiteRestorer.exe
-          - arch: x86
-            python_arch: x86
-            out: SiteRestorer-x86.exe
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-          architecture: ${{ matrix.python_arch }}
-
-      - name: Install PyInstaller
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install pyinstaller==6.22.3
-
-      - name: Build
-        run: |
-          python -m PyInstaller --noconfirm --onefile --windowed `
-            --name SiteRestorer `
-            --icon src/app.ico --add-data "src/app.ico;." `
-            --distpath dist --workpath build --specpath . `
-            src/main.py
-
-      - name: Rename artifact
-        shell: pwsh
-        run: |
-          if ("${{ matrix.arch }}" -eq "x86") {
-            Move-Item dist/SiteRestorer.exe dist/${{ matrix.out }}
-          }
-          Get-ChildItem dist
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: py-${{ matrix.arch }}
-          path: dist/${{ matrix.out }}
-
-  python-linux:
-    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -100,24 +21,28 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Tk and PyInstaller
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-tk
-          python -m pip install --upgrade pip pyinstaller==6.22.3
+      - name: Python compile check
+        working-directory: legacy/python
+        run: python -m compileall -q src
 
-      - name: Build
-        run: |
-          pyinstaller --noconfirm --onefile --name SiteRestorer \
-            --distpath dist --workpath build --specpath . src/main.py
+      - name: Python unit tests
+        working-directory: legacy/python
+        run: python -m unittest discover -s tests -v
 
-      - name: Rename
-        run: mv dist/SiteRestorer dist/SiteRestorer-linux && ls -l dist
-
-      - uses: actions/upload-artifact@v4
+      - uses: actions/setup-go@v5
         with:
-          name: py-linux
-          path: dist/SiteRestorer-linux
+          go-version: "1.24"
+
+      - name: Go vet and tests
+        working-directory: ports/go
+        run: |
+          go vet ./...
+          go test ./...
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust tests (CLI)
+        run: cargo test --release --no-default-features
 
   rust:
     needs: test
@@ -130,41 +55,58 @@ jobs:
             features: "cli"
             apt: musl-tools
             rustflags: "-C linker=musl-gcc"
+            optional: false
             out: SiteRestorer-rust-linux-cli
+          - os: ubuntu-latest
+            target: i686-unknown-linux-musl
+            features: "cli"
+            apt: "musl-tools gcc-multilib libc6-dev-i386"
+            rustflags: ""
+            optional: true
+            out: SiteRestorer-rust-linux-i586-cli
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             features: "gui"
             apt: >-
               libxkbcommon-dev libgl1-mesa-dev libegl1-mesa-dev libx11-dev libxcursor-dev
               libxrandr-dev libxi-dev libwayland-dev libfontconfig1-dev
-            optional: true
+            rustflags: ""
+            optional: false
             out: SiteRestorer-rust-linux-gui
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             features: "gui"
             apt: ""
-            out: SiteRestorer-rust-win-gui-x64.exe
+            rustflags: ""
+            optional: false
+            out: SiteRestorer.exe
           - os: windows-latest
             target: i686-pc-windows-msvc
             features: "gui"
             apt: ""
-            out: SiteRestorer-rust-win-gui-x86.exe
+            rustflags: ""
+            optional: false
+            out: SiteRestorer-x86.exe
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             features: "cli"
             apt: ""
+            rustflags: ""
+            optional: false
             out: SiteRestorer-rust-win-cli-x64.exe
           - os: windows-latest
             target: i686-pc-windows-msvc
             features: "cli"
             apt: ""
+            rustflags: ""
+            optional: false
             out: SiteRestorer-rust-win-cli-x86.exe
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.optional == true }}
+    continue-on-error: ${{ matrix.optional }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: System libraries (Linux GUI)
+      - name: System libraries
         if: matrix.apt != ''
         run: |
           sudo apt-get update
@@ -175,7 +117,6 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Build
-        working-directory: ports/rust
         shell: bash
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
@@ -185,13 +126,13 @@ jobs:
           cargo build --release --target ${{ matrix.target }} $FLAGS
 
       - name: Collect binary
-        shell: pwsh
+        shell: bash
         run: |
-          $dir = "ports/rust/target/${{ matrix.target }}/release"
-          $src = if ($IsWindows) { "$dir/site-restorer.exe" } else { "$dir/site-restorer" }
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item $src "dist/${{ matrix.out }}"
-          Get-Item "dist/${{ matrix.out }}" | Select-Object Name, Length
+          mkdir -p dist
+          SRC="target/${{ matrix.target }}/release/site-restorer"
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then SRC="${SRC}.exe"; fi
+          cp "$SRC" "dist/${{ matrix.out }}"
+          ls -l "dist/${{ matrix.out }}"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -237,43 +178,134 @@ jobs:
           name: go-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/${{ matrix.out }}
 
-  smoke:
-    needs: python
+  python:
+    needs: test
     runs-on: windows-latest
-    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            python_arch: x64
+            out: SiteRestorer-python-win-x64.exe
+          - arch: x86
+            python_arch: x86
+            out: SiteRestorer-python-win-x86.exe
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
         with:
-          name: py-x64
-          path: dist/x64
-      - uses: actions/download-artifact@v4
+          python-version: "3.13"
+          architecture: ${{ matrix.python_arch }}
+
+      - name: Install PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller==6.22.3
+
+      - name: Build
+        working-directory: legacy/python
+        run: |
+          python -m PyInstaller --noconfirm --onefile --windowed `
+            --name SiteRestorer `
+            --icon src/app.ico --add-data "src/app.ico;." `
+            --distpath dist --workpath build --specpath . `
+            src/main.py
+
+      - name: Rename artifact
+        shell: bash
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          mv legacy/python/dist/SiteRestorer.exe "dist/${{ matrix.out }}"
+          ls -l "dist/${{ matrix.out }}"
+
+      - uses: actions/upload-artifact@v4
         with:
-          name: py-x86
-          path: dist/x86
+          name: py-${{ matrix.arch }}
+          path: dist/${{ matrix.out }}
+
+  python-linux:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
-      - name: Verify artifacts (size + PE architecture, no network)
+      - name: Tk and PyInstaller
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk
+          python -m pip install --upgrade pip pyinstaller==6.22.3
+
+      - name: Build
+        working-directory: legacy/python
+        run: |
+          pyinstaller --noconfirm --onefile --name SiteRestorer \
+            --distpath dist --workpath build --specpath . src/main.py
+
+      - name: Rename
+        run: |
+          mkdir -p dist
+          mv legacy/python/dist/SiteRestorer dist/SiteRestorer-python-linux-x64
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: py-linux
+          path: dist/SiteRestorer-python-linux-x64
+
+  smoke:
+    needs: [rust, python]
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: rust-x86_64-pc-windows-msvc-cli
+          path: rust
+      - uses: actions/download-artifact@v4
+        with:
+          name: py-x64
+          path: py64
+      - uses: actions/download-artifact@v4
+        with:
+          name: py-x86
+          path: py86
+
+      - name: Run Rust CLI (version, no network)
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $x64 = "dist/x64/SiteRestorer.exe"
-          $x86 = "dist/x86/SiteRestorer-x86.exe"
+          $exe = "rust/SiteRestorer-rust-win-cli-x64.exe"
+          $out = & $exe --version
+          Write-Host $out
+          if ($LASTEXITCODE -ne 0) { throw "cli exit code $LASTEXITCODE" }
+          if ($out -notmatch "site-restorer") { throw "unexpected output" }
+          Write-Host "OK: Rust CLI starts and prints version"
+
+      - name: Verify Python artefacts (size + PE architecture)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $x64 = "py64/SiteRestorer-python-win-x64.exe"
+          $x86 = "py86/SiteRestorer-python-win-x86.exe"
           foreach ($f in @($x64, $x86)) {
             if (-not (Test-Path $f)) { throw "missing $f" }
             $size = (Get-Item $f).Length
             Write-Host "$f = $([math]::Round($size/1MB,1)) MB"
             if ($size -lt 5MB) { throw "$f is too small" }
           }
-          python -c "import struct,sys; d=open(sys.argv[1],'rb').read(4096); e=struct.unpack_from('<I',d,0x3c)[0]; m=struct.unpack_from('<H',d,e+4)[0]; print('machine', hex(m)); sys.exit(0 if m==0x8664 else 1)" $x64
-          python -c "import struct,sys; d=open(sys.argv[1],'rb').read(4096); e=struct.unpack_from('<I',d,0x3c)[0]; m=struct.unpack_from('<H',d,e+4)[0]; print('machine', hex(m)); sys.exit(0 if m==0x14c else 1)" $x86
-          Write-Host "OK: x64 and x86 binaries are valid"
+          python -c "import struct,sys; d=open(sys.argv[1],'rb').read(4096); e=struct.unpack_from('<I',d,0x3c)[0]; m=struct.unpack_from('<H',d,e+4)[0]; sys.exit(0 if m==0x8664 else 1)" $x64
+          python -c "import struct,sys; d=open(sys.argv[1],'rb').read(4096); e=struct.unpack_from('<I',d,0x3c)[0]; m=struct.unpack_from('<H',d,e+4)[0]; sys.exit(0 if m==0x14c else 1)" $x86
+          Write-Host "OK: x64 and x86 Python binaries are valid"
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [python, python-linux, rust, go]
+    needs: [rust, go, python, python-linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -281,8 +313,11 @@ jobs:
           path: assets
           merge-multiple: true
 
-      - name: List assets
-        run: ls -lh assets
+      - name: Checksums
+        run: |
+          cd assets
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
 
       - name: Attach to release
         uses: softprops/action-gh-release@v2

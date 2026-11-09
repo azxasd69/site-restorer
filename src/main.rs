@@ -3,8 +3,12 @@
 #[cfg(feature = "gui")]
 mod app;
 mod core;
+mod i18n;
 mod paths;
 mod sanitize;
+
+/// Версия берётся из Cargo.toml.
+pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 use core::{Engine, Progress};
 use sanitize::sanitize_site;
@@ -12,6 +16,10 @@ use std::path::PathBuf;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("site-restorer {APP_VERSION}");
+        return;
+    }
     if args.iter().any(|a| a == "--cli") {
         std::process::exit(cli(&args));
     }
@@ -23,7 +31,7 @@ fn main() {
             viewport: eframe::egui::ViewportBuilder::default()
                 .with_inner_size([880.0, 740.0])
                 .with_min_inner_size([840.0, 700.0])
-                .with_title("Site Restorer — копия сайта из веб-архива"),
+                .with_title(i18n::RU.title),
             ..Default::default()
         };
         let run = eframe::run_native(

@@ -1,6 +1,7 @@
-//! Нативное окно (egui 0.37): форма, живой прогресс, журнал, запуск ядра.
+//! Нативное окно (egui 0.37): форма, живой прогресс, журнал, RU/EN.
 
 use crate::core::{Engine, Progress};
+use crate::i18n::Lang;
 use crate::paths;
 use crate::sanitize::{sanitize_site, Note};
 use eframe::egui;
@@ -26,10 +27,11 @@ pub struct App {
     out: String,
     note: String,
     log: Vec<(String, Level)>,
+    lang: Lang,
     show_help: bool,
     running: bool,
     overall: f32,
-    stage: String,
+    stage: &'static str,
     status: String,
     done: usize,
     total: usize,
@@ -48,19 +50,22 @@ pub struct App {
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         cc.egui_ctx.set_visuals(egui::Visuals::light());
+        let lang = match std::env::var("SR_LANG").as_deref() {
+            Ok("en") => Lang::En,
+            _ => Lang::Ru,
+        };
         Self {
             site: std::env::var("SR_AUTOSTART").unwrap_or_default(),
-            out: std::env::var("SR_OUT").unwrap_or_else(|_| default_out()),
-            note: "Вставьте адрес — можно ссылку из письма, поиска или архива.".to_string(),
-            log: vec![(
-                "Готов к запуску. Адрес разбирается автоматически.".to_string(),
-                Level::Warn,
-            )],
+            out: std::env::var("SR_OUT")
+                .unwrap_or_else(|_| default_out()),
+            note: lang.t().hint.to_string(),
+            log: vec![(format!("Site Restorer {}", crate::APP_VERSION), Level::Warn)],
+            lang,
             show_help: false,
             running: false,
             overall: 0.0,
-            stage: "Готов к запуску".to_string(),
-            status: "Ожидание запуска".to_string(),
+            stage: lang.t().stage_idle,
+            status: lang.t().waiting.to_string(),
             done: 0,
             total: 0,
             ok: 0,
@@ -72,7 +77,9 @@ impl App {
             types: [0; 8],
             rx: None,
             cancel: None,
-            pending_start: std::env::var("SR_AUTOSTART").map(|v| !v.is_empty()).unwrap_or(false),
+            pending_start: std::env::var("SR_AUTOSTART")
+                .map(|v| !v.is_empty())
+                .unwrap_or(false),
         }
     }
 
@@ -84,19 +91,18 @@ impl App {
     }
 
     fn analyse(&mut self) {
+        let t = self.lang.t();
         match sanitize_site(&self.site) {
             Some((host, note)) => {
                 let why = match note {
-                    Note::Plain => "обычный адрес",
-                    Note::Layout => "была русская раскладка",
-                    Note::Idn => "кириллический домен -> punycode",
+                    Note::Plain => "plain",
+                    Note::Layout => "keyboard layout",
+                    Note::Idn => "IDN -> punycode",
                 };
                 let entry = paths::url_to_local_path(&format!("https://{host}/"));
-                self.note = format!("→ {host}  ({why})   файл в копии: {entry}");
+                self.note = format!("→ {host}  ({why})   {entry}");
             }
-            None => {
-                self.note = "⚠ Не разобрал адрес — проверьте написание домена.".to_string();
-            }
+            None => self.note = t.bad_address.to_string(),
         }
     }
 
@@ -104,17 +110,18 @@ impl App {
         if self.running {
             return;
         }
+        let t = self.lang.t();
         let Some((host, _)) = sanitize_site(&self.site) else {
-            self.push_log("не разобрал адрес", Level::Err);
+            self.push_log(t.bad_address, Level::Err);
             return;
         };
-        let out = PathBuf::from(self.out.trim());
         if self.out.trim().is_empty() {
-            self.push_log("укажите папку для копии", Level::Err);
+            self.push_log(t.need_out, Level::Err);
             return;
         }
+        let out = PathBuf::from(self.out.trim());
         let Some(mut engine) = Engine::new(&host, &out, 16, 0) else {
-            self.push_log("движок не создан", Level::Err);
+            self.push_log(t.bad_address, Level::Err);
             return;
         };
 
@@ -127,21 +134,22 @@ impl App {
         self.rx = Some(rx);
         self.running = true;
         self.overall = 0.0;
-        self.stage = "Инвентаризация архива".to_string();
-        self.status = "Подготовка…".to_string();
-        self.push_log(format!("старт: {host} → {}", out.display()), Level::Ok);
+        self.stage = t.stage_inventory;
+        self.status = t.preparing.to_string();
+        self.push_log(format!("{} → {}", host, out.display()), Level::Ok);
 
         std::thread::spawn(move || {
             let result = engine
                 .run()
                 .map(|o| {
                     format!(
-                        "готово: скачано {} из {}, страниц {}, битых ссылок {}. Отчёт: {}",
+                        "{}: {} / {}, pages {}, broken {}. {}",
                         o.ok,
                         o.total,
                         o.stats.pages,
                         o.stats.broken,
-                        o.report.display()
+                        o.report.display(),
+                        ""
                     )
                 })
                 .map_err(|e| e);
@@ -152,7 +160,8 @@ impl App {
     fn stop(&mut self) {
         if let Some(cancel) = &self.cancel {
             cancel.store(true, Ordering::Relaxed);
-            self.push_log("остановка…", Level::Warn);
+            let t = self.lang.t();
+            self.push_log(t.stopped, Level::Warn);
         }
     }
 
@@ -167,13 +176,14 @@ impl App {
                         continue;
                     }
                     self.overall = p.overall;
+                    let t = self.lang.t();
                     self.stage = match p.stage {
-                        "inventory" => "Инвентаризация архива".to_string(),
-                        "download" => "Скачивание файлов".to_string(),
-                        "build" => "Сборка оффлайн-копии".to_string(),
-                        "verify" => "Проверка ссылок".to_string(),
-                        "report" => "Отчёт".to_string(),
-                        other => other.to_string(),
+                        "inventory" => t.stage_inventory,
+                        "download" => t.stage_download,
+                        "build" => t.stage_build,
+                        "verify" => t.stage_verify,
+                        "report" => t.stage_report,
+                        _ => t.stage_idle,
                     };
                     if !p.text.is_empty() {
                         self.status = p.text.clone();
@@ -195,20 +205,20 @@ impl App {
                     keep = false;
                     self.running = false;
                     self.cancel = None;
-                    self.stage = "Готово".to_string();
                     match result {
-                        Ok(text) => {
+                        Ok(_text) => {
                             self.overall = 100.0;
-                            self.push_log(text, Level::Ok);
-                            self.status = "Копия собрана".to_string();
+                            self.stage = self.lang.t().stage_done;
+                            self.status = self.lang.t().built.to_string();
                         }
                         Err(err) if err == "cancelled" => {
-                            self.push_log("остановлено; повторный запуск продолжит", Level::Warn);
-                            self.status = "Остановлено".to_string();
+                            self.stage = self.lang.t().stopped;
+                            self.status = self.lang.t().stopped.to_string();
                         }
                         Err(err) => {
-                            self.push_log(format!("ошибка: {err}"), Level::Err);
-                            self.status = "Ошибка".to_string();
+                            self.push_log(format!("{}: {err}", self.lang.t().error), Level::Err);
+                            self.stage = self.lang.t().error;
+                            self.status = self.lang.t().error.to_string();
                         }
                     }
                     break;
@@ -242,8 +252,10 @@ fn bar(ui: &mut egui::Ui, frac: f32, height: f32, width: f32) {
     let painter = ui.painter();
     painter.rect_filled(rect, radius, egui::Color32::from_rgb(226, 232, 240));
     if frac > 0.0 {
-        let filled =
-            egui::Rect::from_min_size(rect.min, egui::vec2(rect.width() * frac.clamp(0.0, 1.0), rect.height()));
+        let filled = egui::Rect::from_min_size(
+            rect.min,
+            egui::vec2(rect.width() * frac.clamp(0.0, 1.0), rect.height()),
+        );
         painter.rect_filled(filled, radius, egui::Color32::from_rgb(37, 99, 235));
     }
 }
@@ -256,41 +268,61 @@ impl eframe::App for App {
             self.start();
         }
         if self.running {
-            ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(200));
         }
+        let t = self.lang.t();
 
         egui::Panel::top("header").show(ui, |ui| {
             ui.add_space(10.0);
-            ui.heading("Восстановление сайта из веб-архива");
-            ui.label(
-                egui::RichText::new(
-                    "Скачивает сохранённую копию сайта из Wayback Machine и собирает её для локального просмотра.",
-                )
-                .weak(),
-            );
+            ui.horizontal(|ui| {
+                ui.vertical(|ui| {
+                    ui.heading(t.heading);
+                    ui.label(egui::RichText::new(t.subtitle).weak());
+                });
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+                    if ui.button(self.lang.other().label()).clicked() {
+                        self.lang = self.lang.other();
+                    }
+                });
+            });
             ui.add_space(10.0);
 
             egui::Grid::new("form")
                 .num_columns(2)
                 .spacing([12.0, 8.0])
                 .show(ui, |ui| {
-                    ui.label("Адрес сайта");
+                    ui.label(t.site);
                     ui.add_enabled(
                         !self.running,
                         egui::TextEdit::singleline(&mut self.site)
-                            .hint_text("например, prokupol.ru")
+                            .hint_text(t.site_ph)
                             .desired_width(f32::INFINITY),
                     );
                     ui.end_row();
 
-                    ui.label("Папка для копии");
+                    ui.label(t.out);
                     ui.horizontal(|ui| {
                         ui.add_enabled(
                             !self.running,
                             egui::TextEdit::singleline(&mut self.out)
-                                .desired_width(ui.available_width() - 110.0),
+                                .desired_width(ui.available_width() - 190.0),
                         );
-                        if ui.add_enabled(!self.running, egui::Button::new("Разобрать")).clicked() {
+                        if ui
+                            .add_enabled(!self.running, egui::Button::new(t.browse))
+                            .clicked()
+                        {
+                            if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+                                self.out = dir
+                                    .join("site")
+                                    .to_string_lossy()
+                                    .into_owned();
+                            }
+                        }
+                        if ui
+                            .add_enabled(!self.running, egui::Button::new(t.analyse))
+                            .clicked()
+                        {
                             self.analyse();
                         }
                     });
@@ -302,18 +334,23 @@ impl eframe::App for App {
             ui.add_space(8.0);
 
             ui.horizontal(|ui| {
-                let start = ui.add_enabled(!self.running, egui::Button::new("Начать"));
-                if start.clicked() {
+                if ui
+                    .add_enabled(!self.running, egui::Button::new(t.start))
+                    .clicked()
+                {
                     self.start();
                 }
-                if ui.add_enabled(self.running, egui::Button::new("Остановить")).clicked() {
+                if ui
+                    .add_enabled(self.running, egui::Button::new(t.stop))
+                    .clicked()
+                {
                     self.stop();
                 }
-                if ui.button("Открыть папку").clicked() {
+                if ui.button(t.open).clicked() {
                     open_folder(&self.out);
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Справка").clicked() {
+                    if ui.button(t.help).clicked() {
                         self.show_help = true;
                     }
                 });
@@ -325,7 +362,7 @@ impl eframe::App for App {
             .resizable(true)
             .show(ui, |ui| {
                 ui.add_space(6.0);
-                ui.label(egui::RichText::new("Журнал").strong());
+                ui.label(egui::RichText::new(t.log).strong());
                 egui::Frame::new()
                     .fill(egui::Color32::from_rgb(17, 24, 39))
                     .inner_margin(egui::Margin::same(10))
@@ -341,9 +378,7 @@ impl eframe::App for App {
                                         Level::Warn => egui::Color32::from_rgb(251, 191, 36),
                                         Level::Err => egui::Color32::from_rgb(248, 113, 113),
                                     };
-                                    ui.label(
-                                        egui::RichText::new(text).monospace().color(color),
-                                    );
+                                    ui.label(egui::RichText::new(text).monospace().color(color));
                                 }
                             });
                     });
@@ -356,7 +391,7 @@ impl eframe::App for App {
                 .inner_margin(egui::Margin::same(14))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new(&self.stage).strong());
+                        ui.label(egui::RichText::new(self.stage).strong());
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.label(format!("{:.0} %", self.overall));
                         });
@@ -365,13 +400,17 @@ impl eframe::App for App {
                     let full = ui.available_width();
                     bar(ui, self.overall / 100.0, 14.0, full);
                     ui.add_space(10.0);
-                    let names = ["HTML-страницы", "CSS / JS / XML", "Изображения", "Прочие файлы"];
+                    let names = [t.t_html, t.t_code, t.t_img, t.t_other];
                     for (idx, name) in names.iter().enumerate() {
                         ui.horizontal(|ui| {
-                            ui.add_sized([140.0, 18.0], egui::Label::new(*name));
+                            ui.add_sized([150.0, 18.0], egui::Label::new(*name));
                             let ok = self.types[idx * 2];
                             let total = self.types[idx * 2 + 1];
-                            let frac = if total > 0 { ok as f32 / total as f32 } else { 0.0 };
+                            let frac = if total > 0 {
+                                ok as f32 / total as f32
+                            } else {
+                                0.0
+                            };
                             let width = ui.available_width() - 70.0;
                             bar(ui, frac, 10.0, width);
                             ui.label(format!("{ok} / {total}"));
@@ -383,8 +422,13 @@ impl eframe::App for App {
                     if self.total > 0 {
                         ui.label(
                             egui::RichText::new(format!(
-                                "скачано {} из {} · {:.0} КБ/с · потоков {} · нет в архиве {} · ошибок {}",
-                                self.done, self.total, self.bps / 1024.0, self.threads, self.missing, self.errors
+                                "{} / {} · {:.0} KB/s · threads {} · missing {} · errors {}",
+                                self.done,
+                                self.total,
+                                self.bps / 1024.0,
+                                self.threads,
+                                self.missing,
+                                self.errors
                             ))
                             .weak(),
                         );
@@ -392,7 +436,7 @@ impl eframe::App for App {
                     if self.bytes > 0 {
                         ui.label(
                             egui::RichText::new(format!(
-                                "объём: {:.1} МБ",
+                                "{:.1} MB",
                                 self.bytes as f64 / 1_048_576.0
                             ))
                             .weak(),
@@ -404,12 +448,12 @@ impl eframe::App for App {
         if self.show_help {
             let ctx = ui.ctx().clone();
             let mut open = self.show_help;
-            egui::Window::new("Справка — Site Restorer")
+            egui::Window::new(t.help)
                 .open(&mut open)
-                .default_size([620.0, 420.0])
+                .default_size([640.0, 460.0])
                 .show(&ctx, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                        ui.label(HELP_TEXT);
+                        ui.label(t.help_text);
                     });
                 });
             self.show_help = open;
@@ -427,23 +471,11 @@ fn open_folder(path: &str) {
     let _ = std::process::Command::new("xdg-open").arg(path).spawn();
 }
 
-const HELP_TEXT: &str = "ЧТО ДЕЛАЕТ ПРОГРАММА\n\
-Скачивает из Wayback Machine (Internet Archive) все сохранённые страницы и файлы\n\
-указанного сайта и собирает статическую копию для локального просмотра.\n\n\
-ФОРМАТЫ АДРЕСА (можно вставлять как угодно)\n\
-prokupol.ru · https://www.prokupol.ru/catalog/ · PROKUPOL.RU\n\
-«prokupol.ru» · Сайт: prokupol.ru — ссылка из письма\n\
-ссылка из архива: web.archive.org/web/2026.../https://prokupol.ru/\n\
-ссылка из поиска: google.com/url?q=https://prokupol.ru/\n\
-адрес, набранный в русской раскладке: зкщлгзщдюкг\n\
-кириллический домен: прокупол.рф\n\n\
-ЧТО ВОССТАНАВЛИВАЕТСЯ\n\
-Только то, что архив когда-либо сохранил. Файлы, которые краулер не забирал,\n\
-отсутствуют — их нет ни в одной версии. Динамика (корзина, вход, поиск)\n\
-в статической копии не работает.\n\n\
-РЕЗУЛЬТАТ\n\
-<папка>/site        — готовая копия (открывать локальным веб-сервером)\n\
-<папка>/mirror      — исходные файлы из архива\n\
-<папка>/report.html — отчёт о покрытии\n\n\
-КОМАНДНАЯ СТРОКА\n\
-site-restorer --cli --site <адрес> --out <папка> [--limit N] [--workers N]\n";
+impl Lang {
+    fn label(self) -> &'static str {
+        match self {
+            Lang::Ru => "EN",
+            Lang::En => "RU",
+        }
+    }
+}
