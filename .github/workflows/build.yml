@@ -1,0 +1,64 @@
+name: build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            python_arch: x64
+            out: SiteRestorer.exe
+          - arch: x86
+            python_arch: x86
+            out: SiteRestorer-x86.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          architecture: ${{ matrix.python_arch }}
+
+      - name: Install PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller==6.22.3
+
+      - name: Build
+        run: |
+          python -m PyInstaller --noconfirm --onefile --windowed `
+            --name SiteRestorer `
+            --icon src/app.ico --add-data "src/app.ico;." `
+            --distpath dist --workpath build --specpath . `
+            src/main.py
+
+      - name: Rename artifact
+        shell: pwsh
+        run: |
+          if ("${{ matrix.arch }}" -eq "x86") {
+            Move-Item dist/SiteRestorer.exe dist/${{ matrix.out }}
+          }
+          Get-ChildItem dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SiteRestorer-${{ matrix.arch }}
+          path: dist/${{ matrix.out }}
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ matrix.out }}
+          generate_release_notes: true

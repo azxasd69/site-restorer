@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv32/
+
+# PyInstaller
+build/
+build-x64/
+build-x86/
+dist/
+dist-x64/
+dist-x86/
+*.spec
+
+# OS / editors
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
+
+# Локальные результаты прогонов
+site/
+mirror/
+mirror_cc/
+*.sqlite3
+*.log
+test-out/
+exe-test/
