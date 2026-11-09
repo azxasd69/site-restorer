@@ -176,6 +176,7 @@ jobs:
 
       - name: Build
         working-directory: ports/rust
+        shell: bash
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
         run: |
