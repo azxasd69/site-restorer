@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Публикация репозитория Site Restorer на GitHub.
 

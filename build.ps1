@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Сборка Site Restorer в один exe.
 
