@@ -59,17 +59,23 @@ C:\Python314\python.exe -m http.server 8090
 
 ## Чек-лист после публикации (домен известен)
 
-Заменить относительные адреса на абсолютные — это влияет на превью в соцсетях,
-поисковую индексацию и переключение языков:
+Сайт уже опубликован на GitHub Pages: `https://azxasd69.github.io/site-restorer/`.
+Canonical, `hreflang`, абсолютные `og:url` / `og:image` / `twitter:image`, `sitemap.xml`
+и строка `Sitemap:` в `robots.txt` уже прописаны под этот адрес.
 
-- [ ] `index.html`, `en/index.html`: добавить `<link rel="canonical" href="https://<домен>/...">`.
-- [ ] Добавить `hreflang`: `ru` → `https://<домен>/`, `en` → `https://<домен>/en/`,
-      `x-default` → `https://<домен>/`.
-- [ ] `og:url`, `og:image`, `twitter:image` — сделать абсолютными
-      (`https://<домен>/assets/img/og-ru.png` и `og-en.png`).
-- [ ] `robots.txt`: раскомментировать строку `Sitemap:` и положить `sitemap.xml`
-      с двумя URL (RU и EN) и `xhtml:link` alternates.
+Если сайт переедет на свой домен (или в другую подпапку), нужно заменить базовый URL
+(он встречается 4 раза на страницу + `sitemap.xml` + `robots.txt`):
+
+- [ ] `index.html`, `en/index.html`: `canonical`, три `hreflang`, `og:url`, `og:image`, `twitter:image`.
+- [ ] `sitemap.xml`: оба `<loc>` и `xhtml:link`.
+- [ ] `robots.txt`: строка `Sitemap:`.
+- [ ] При переезде на свой домен — файл `CNAME` с доменом в `landing/` и DNS-записи по документации GitHub.
 - [ ] Проверить превью: Telegram, X, VK, LinkedIn (кэш обновляется принудительно).
+
+Важно про `robots.txt`: для project pages (`/<repo>/`) файл лежит в подпапке и
+роботами не читается — они запрашивают `https://azxasd69.github.io/robots.txt`.
+На индексацию это влияет слабо (страницы не закрыты), а `sitemap.xml` можно
+отправить в Search Console вручную. Для своего домена ограничение исчезает.
 
 ## Как обновлять
 

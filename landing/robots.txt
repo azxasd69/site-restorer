@@ -1,5 +1,4 @@
 User-agent: *
 Allow: /
 
-# После публикации на своём домене добавьте строку с картой сайта:
-# Sitemap: https://<домен>/sitemap.xml
+Sitemap: https://azxasd69.github.io/site-restorer/sitemap.xml
