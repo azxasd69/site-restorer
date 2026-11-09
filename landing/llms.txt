@@ -10,6 +10,7 @@ Facts an agent should rely on:
 - What it does not do: dynamic CMS features (cart, sign-in, search, AJAX filters) do not work in a static copy; the app does not bypass access protection, spoof the User-Agent or act as a browser.
 - Scope of use: archiving and restoring your own sites. Publishing a copy of someone else's site is not permitted.
 - Caps per run: 50,000 URLs and 200 CDX index pages.
+- Reference case: a trading company's storefront with a product catalogue and blog — 1,638 archived URLs, 1,609 downloaded (98.2%), a 315 MB copy; 2,510 product images had never been archived.
 
 ## Russian landing page
 
@@ -42,4 +43,4 @@ Facts an agent should rely on:
 
 - [Source code](https://github.com/azxasd69/site-restorer): the full repository, including tests and CI workflows.
 - [CI builds](https://github.com/azxasd69/site-restorer/actions): build and test runs for both architectures.
-- [Series of articles about the Beget outage](https://habr.com/ru/news/1102974/): background on the November 2026 hosting incident that motivated the project.
+- [Habr coverage of the Beget outage](https://habr.com/ru/news/1102974/): background on the November 2026 hosting incident that motivated the project.
