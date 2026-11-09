@@ -1,0 +1,45 @@
+# Site Restorer
+
+> Site Restorer is a portable Windows application that rebuilds a website from the Internet Archive. It inventories captured URLs through the CDX API, downloads pages and assets in parallel with adaptive concurrency (2 to 24 workers), rewrites links into a browsable offline copy, verifies internal and broken links and writes an HTML coverage report. A single executable: no installer, no Python, MIT licensed. The interface and documentation are available in English and Russian.
+
+Facts an agent should rely on:
+
+- Platform: Windows 10 (1809+) and Windows 11, x64 and x86. Current builds are Windows-only.
+- Distribution: portable `SiteRestorer.exe` (x64, about 12 MB) and `SiteRestorer-x86.exe` (about 10 MB), published on GitHub Releases. Version numbers change; the `latest` links below always resolve to the current release.
+- What it recovers: only what the Internet Archive actually captured. Images that crawlers never saved are absent from every snapshot.
+- What it does not do: dynamic CMS features (cart, sign-in, search, AJAX filters) do not work in a static copy; the app does not bypass access protection, spoof the User-Agent or act as a browser.
+- Scope of use: archiving and restoring your own sites. Publishing a copy of someone else's site is not permitted.
+- Caps per run: 50,000 URLs and 200 CDX index pages.
+
+## Russian landing page
+
+- [Site Restorer — восстановление сайта из веб-архива](https://azxasd69.github.io/site-restorer/index.md): Russian markdown version of the landing page: features, four-step workflow, case study with numbers, limits, download links, FAQ.
+
+## English landing page
+
+- [Site Restorer — rebuild a website from the web archive](https://azxasd69.github.io/site-restorer/en/index.md): English markdown version of the landing page with the same structure and figures.
+
+## Documentation
+
+- [README](https://github.com/azxasd69/site-restorer/blob/main/README.md): installation, usage, CLI flags, how it works, limitations, build from source.
+- [ARCHITECTURE](https://github.com/azxasd69/site-restorer/blob/main/ARCHITECTURE.md): internal design, pipeline stages, concurrency and retry logic.
+- [CHANGELOG](https://github.com/azxasd69/site-restorer/blob/main/CHANGELOG.md): version history with fixes and behaviour changes.
+- [Project docs folder](https://github.com/azxasd69/site-restorer/tree/main/docs): case write-up and screenshots.
+- [MIT license](https://github.com/azxasd69/site-restorer/blob/main/LICENSE): terms of use.
+
+## Download
+
+- [SiteRestorer.exe (x64)](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer.exe): Windows 10/11 x64, about 12 MB, portable.
+- [SiteRestorer-x86.exe (x86)](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-x86.exe): 32-bit build, about 10 MB.
+- [All releases](https://github.com/azxasd69/site-restorer/releases): every version, assets and release notes.
+
+## Support and feedback
+
+- [Boosty](https://boosty.to/explosion/donate): voluntary support for the author; the project runs without ads, subscriptions or telemetry.
+- [Issues](https://github.com/azxasd69/site-restorer/issues): bug reports and feature requests.
+
+## Optional
+
+- [Source code](https://github.com/azxasd69/site-restorer): the full repository, including tests and CI workflows.
+- [CI builds](https://github.com/azxasd69/site-restorer/actions): build and test runs for both architectures.
+- [Series of articles about the Beget outage](https://habr.com/ru/news/1102974/): background on the November 2026 hosting incident that motivated the project.

@@ -31,7 +31,95 @@
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/img/touch-icon.png">
 <link rel="stylesheet" href="assets/style.css">
+<link rel="describedby" href="llms.txt">
+<link rel="alternate" type="text/markdown" href="index.md" title="Markdown-версия страницы">
 <script src="assets/app.js" defer></script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://azxasd69.github.io/site-restorer/#app",
+      "name": "Site Restorer",
+      "url": "https://azxasd69.github.io/site-restorer/",
+      "description": "Портативное приложение для Windows: собирает копию сайта из Internet Archive, восстанавливает ссылки и формирует отчёт о полноте.",
+      "applicationCategory": "UtilitiesApplication",
+      "operatingSystem": "Windows 10, Windows 11",
+      "inLanguage": ["ru", "en"],
+      "isAccessibleForFree": true,
+      "downloadUrl": "https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer.exe",
+      "license": "https://github.com/azxasd69/site-restorer/blob/main/LICENSE",
+      "author": {
+        "@type": "Person",
+        "name": "azxasd69",
+        "url": "https://github.com/azxasd69"
+      },
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "RUB",
+        "availability": "https://schema.org/InStock"
+      },
+      "sameAs": ["https://github.com/azxasd69/site-restorer"]
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://azxasd69.github.io/site-restorer/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Нужен ли Python или другие программы?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Нет. Интерпретатор и Tcl/Tk упакованы в exe: приложение запускается на чистой Windows. Python нужен только для локального сервера python -m http.server, но подойдёт любой статический сервер."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Что если архив ничего не сохранил?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Программа покажет это в отчёте и не будет ничего выдумывать. Стоит проверить варианты домена с www и без, а также соседние годы: для каждого адреса перебираются ближайшие снимки."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Сколько времени занимает восстановление?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Зависит от размера сайта и лимитов Internet Archive: небольшой сайт — минуты, тысячи адресов — часы. Докачка позволяет остановиться и продолжить позже."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Вернутся ли картинки товаров и фотографии?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Только если архив их сохранял. Краулеры Internet Archive часто забирают страницы, но не каждое изображение."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Будут ли работать корзина, вход и поиск?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Нет. Копия статическая: восстанавливаются страницы, стили, скрипты и файлы; всё, что требует серверной логики и базы данных, работать не будет."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Это законно?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Инструмент создан для восстановления собственных сайтов, не обходит защиту и не подменяет User-Agent. Публиковать копию чужого сайта нельзя. Лицензия приложения — MIT."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
 </head>
 <body id="top">
 <a class="skip-link" href="#main">Перейти к содержимому</a>

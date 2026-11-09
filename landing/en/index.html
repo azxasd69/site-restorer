@@ -31,7 +31,95 @@
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="../assets/img/touch-icon.png">
 <link rel="stylesheet" href="../assets/style.css">
+<link rel="describedby" href="../llms.txt">
+<link rel="alternate" type="text/markdown" href="index.md" title="Markdown version of this page">
 <script src="../assets/app.js" defer></script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://azxasd69.github.io/site-restorer/#app",
+      "name": "Site Restorer",
+      "url": "https://azxasd69.github.io/site-restorer/en/",
+      "description": "A portable Windows app that rebuilds a site's archived copy from the Internet Archive, rewrites links and reports coverage.",
+      "applicationCategory": "UtilitiesApplication",
+      "operatingSystem": "Windows 10, Windows 11",
+      "inLanguage": ["en", "ru"],
+      "isAccessibleForFree": true,
+      "downloadUrl": "https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer.exe",
+      "license": "https://github.com/azxasd69/site-restorer/blob/main/LICENSE",
+      "author": {
+        "@type": "Person",
+        "name": "azxasd69",
+        "url": "https://github.com/azxasd69"
+      },
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "RUB",
+        "availability": "https://schema.org/InStock"
+      },
+      "sameAs": ["https://github.com/azxasd69/site-restorer"]
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://azxasd69.github.io/site-restorer/en/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Do I need Python or anything else?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. The interpreter and Tcl/Tk are packed into the executable, so it runs on a clean Windows install. Python is only useful for serving the copy with python -m http.server; any static server will do."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What if the archive saved nothing?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The report will say so, and the app will not invent content. It is worth trying domain variants with and without www and nearby years: the closest snapshots are probed for every URL."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How long does a restore take?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "It depends on the site and on archive limits: minutes for a small site, hours for thousands of URLs. Resuming lets you stop and continue later."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Will product images and photos come back?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Only if the archive captured them. Internet Archive crawlers often save pages but not every image."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Will the cart, sign-in and search work?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. The copy is static: pages, styles, scripts and files are restored; anything that needs server-side logic and a database will not work."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is this legal?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The tool is built for restoring your own sites; it does not bypass protection or spoof the User-Agent. Publishing a copy of someone else's site is not allowed. The app is MIT licensed."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
 </head>
 <body id="top">
 <a class="skip-link" href="#main">Skip to content</a>
