@@ -11,7 +11,6 @@ mod sanitize;
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 use core::{Engine, Progress};
-use sanitize::sanitize_site;
 use std::path::PathBuf;
 
 fn main() {
@@ -26,12 +25,17 @@ fn main() {
 
     #[cfg(feature = "gui")]
     {
+        let title = if std::env::var("SR_LANG").as_deref() == Ok("en") {
+            i18n::EN.title
+        } else {
+            i18n::RU.title
+        };
         let options = eframe::NativeOptions {
             renderer: eframe::Renderer::Glow,
             viewport: eframe::egui::ViewportBuilder::default()
                 .with_inner_size([880.0, 740.0])
                 .with_min_inner_size([840.0, 700.0])
-                .with_title(i18n::RU.title),
+                .with_title(title),
             ..Default::default()
         };
         let run = eframe::run_native(
@@ -57,6 +61,8 @@ struct Args {
     out: PathBuf,
     limit: usize,
     workers: usize,
+    rate: f64,
+    lang: String,
 }
 
 fn parse_args(args: &[String]) -> Args {
@@ -65,6 +71,8 @@ fn parse_args(args: &[String]) -> Args {
         out: PathBuf::from("SiteRestore/site"),
         limit: 0,
         workers: 16,
+        rate: 0.0,
+        lang: "ru".to_string(),
     };
     let mut i = 0;
     while i < args.len() {
@@ -85,6 +93,17 @@ fn parse_args(args: &[String]) -> Args {
                 parsed.workers = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(16);
                 i += 2;
             }
+            "--lang" => {
+                parsed.lang = args.get(i + 1).cloned().unwrap_or_else(|| "ru".to_string());
+                i += 2;
+            }
+            "--rate" => {
+                parsed.rate = args
+                    .get(i + 1)
+                    .and_then(|v| v.parse::<f64>().ok())
+                    .unwrap_or(0.0);
+                i += 2;
+            }
             _ => i += 1,
         }
     }
@@ -93,8 +112,13 @@ fn parse_args(args: &[String]) -> Args {
 
 fn cli(args: &[String]) -> i32 {
     let parsed = parse_args(args);
+    // Язык влияет на GUI (окно читает SR_LANG); сообщения CLI остаются русскими.
+    if parsed.lang == "en" {
+        // SAFETY: до запуска потоков, окружение больше не меняется.
+        unsafe { std::env::set_var("SR_LANG", "en") };
+    }
     if parsed.site.is_empty() {
-        eprintln!("использование: site-restorer --cli --site <адрес> [--out <папка>] [--limit N] [--workers N]");
+        eprintln!("использование: site-restorer --cli --site <адрес> [--out <папка>] [--workers N] [--rate N] [--limit N]");
         return 2;
     }
     let Some(mut engine) = Engine::new(&parsed.site, &parsed.out, parsed.workers, parsed.limit)
@@ -103,6 +127,7 @@ fn cli(args: &[String]) -> i32 {
         return 2;
     };
 
+    engine.set_rate(parsed.rate);
     engine.set_progress_handler(|p: &Progress| match p.stage {
         "log" => println!("{}", p.text),
         "download" => {
@@ -118,6 +143,7 @@ fn cli(args: &[String]) -> i32 {
                     p.missing,
                     p.errors
                 );
+                let _ = p.eta;
             }
         }
         _ => {

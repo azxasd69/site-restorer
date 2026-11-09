@@ -40,7 +40,6 @@ pub struct T {
     pub bad_address: &'static str,
     pub need_out: &'static str,
     pub help_text: &'static str,
-    pub lang_label: &'static str,
 }
 
 pub static RU: T = T {
@@ -77,7 +76,6 @@ pub static RU: T = T {
     hint: "Вставьте адрес — можно ссылку из письма, поиска или архива.",
     bad_address: "⚠ Не разобрал адрес — проверьте написание домена.",
     need_out: "Укажите папку для копии.",
-    lang_label: "Язык",
     help_text: "ЧТО ДЕЛАЕТ ПРОГРАММА\n\
 Скачивает из Wayback Machine (Internet Archive) все сохранённые страницы и файлы\n\
 указанного сайта и собирает статическую копию для локального просмотра.\n\n\
@@ -134,7 +132,6 @@ pub static EN: T = T {
     hint: "Paste an address — a link from an e-mail, search results or the archive.",
     bad_address: "⚠ Could not parse the address — check the domain spelling.",
     need_out: "Choose an output folder.",
-    lang_label: "Language",
     help_text: "WHAT IT DOES\n\
 Downloads every archived page and file of a site from the Wayback Machine\n\
 (Internet Archive) and builds a static copy for local viewing.\n\n\

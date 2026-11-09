@@ -168,6 +168,11 @@ struct Shared {
     counters: Counters,
     types: Mutex<TypeCounts>,
     cb: Option<Cb>,
+    /// Глобальная пауза после серии 429: её соблюдают все воркеры, а не только контроллер.
+    pause_until: Mutex<Instant>,
+    /// Минимальный интервал между запросами (наносекунды), 0 — без ограничения.
+    rate_nanos: AtomicU64,
+    rate_next: Mutex<Instant>,
 }
 
 impl Shared {
@@ -182,6 +187,8 @@ impl Shared {
     }
 
     fn fetch(&self, url: &str) -> Result<(u16, Vec<u8>, Option<f64>), String> {
+        self.wait_if_paused();
+        self.rate_wait();
         let mut resp = self
             .agent
             .get(url)
@@ -197,6 +204,50 @@ impl Shared {
             .and_then(|v| v.parse::<f64>().ok());
         let body = resp.body_mut().read_to_vec().map_err(|e| e.to_string())?;
         Ok((status, body, retry_after))
+    }
+
+    /// Поставить глобальную паузу: воркеры увидят её перед следующим запросом.
+    fn pause(&self, seconds: f64) {
+        let until = Instant::now() + Duration::from_secs_f64(seconds.max(0.0));
+        *self.pause_until.lock().unwrap() = until;
+    }
+
+    fn wait_if_paused(&self) {
+        loop {
+            let until = *self.pause_until.lock().unwrap();
+            let now = Instant::now();
+            if now >= until {
+                return;
+            }
+            if self.cancel.load(Ordering::Relaxed) {
+                return;
+            }
+            let left = (until - now).min(Duration::from_millis(200));
+            std::thread::sleep(left);
+        }
+    }
+
+    /// Лимит запросов в секунду (общий для всех воркеров).
+    fn rate_wait(&self) {
+        let nanos = self.rate_nanos.load(Ordering::Relaxed);
+        if nanos == 0 {
+            return;
+        }
+        let interval = Duration::from_nanos(nanos);
+        let slot = {
+            let mut next = self.rate_next.lock().unwrap();
+            let now = Instant::now();
+            let slot = if *next > now { *next } else { now };
+            *next = slot + interval;
+            slot
+        };
+        loop {
+            let now = Instant::now();
+            if now >= slot || self.cancel.load(Ordering::Relaxed) {
+                return;
+            }
+            std::thread::sleep((slot - now).min(Duration::from_millis(100)));
+        }
     }
 
     fn sleep(&self, seconds: f64) {
@@ -260,8 +311,13 @@ impl Shared {
                             let _ = fs::copy(&tmp, &full);
                             let _ = fs::remove_file(&tmp);
                         }
-                        ok = true;
-                        size = body.len();
+                        // файл мог не пережить переименование — считаем успех только по факту
+                        if let Ok(meta) = fs::metadata(&full) {
+                            if meta.len() > 0 {
+                                ok = true;
+                                size = body.len();
+                            }
+                        }
                     }
                     break;
                 }
@@ -350,6 +406,9 @@ impl Engine {
                 counters: Counters::default(),
                 types: Mutex::new(TypeCounts::default()),
                 cb: None,
+                pause_until: Mutex::new(Instant::now()),
+                rate_nanos: AtomicU64::new(0),
+                rate_next: Mutex::new(Instant::now()),
             }),
             cb: None,
             started: Instant::now(),
@@ -361,7 +420,11 @@ impl Engine {
     pub fn set_progress_handler(&mut self, cb: impl Fn(&Progress) + Send + Sync + 'static) {
         let shared: Cb = Arc::new(cb);
         self.cb = Some(Arc::clone(&shared));
-        // пересоздаём Shared с обработчиком (он нужен воркерам для журнала)
+        // пересоздаём Shared с обработчиком (он нужен воркерам для журнала),
+        // сохраняя уже настроенные паузу и лимит скорости
+        let paused = *self.shared.pause_until.lock().unwrap();
+        let rate = self.shared.rate_nanos.load(Ordering::Relaxed);
+        let next = *self.shared.rate_next.lock().unwrap();
         self.shared = Arc::new(Shared {
             agent: self.shared.agent.clone(),
             agent_archive: self.shared.agent_archive.clone(),
@@ -371,13 +434,27 @@ impl Engine {
             counters: Counters::default(),
             types: Mutex::new(TypeCounts::default()),
             cb: Some(shared),
+            pause_until: Mutex::new(paused),
+            rate_nanos: AtomicU64::new(rate),
+            rate_next: Mutex::new(next),
         });
+    }
+
+    /// Ограничение скорости: запросов в секунду (0 — без ограничения).
+    pub fn set_rate(&mut self, rate: f64) {
+        let nanos = if rate > 0.0 {
+            (1_000_000_000.0 / rate) as u64
+        } else {
+            0
+        };
+        self.shared.rate_nanos.store(nanos, Ordering::Relaxed);
     }
 
     pub fn cancel_token(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.shared.cancel)
     }
 
+    #[allow(dead_code)] // публичный API: используется тестами и внешними вызовами
     pub fn cancel(&self) {
         self.shared.cancel.store(true, Ordering::Relaxed);
     }
@@ -429,12 +506,8 @@ impl Engine {
         let mut pages = 1usize;
         match self.shared.fetch(&self.cdx_query("showNumPages=true&output=json")) {
             Ok((200, body, _)) => {
-                let text = String::from_utf8_lossy(&body);
-                let digits: String = text.chars().filter(|c| c.is_ascii_digit()).collect();
-                if let Ok(n) = digits.parse::<usize>() {
-                    if n > 0 {
-                        pages = n;
-                    }
+                if let Some(n) = parse_pages(&String::from_utf8_lossy(&body)) {
+                    pages = n;
                 }
             }
             Ok((code, _, _)) => self
@@ -461,7 +534,9 @@ impl Engine {
         }
         if rows.is_empty() && pages > 1 {
             let max_pages = pages.min(MAX_PAGES);
-            for page in 0..max_pages {
+            let mut page = 0usize;
+            let mut attempts = 0u32;
+            while page < max_pages {
                 if self.shared.cancel.load(Ordering::Relaxed) {
                     return Err("cancelled".to_string());
                 }
@@ -476,27 +551,45 @@ impl Engine {
                 );
                 match self.shared.fetch(&query) {
                     Ok((200, body, _)) => {
+                        attempts = 0;
                         let chunk = parse_rows(&body);
                         let got = chunk.len();
                         rows.extend(chunk);
+                        page += 1;
                         if got < PAGE_LIMIT {
                             break;
                         }
+                        continue;
                     }
                     Ok((code, _, retry)) => {
                         if code == 429 || code >= 500 {
+                            attempts += 1;
+                            if attempts >= 3 {
+                                self.shared.log(format!(
+                                    "CDX: страница {page} — HTTP {code} после {attempts} попыток, останавливаюсь"
+                                ));
+                                self.inv_failed = true;
+                                break;
+                            }
                             let wait = retry.unwrap_or(15.0);
                             self.shared.log(format!("CDX: HTTP {code}, пауза {wait:.0} с"));
                             self.shared.sleep(wait);
                             continue;
                         }
+                        self.shared.log(format!("CDX: страница {page} — HTTP {code}"));
                         self.inv_failed = true;
                         break;
                     }
                     Err(err) => {
-                        self.shared.log(format!("CDX: страница {page} — ошибка {err}"));
-                        self.inv_failed = true;
-                        break;
+                        attempts += 1;
+                        if attempts >= 3 {
+                            self.shared
+                                .log(format!("CDX: страница {page} — ошибка {err}"));
+                            self.inv_failed = true;
+                            break;
+                        }
+                        self.shared.sleep(5.0);
+                        continue;
                     }
                 }
             }
@@ -639,7 +732,7 @@ impl Engine {
                         if bad_streak >= 3 {
                             shared.gate.set_limit(MIN_THREADS);
                             shared.log("много 429 — пауза 120 с, потоков: 2");
-                            shared.sleep(120.0);
+                            shared.pause(120.0);
                             bad_streak = 0;
                         } else {
                             shared.gate.set_limit(limit / 2);
@@ -904,7 +997,9 @@ impl Engine {
                     continue;
                 }
                 stats.refs += 1;
-                let clean = raw.split('?').next().unwrap_or("").split('#').next().unwrap_or("");
+                let clean = crate::sanitize::pct_decode(
+                    raw.split('?').next().unwrap_or("").split('#').next().unwrap_or(""),
+                );
                 let target = path
                     .parent()
                     .unwrap_or(Path::new("."))
@@ -1000,6 +1095,9 @@ struct Index {
     paths: HashMap<String, String>,
     by_name: HashMap<String, String>,
     by_kind: HashMap<(String, String), String>,
+    /// Скомпилированы один раз: resolve() вызывается на каждую ссылку.
+    cache_rx: Regex,
+    resize_rx: Regex,
 }
 
 impl Index {
@@ -1008,10 +1106,14 @@ impl Index {
             r"(?i)^bitrix/cache/(css|js)/s1/[^/]+/[^/]+/([a-z_]+)_[0-9a-f]+_v1",
         )
         .unwrap();
+        let resize_rx =
+            Regex::new(r"(?i)^upload/resize_cache/iblock/([0-9a-z]+)/[^/]+/(.+)$").unwrap();
         let mut index = Self {
             paths: HashMap::new(),
             by_name: HashMap::new(),
             by_kind: HashMap::new(),
+            cache_rx: cache_rx.clone(),
+            resize_rx,
         };
         for path in walk_files(root) {
             let rel = path
@@ -1037,17 +1139,13 @@ impl Index {
         if let Some(found) = self.paths.get(&key) {
             return Some(found.clone());
         }
-        let cache_rx =
-            Regex::new(r"(?i)^bitrix/cache/(css|js)/s1/[^/]+/[^/]+/([a-z_]+)_[0-9a-f]+_v1").unwrap();
-        if let Some(caps) = cache_rx.captures(&key) {
+        if let Some(caps) = self.cache_rx.captures(&key) {
             let slot = (caps[1].to_lowercase(), caps[2].to_lowercase());
             if let Some(found) = self.by_kind.get(&slot) {
                 return Some(found.clone());
             }
         }
-        let resize_rx =
-            Regex::new(r"(?i)^upload/resize_cache/iblock/([0-9a-z]+)/[^/]+/(.+)$").unwrap();
-        if let Some(caps) = resize_rx.captures(&key) {
+        if let Some(caps) = self.resize_rx.captures(&key) {
             let orig = format!("upload/iblock/{}/{}", &caps[1], &caps[2]).to_lowercase();
             if let Some(found) = self.paths.get(&orig) {
                 return Some(found.clone());
@@ -1135,6 +1233,36 @@ fn parse_rows(body: &[u8]) -> Vec<Vec<String>> {
         }
     }
     rows
+}
+
+
+/// Сколько страниц в CDX: значение рядом с "numpages" (форматы ответа различаются).
+fn parse_pages(text: &str) -> Option<usize> {
+    let hay = if text.is_ascii() {
+        text.to_ascii_lowercase()
+    } else {
+        text.to_string()
+    };
+    let mut from = 0usize;
+    while let Some(pos) = hay[from..].find("numpages") {
+        let tail = &text[from + pos + "numpages".len()..];
+        let digits: String = tail
+            .chars()
+            .skip_while(|c| !c.is_ascii_digit())
+            .take_while(|c| c.is_ascii_digit())
+            .collect();
+        if let Ok(n) = digits.parse::<usize>() {
+            if n > 0 {
+                return Some(n);
+            }
+        }
+        from += pos + "numpages".len();
+    }
+    let trimmed = text.trim();
+    if !trimmed.is_empty() && trimmed.chars().all(|c| c.is_ascii_digit()) {
+        return trimmed.parse::<usize>().ok().filter(|n| *n > 0);
+    }
+    None
 }
 
 fn sniff_charset(data: &[u8]) -> Option<String> {
@@ -1263,6 +1391,14 @@ mod tests {
         assert_eq!(rows[0][0], "20020120142510");
         assert_eq!(rows[0][1], "http://example.com:80/");
         assert_eq!(rows[1][1], "https://example.com/a");
+    }
+
+    #[test]
+    fn parse_pages_variants() {
+        assert_eq!(parse_pages(r#"[["numpages"],["912"]]"#), Some(912));
+        assert_eq!(parse_pages(r#"{"pages": 3}"#), None);
+        assert_eq!(parse_pages("12"), Some(12));
+        assert_eq!(parse_pages(""), None);
     }
 
     #[test]

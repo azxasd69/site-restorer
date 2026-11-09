@@ -22,6 +22,19 @@ enum Msg {
     Done(Result<String, String>),
 }
 
+#[derive(Clone, Copy)]
+enum Stage {
+    Idle,
+    Inventory,
+    Download,
+    Build,
+    Verify,
+    Report,
+    Done,
+    Stopped,
+    Error,
+}
+
 pub struct App {
     site: String,
     out: String,
@@ -31,7 +44,7 @@ pub struct App {
     show_help: bool,
     running: bool,
     overall: f32,
-    stage: &'static str,
+    stage: Stage,
     status: String,
     done: usize,
     total: usize,
@@ -40,6 +53,7 @@ pub struct App {
     errors: usize,
     bytes: u64,
     bps: f64,
+    eta: u64,
     threads: usize,
     types: [usize; 8],
     rx: Option<Receiver<Msg>>,
@@ -64,7 +78,7 @@ impl App {
             show_help: false,
             running: false,
             overall: 0.0,
-            stage: lang.t().stage_idle,
+            stage: Stage::Idle,
             status: lang.t().waiting.to_string(),
             done: 0,
             total: 0,
@@ -73,6 +87,7 @@ impl App {
             errors: 0,
             bytes: 0,
             bps: 0.0,
+            eta: 0,
             threads: 0,
             types: [0; 8],
             rx: None,
@@ -80,6 +95,29 @@ impl App {
             pending_start: std::env::var("SR_AUTOSTART")
                 .map(|v| !v.is_empty())
                 .unwrap_or(false),
+        }
+    }
+
+    fn stage_label(&self) -> &'static str {
+        let t = self.lang.t();
+        match self.stage {
+            Stage::Idle => t.stage_idle,
+            Stage::Inventory => t.stage_inventory,
+            Stage::Download => t.stage_download,
+            Stage::Build => t.stage_build,
+            Stage::Verify => t.stage_verify,
+            Stage::Report => t.stage_report,
+            Stage::Done => t.stage_done,
+            Stage::Stopped => t.stopped,
+            Stage::Error => t.error,
+        }
+    }
+
+    fn refresh_note(&mut self) {
+        if self.site.trim().is_empty() {
+            self.note = self.lang.t().hint.to_string();
+        } else {
+            self.analyse();
         }
     }
 
@@ -134,7 +172,7 @@ impl App {
         self.rx = Some(rx);
         self.running = true;
         self.overall = 0.0;
-        self.stage = t.stage_inventory;
+        self.stage = Stage::Inventory;
         self.status = t.preparing.to_string();
         self.push_log(format!("{} → {}", host, out.display()), Level::Ok);
 
@@ -143,13 +181,12 @@ impl App {
                 .run()
                 .map(|o| {
                     format!(
-                        "{}: {} / {}, pages {}, broken {}. {}",
+                        "скачано {} из {}, страниц {}, битых ссылок {} — отчёт: {}",
                         o.ok,
                         o.total,
                         o.stats.pages,
                         o.stats.broken,
-                        o.report.display(),
-                        ""
+                        o.report.display()
                     )
                 })
                 .map_err(|e| e);
@@ -165,25 +202,26 @@ impl App {
         }
     }
 
-    fn poll(&mut self) {
+    fn poll(&mut self, ctx: &egui::Context) {
         let Some(rx) = self.rx.take() else { return };
         let mut keep = true;
+        let mut changed = false;
         loop {
             match rx.try_recv() {
                 Ok(Msg::Progress(p)) => {
+                    changed = true;
                     if p.stage == "log" {
                         self.push_log(p.text.clone(), Level::Warn);
                         continue;
                     }
                     self.overall = p.overall;
-                    let t = self.lang.t();
                     self.stage = match p.stage {
-                        "inventory" => t.stage_inventory,
-                        "download" => t.stage_download,
-                        "build" => t.stage_build,
-                        "verify" => t.stage_verify,
-                        "report" => t.stage_report,
-                        _ => t.stage_idle,
+                        "inventory" => Stage::Inventory,
+                        "download" => Stage::Download,
+                        "build" => Stage::Build,
+                        "verify" => Stage::Verify,
+                        "report" => Stage::Report,
+                        _ => Stage::Idle,
                     };
                     if !p.text.is_empty() {
                         self.status = p.text.clone();
@@ -195,6 +233,7 @@ impl App {
                     self.errors = p.errors;
                     self.bytes = p.bytes;
                     self.bps = p.bps;
+                    self.eta = p.eta;
                     self.threads = p.threads;
                     for (idx, entry) in p.types.iter().enumerate() {
                         self.types[idx * 2] = entry.1;
@@ -202,22 +241,24 @@ impl App {
                     }
                 }
                 Ok(Msg::Done(result)) => {
+                    changed = true;
                     keep = false;
                     self.running = false;
                     self.cancel = None;
                     match result {
-                        Ok(_text) => {
+                        Ok(text) => {
+                            self.push_log(text, Level::Ok);
                             self.overall = 100.0;
-                            self.stage = self.lang.t().stage_done;
+                            self.stage = Stage::Done;
                             self.status = self.lang.t().built.to_string();
                         }
                         Err(err) if err == "cancelled" => {
-                            self.stage = self.lang.t().stopped;
+                            self.stage = Stage::Stopped;
                             self.status = self.lang.t().stopped.to_string();
                         }
                         Err(err) => {
                             self.push_log(format!("{}: {err}", self.lang.t().error), Level::Err);
-                            self.stage = self.lang.t().error;
+                            self.stage = Stage::Error;
                             self.status = self.lang.t().error.to_string();
                         }
                     }
@@ -233,6 +274,11 @@ impl App {
         }
         if keep {
             self.rx = Some(rx);
+        }
+        if changed {
+            // финальное сообщение приходит уже после остановки прогона —
+            // без этого кадра оно осталось бы непоказанным
+            ctx.request_repaint();
         }
     }
 }
@@ -262,7 +308,7 @@ fn bar(ui: &mut egui::Ui, frac: f32, height: f32, width: f32) {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.poll();
+        self.poll(ui.ctx());
         if self.pending_start && !self.running {
             self.pending_start = false;
             self.start();
@@ -283,6 +329,7 @@ impl eframe::App for App {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
                     if ui.button(self.lang.other().label()).clicked() {
                         self.lang = self.lang.other();
+                        self.refresh_note();
                     }
                 });
             });
@@ -391,7 +438,7 @@ impl eframe::App for App {
                 .inner_margin(egui::Margin::same(14))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new(self.stage).strong());
+                        ui.label(egui::RichText::new(self.stage_label()).strong());
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.label(format!("{:.0} %", self.overall));
                         });
@@ -432,6 +479,9 @@ impl eframe::App for App {
                             ))
                             .weak(),
                         );
+                        if self.eta > 0 {
+                            ui.label(egui::RichText::new(format!("~{} s", self.eta)).weak());
+                        }
                     }
                     if self.bytes > 0 {
                         ui.label(
