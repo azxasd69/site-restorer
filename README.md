@@ -15,11 +15,30 @@
 
 ---
 
-## Зачем
+## Почему появился проект
 
-Сайт умер, домен ещё резолвится, хостинг отвечает «нет сайта» — а контент нужен.
-Веб-архив хранит копии, но вытащить их вручную больно: тысячи URL, лимиты,
-переписанные ссылки, битые ассеты. Site Restorer делает это сам.
+В ночь с 1 на 2 ноября 2026 года хостинг-провайдер **Beget** пережил масштабную
+кибератаку: злоумышленники получили доступ к управляющему контуру инфраструктуры
+и запустили скрипты удаления данных. Провайдер подтвердил потерю содержимого
+виртуальных серверов, объектного хранилища S3 и кластеров Kubernetes; бинарные
+резервные копии VPS также оказались утрачены
+([3DNews](https://3dnews.ru/1150814/hostingprovayder-beget-podtverdil-poteryu-dannih-klientov-posle-ataki),
+[Habr](https://habr.com/ru/news/1102974/),
+[DW](https://www.dw.com/ru/hostingprovajder-beget-ustranaet-masstabnyj-sboj-inzenery-vrucnuu-vosstanavlivaut-infrastrukturu-klienty-zaluutsa-na-nedostupnost-sajtov/a-79828347)).
+
+Сайт, с которого начался этот проект, размещался на Beget и оказался среди
+пострадавших: домен по-прежнему резолвился на IP провайдера, но сервер не отвечал,
+а собственных резервных копий не осталось. Единственным источником контента
+оказался веб-архив — 1638 сохранённых адресов и 9476 снимков за 2016–2026 годы.
+
+Вытащить их вручную нереально: тысячи URL, лимиты архива, переписанные ссылки,
+битые ассеты, кэш CMS с хэшами в именах файлов. Пришлось написать инструмент —
+так и появился Site Restorer. Первая восстановленная копия: 1609 из 1638 адресов
+(98,2 %), весь каталог и блог; подробности — в
+[docs/prokupol-case.md](docs/prokupol-case.md).
+
+Если ваш сайт пострадал в той же аварии — начните с архива, а не с паники:
+у большинства «погибших» сайтов текстовая часть сохраняется полностью.
 
 ## Возможности
 
@@ -198,6 +217,10 @@ coverage report.
 ```powershell
 SiteRestorer.exe --cli --site example.com --out D:\mirror --workers 16
 ```
+
+The project started after the November 2026 Beget hosting incident, when a site
+hosted there was lost along with its backups and the web archive remained the only
+source of content.
 
 Only what the archive actually saved can be recovered; dynamic CMS features
 (cart, login, AJAX) do not work in a static copy. Use it for your own sites and
