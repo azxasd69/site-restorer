@@ -772,7 +772,10 @@ impl Engine {
                             bytes: shared.counters.bytes.load(Ordering::Relaxed),
                             bps,
                             threads: shared.gate.limit(),
-                            eta: if done > 0 && total > done {
+                            eta: if done > 0
+                                && total > done
+                                && !shared.cancel.load(Ordering::Relaxed)
+                            {
                                 ((total - done) as f64 / (done as f64 / elapsed)) as u64
                             } else {
                                 0
@@ -996,6 +999,13 @@ impl Engine {
                 {
                     continue;
                 }
+                // внутри <script> регулярка ловит конструкции вида href=(...) — это не ссылки
+                if raw
+                    .chars()
+                    .any(|c| c.is_whitespace() || "(){},;'\"*`".contains(c))
+                {
+                    continue;
+                }
                 stats.refs += 1;
                 let clean = crate::sanitize::pct_decode(
                     raw.split('?').next().unwrap_or("").split('#').next().unwrap_or(""),
@@ -1034,7 +1044,13 @@ impl Engine {
         }
         let ok = self.shared.counters.ok.load(Ordering::Relaxed);
         let total = self.items.len();
-        let bytes = self.shared.counters.bytes.load(Ordering::Relaxed);
+        // объём считаем по готовой копии: при докачке счётчик сессии показал бы
+        // только докачанные файлы
+        let bytes: u64 = walk_files(&self.site_dir)
+            .iter()
+            .filter_map(|f| fs::metadata(f).ok())
+            .map(|m| m.len())
+            .sum();
         let doc = REPORT_TMPL
             .replace("{{host}}", &self.host)
             .replace("{{ok}}", &ok.to_string())
@@ -1095,6 +1111,8 @@ struct Index {
     paths: HashMap<String, String>,
     by_name: HashMap<String, String>,
     by_kind: HashMap<(String, String), String>,
+    /// Миниатюры Bitrix: (папка iblock, имя файла) -> путь в копии.
+    resized: HashMap<(String, String), String>,
     /// Скомпилированы один раз: resolve() вызывается на каждую ссылку.
     cache_rx: Regex,
     resize_rx: Regex,
@@ -1112,6 +1130,7 @@ impl Index {
             paths: HashMap::new(),
             by_name: HashMap::new(),
             by_kind: HashMap::new(),
+            resized: HashMap::new(),
             cache_rx: cache_rx.clone(),
             resize_rx,
         };
@@ -1129,6 +1148,14 @@ impl Index {
                     (caps[1].to_lowercase(), caps[2].to_lowercase()),
                     rel.clone(),
                 );
+            }
+            let lower_rel = rel.to_lowercase();
+            if let Some(caps) = index.resize_rx.captures(&lower_rel) {
+                let name = lower_rel.rsplit('/').next().unwrap_or("").to_string();
+                index
+                    .resized
+                    .entry((caps[1].to_lowercase(), name))
+                    .or_insert_with(|| rel.clone());
             }
         }
         index
@@ -1149,6 +1176,15 @@ impl Index {
             let orig = format!("upload/iblock/{}/{}", &caps[1], &caps[2]).to_lowercase();
             if let Some(found) = self.paths.get(&orig) {
                 return Some(found.clone());
+            }
+        }
+        // Обратная эвристика: страница ссылается на оригинал, а в архиве сохранена
+        // только уменьшенная копия (типичная ситуация у Bitrix-каталогов).
+        if let Some(rest) = key.strip_prefix("upload/iblock/") {
+            if let Some((folder, name)) = rest.split_once('/') {
+                if let Some(found) = self.resized.get(&(folder.to_string(), name.to_string())) {
+                    return Some(found.clone());
+                }
             }
         }
         let base = key.rsplit('/').next().unwrap_or(&key).to_string();
@@ -1294,7 +1330,35 @@ fn force_utf8(text: &str) -> String {
     let meta = Regex::new(r#"(?i)(charset\s*=\s*["']?\s*)([a-z0-9_.:\-]+)"#).unwrap();
     let css = Regex::new(r#"(?i)(@charset\s+["'])([^"']+)(["'])"#).unwrap();
     let out = meta.replace_all(text, "${1}utf-8").into_owned();
-    css.replace_all(&out, "${1}utf-8${3}").into_owned()
+    let out = css.replace_all(&out, "${1}utf-8${3}").into_owned();
+    ensure_charset_in_head(&out)
+}
+
+/// Браузер ищет кодировку только в первых 1024 байтах документа. Если объявление
+/// лежит глубже (обычное дело: длинный скрипт в начале head), добавляем свой
+/// <meta charset="utf-8"> сразу после <head>.
+fn ensure_charset_in_head(text: &str) -> String {
+    let declared = Regex::new(r#"(?i)charset\s*=\s*["']?\s*[a-z0-9_.:\-]+"#)
+        .ok()
+        .and_then(|rx| rx.find(text))
+        .map(|m| m.start())
+        .unwrap_or(usize::MAX);
+    if declared < 1024 {
+        return text.to_string();
+    }
+    let insert_at = match Regex::new(r"(?i)<head\b[^>]*>")
+        .ok()
+        .and_then(|rx| rx.find(text))
+        .map(|m| m.end())
+    {
+        Some(pos) => pos,
+        None => return text.to_string(),
+    };
+    let mut out = String::with_capacity(text.len() + 32);
+    out.push_str(&text[..insert_at]);
+    out.push_str("<meta charset=\"utf-8\">");
+    out.push_str(&text[insert_at..]);
+    out
 }
 
 fn is_error_page(body: &[u8]) -> bool {
@@ -1370,8 +1434,8 @@ th,td{padding:9px 12px;border-bottom:1px solid #eee;text-align:left}th{backgroun
 <h2>По типам файлов</h2><table><tr><th>Тип</th><th class="n">Скачано</th><th class="n">Всего</th><th class="n">Доля</th></tr>{{rows}}</table>
 <h2>Целостность</h2><table>
 <tr><td>Внутренних ссылок</td><td class="n">{{refs}}</td></tr>
-<tr><td>Битых ссылок</td><td class="n">{{broken}}</td></tr>
-<tr><td>Нет в архиве</td><td class="n">{{missing}}</td></tr>
+<tr><td>Битых ссылок <span style="color:#6b7280">(нет в копии)</span></td><td class="n">{{broken}}</td></tr>
+<tr><td>Отказов 404 при загрузке</td><td class="n">{{missing}}</td></tr>
 <tr><td>Ошибок загрузки</td><td class="n">{{errors}}</td></tr></table>
 <p style="color:#6b7280;margin-top:24px">Статическая копия: корзина, вход и AJAX исходного сайта не работают.
 Открывайте папку <b>site</b> любым локальным веб-сервером.</p>
@@ -1471,6 +1535,25 @@ mod build_tests {
     }
 
     #[test]
+    fn deep_charset_gets_meta_in_head() {
+        let mut body = String::from("<html><head><script>var a=1;</script>");
+        body.push_str(&"<!-- filler -->".repeat(80));
+        body.push_str(
+            "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=windows-1251\">\
+             </head><body>Привет</body></html>",
+        );
+        let out = force_utf8(&body);
+        let meta_at = out
+            .find("<meta charset=\"utf-8\">")
+            .expect("meta добавлена");
+        assert!(meta_at < 1024, "meta должна попасть в первые 1024 байта: {meta_at}");
+        assert!(out.contains("charset=utf-8"));
+
+        let early = "<html><head><meta charset=\"utf-8\"></head><body>x</body></html>";
+        assert_eq!(force_utf8(early), early, "корректный документ не меняем");
+    }
+
+    #[test]
     fn unquoted_attribute_is_rewritten() {
         let root = workdir("unquoted");
         put(
@@ -1514,6 +1597,43 @@ mod build_tests {
         assert!(html.contains("href='../css/s.css'") || html.contains("href=\"../css/s.css\""), "css-ссылка: {html}");
         let css = read(&root, "css/s.css");
         assert!(css.contains("url(../img/a.png)"), "css: {css}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn original_image_falls_back_to_resized_copy() {
+        let root = workdir("resize");
+        put(
+            &root,
+            "catalog/item/index.html",
+            b"<html><body><img src=\"/upload/iblock/f00/pic.png\"></body></html>",
+        );
+        put(
+            &root,
+            "upload/resize_cache/iblock/f00/138_110_1/pic.png",
+            b"\x89PNG\r\n\x1a\n",
+        );
+        build(&root);
+        let text = read(&root, "catalog/item/index.html");
+        assert!(
+            text.contains("../../upload/resize_cache/iblock/f00/138_110_1/pic.png"),
+            "текст: {text}"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn verify_ignores_javascript_artifacts() {
+        let root = workdir("jsnoise");
+        put(
+            &root,
+            "index.html",
+            b"<html><body><a href=\"/nope.html\">x</a><script>a.href=(document.location.protocol)</script></body></html>",
+        );
+        let engine = build(&root);
+        let stats = engine.verify();
+        assert_eq!(stats.refs, 1, "мусор из script не должен считаться ссылкой");
+        assert_eq!(stats.broken, 1);
         let _ = fs::remove_dir_all(&root);
     }
 

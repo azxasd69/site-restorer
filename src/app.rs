@@ -250,15 +250,18 @@ impl App {
                             self.push_log(text, Level::Ok);
                             self.overall = 100.0;
                             self.stage = Stage::Done;
+                            self.eta = 0;
                             self.status = self.lang.t().built.to_string();
                         }
                         Err(err) if err == "cancelled" => {
                             self.stage = Stage::Stopped;
+                            self.eta = 0;
                             self.status = self.lang.t().stopped.to_string();
                         }
                         Err(err) => {
                             self.push_log(format!("{}: {err}", self.lang.t().error), Level::Err);
                             self.stage = Stage::Error;
+                            self.eta = 0;
                             self.status = self.lang.t().error.to_string();
                         }
                     }

@@ -81,10 +81,28 @@ def decode_text(data, declared=None):
     return None, None
 
 
+HEAD_RX = re.compile(r"(?i)<head\b[^>]*>")
+
+
+def ensure_charset_in_head(text):
+    """Браузер ищет кодировку только в первых 1024 байтах: если объявление глубже,
+    добавляем свой <meta charset="utf-8"> сразу после <head>."""
+    m = META_CHARSET_RX.search(text)
+    declared = m.start() if m else len(text) + 1
+    if declared < 1024:
+        return text
+    head = HEAD_RX.search(text)
+    if not head:
+        return text
+    pos = head.end()
+    return text[:pos] + '<meta charset="utf-8">' + text[pos:]
+
+
 def force_utf8_charset(text):
     """Документ записан в UTF-8 — приводим объявления кодировки к utf-8."""
     text = META_CHARSET_RX.sub(lambda m: m.group(1) + "utf-8", text)
     text = CSS_CHARSET_DECL_RX.sub(lambda m: m.group(1) + "utf-8" + m.group(3), text)
+    text = ensure_charset_in_head(text)
     return text
 
 
