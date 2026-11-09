@@ -98,22 +98,36 @@ https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-
 
 ## Для LLM и агентов
 
-Сайт отдаёт машиночитаемые версии по спецификации [llms.txt v2](https://llmstxt.org/):
+`llms.txt` — предложение Jeremy Howard (Answer.AI) от 03.09.2024, текущая редакция — v2 (10.08.2026), [llmstxt.org](https://llmstxt.org/).
+Это **не стандарт** W3C/IETF: обязателен только `H1`, блок-описание и списки ссылок — конвенция.
+Google официально заявил (15.06.2026), что файл не нужен для поиска и не влияет на видимость
+([Search updates](https://developers.google.com/search/updates)); OpenAI, Anthropic и Perplexity
+публичного подтверждения чтения не давали. Поэтому файл — дешёвая страховка для агентов и
+инструментов (Chrome Lighthouse проверяет его в agentic browsing checks), а не рычаг SEO.
 
 | Файл | Что это |
 |---|---|
-| `/llms.txt` | Карта сайта: H1, блок-описание, разделы со списками `- [имя](url): пояснение` и `## Optional`. Ссылки ведут на markdown-версии страниц и документацию проекта |
+| `/llms.txt` | Карта сайта: H1, блок-описание, разделы со списками `- [имя](url): пояснение` и `## Optional` |
 | `/index.md` | Русская страница в чистом markdown (без навигации и скриптов) |
 | `/en/index.md` | Английская страница в markdown |
 
-В `<head>` обеих страниц — `<link rel="describedby" href="llms.txt">` (какой файл описывает страницу)
-и `<link rel="alternate" type="text/markdown" href="index.md">` (где лежит markdown-версия) —
-именно эти два rel-а рекомендует v2 спеки. Также добавлен JSON-LD:
-`SoftwareApplication` + `FAQPage`.
+В `<head>` обеих страниц — `<link rel="describedby" href="llms.txt">` и
+`<link rel="alternate" type="text/markdown" href="index.md">` — ровно эти два rel
+рекомендует v2. Также добавлен JSON-LD: `SoftwareApplication` и `FAQPage`.
 
-`robots.txt` разрешает всё (`Allow: /`), AI-краулеры (GPTBot, ClaudeBot, PerplexityBot,
-Google-Extended, CCBot и другие) не блокируются: проект открытый, ему нужна видимость
-в ответах ассистентов.
+Честные оговорки по разметке:
+
+- Rich snippet для `SoftwareApplication` требует `aggregateRating` или `review`. Рейтинга у
+  проекта нет, выдумывать его нельзя — разметка остаётся для машинного понимания, но
+  расширенного сниппета в Google не даст.
+- FAQ rich results с мая 2026 не показываются никому (документация Google удалена 15.06.2026),
+  `FAQPage` оставлен только как машиночитаемая структура вопросов.
+
+`robots.txt` разрешает всё (`Allow: /`) — AI-краулеры не блокируются: проект открытый, ему
+нужна видимость в ответах ассистентов. Актуальные user-agent'ы: `GPTBot`, `OAI-SearchBot`,
+`ChatGPT-User`, `ClaudeBot`, `Claude-User`, `Claude-SearchBot`, `PerplexityBot`,
+`Google-Extended` (только обучение Gemini, не поиск), `CCBot`, `Applebot-Extended`.
+Устарели и не используются: `anthropic-ai`, `Claude-Web`.
 
 **Правило поддержки:** при правке текста страницы обновлять и соответствующий `.md`.
 Забыть легко — поэтому `llms.txt` и `.md` лежат в репозитории рядом и ревьюятся вместе с HTML.
