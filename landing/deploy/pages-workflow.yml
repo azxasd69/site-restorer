@@ -1,0 +1,49 @@
+# Заготовка workflow для публикации лендинга на GitHub Pages.
+# Куда положить: .github/workflows/pages.yml в репозитории site-restorer.
+# После первого пуша: Settings → Pages → Source: GitHub Actions.
+#
+# Почему не «Deploy from a branch»: GitHub Pages при деплое из ветки
+# отдаёт только корень репозитория или папку /docs, а лендинг лежит
+# в /landing. Деплой артефактом публикует любую папку и не требует
+# переносить файлы и ломать структуру проекта.
+
+name: Deploy landing
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'landing/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: landing
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
