@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Как скачать сайт из Wayback Machine: файлы и режимы</title>
+<meta name="description" content="Как скачать страницу или весь сайт из Wayback Machine: адреса web.archive.org, режим id_, выгрузка адресов через CDX, wget и готовые инструменты, типичные ошибки.">
+<meta name="theme-color" content="#f3f4f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131519" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+
+<link rel="canonical" href="https://lastcopy.ru/guide/skachat-sajt-iz-wayback-machine/">
+<link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/skachat-sajt-iz-wayback-machine/">
+<link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/skachat-sajt-iz-wayback-machine/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Site Restorer">
+<meta property="og:title" content="Как скачать сайт из Wayback Machine: файлы и режимы">
+<meta property="og:description" content="Адреса web.archive.org, режим id_, выгрузка списка адресов через CDX, wget и готовые инструменты, типичные ошибки.">
+<meta property="og:url" content="https://lastcopy.ru/guide/skachat-sajt-iz-wayback-machine/">
+<meta property="og:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+<meta property="og:locale" content="ru_RU">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+
+<link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/style.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "@id": "https://lastcopy.ru/guide/skachat-sajt-iz-wayback-machine/#article",
+      "headline": "Как скачать сайт из Wayback Machine: файлы и режимы",
+      "description": "Адреса web.archive.org, режим id_, выгрузка списка адресов через CDX, wget и готовые инструменты, типичные ошибки.",
+      "inLanguage": "ru",
+      "datePublished": "2026-11-10",
+      "dateModified": "2026-11-10",
+      "author": { "@type": "Organization", "name": "Site Restorer", "url": "https://lastcopy.ru/" },
+      "publisher": { "@type": "Organization", "name": "Site Restorer", "url": "https://lastcopy.ru/" },
+      "mainEntityOfPage": "https://lastcopy.ru/guide/skachat-sajt-iz-wayback-machine/"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Главная", "item": "https://lastcopy.ru/" },
+        { "@type": "ListItem", "position": 2, "name": "Разборы", "item": "https://lastcopy.ru/guide/" },
+        { "@type": "ListItem", "position": 3, "name": "Скачать сайт из Wayback Machine", "item": "https://lastcopy.ru/guide/skachat-sajt-iz-wayback-machine/" }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Можно ли скачать сайт из Wayback Machine целиком?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Да, но не кнопкой. Wayback Machine отдаёт файлы по одному адресу, поэтому сначала нужно получить список сохранённых адресов через CDX-индекс, а затем скачать каждый. Готовые инструменты автоматизируют именно эти два шага." }
+        },
+        {
+          "@type": "Question",
+          "name": "Зачем нужен id_ в адресе?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Без модификатора архив отдаёт страницу с собственной панелью навигации и с переписанными ссылками на web.archive.org. С id_ отдаётся исходный файл: ссылки в нём ведут на оригинальный домен, и такую копию можно собирать локально." }
+        },
+        {
+          "@type": "Question",
+          "name": "Почему после скачивания нет стилей и картинок?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Потому что скачана только HTML-страница. Стили, скрипты и изображения лежат по своим адресам, и их нужно забирать отдельно — тем же проходом по списку адресов из CDX, с фильтром по типам файлов." }
+        },
+        {
+          "@type": "Question",
+          "name": "Сколько страниц можно скачать за один раз?",
+          "acceptedAnswer": { "@type": "Answer", "text": "CDX-индекс отдаёт до 50 000 адресов на домен за один запрос, при большем количестве используется постраничная выдача. Практический предел ограничен не списком, а лимитами самого архива на частоту запросов с одного IP." }
+        },
+        {
+          "@type": "Question",
+          "name": "Законно ли скачивать чужой сайт из архива?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Скачивать для личного анализа — как правило, да. Публиковать копию чужого сайта нельзя: контент защищён авторским правом, а у Internet Archive есть условия использования. Свой сайт восстанавливать можно без ограничений." }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="/" aria-label="Site Restorer — на главную">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v9"/><path d="M8 10l4 4 4-4"/><path d="M5 17h14"/></svg>
+      </span>
+      <span class="brand-name">Site Restorer</span>
+    </a>
+    <div class="header-actions">
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <nav class="breadcrumbs" aria-label="Хлебные крошки">
+    <a href="/">Главная</a><span>/</span><a href="/guide/">Разборы</a><span>/</span>Скачать сайт из Wayback Machine
+  </nav>
+
+  <article class="article">
+    <h1>Как скачать сайт из Wayback Machine</h1>
+    <div class="article-meta">
+      <span>Обновлено 10 ноября 2026</span>
+      <span>Чтение: 7 минут</span>
+      <span>Практика: Internet Archive</span>
+    </div>
+
+    <div class="tldr">
+      <p>Коротко</p>
+      <ol>
+        <li>Wayback Machine не отдаёт сайт архивом — он отдаёт файлы по одному адресу.</li>
+        <li>Сначала получают список сохранённых адресов через CDX-индекс, потом качают каждый.</li>
+        <li>В адресе нужен режим <code>id_</code>: без него приедет страница с панелью архива и переписанными ссылками.</li>
+        <li>HTML без стилей и картинок — не ошибка: это отдельные файлы, их надо забрать тем же проходом.</li>
+        <li>Скорость ограничивает сам архив, а не ваш интернет.</li>
+      </ol>
+    </div>
+
+    <p>Задача «скачать сайт из веб-архива» выглядит как одна кнопка, но распадается на две: получить список того, что архив сохранил, и забрать каждый файл. Ниже — как это делается вручную, чем автоматизируется и где обычно ломается.</p>
+
+    <div class="toc">
+      <p>Содержание</p>
+      <ol>
+        <li><a href="#what">Что именно можно скачать</a></li>
+        <li><a href="#urls">Как устроены адреса архива</a></li>
+        <li><a href="#single">Скачать одну страницу</a></li>
+        <li><a href="#whole">Скачать сайт целиком</a></li>
+        <li><a href="#tools">Инструменты и их пределы</a></li>
+        <li><a href="#errors">Типичные ошибки</a></li>
+        <li><a href="#after">Что делать после скачивания</a></li>
+        <li><a href="#faq">Частые вопросы</a></li>
+      </ol>
+    </div>
+
+    <h2 id="what">1. Что именно можно скачать</h2>
+    <table>
+      <thead><tr><th>Что нужно</th><th>Как это делается</th><th>Сложность</th></tr></thead>
+      <tbody>
+        <tr><td>Одна страница для чтения</td><td>Открыть снимок в браузере, сохранить как файл</td><td>Минута</td></tr>
+        <tr><td>Несколько страниц вручную</td><td>Каждую открыть и сохранить отдельно</td><td>Растёт линейно</td></tr>
+        <tr><td>Весь сайт</td><td>Список адресов через CDX + автоматическая загрузка</td><td>Нужен инструмент</td></tr>
+        <tr><td>Конкретный период</td><td>Выбрать снимки по датам, остальные игнорировать</td><td>Нужен фильтр</td></tr>
+      </tbody>
+    </table>
+    <p>Главное ограничение: архив хранит не «сайт», а отдельные ответы сервера на отдельные адреса. Всё, что не было запрошено краулером, отсутствует — и никакой инструмент этого не изменит.</p>
+
+    <h2 id="urls">2. Как устроены адреса архива</h2>
+    <p>Адрес снимка выглядит так:</p>
+    <pre class="code-body" style="border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:14px 16px;overflow-x:auto"><code>https://web.archive.org/web/20240101120000/https://example.com/about/</code></pre>
+    <p>Где <code>20240101120000</code> — метка времени снимка. Если указать только год, архив сам выберет ближайший снимок.</p>
+    <p>К метке можно добавить модификатор:</p>
+    <table>
+      <thead><tr><th>Модификатор</th><th>Что отдаёт</th><th>Когда нужен</th></tr></thead>
+      <tbody>
+        <tr><td><code>id_</code></td><td>исходный файл без изменений</td><td><strong>для сборки копии</strong></td></tr>
+        <tr><td><code>if_</code></td><td>страницу в рамке, без верхней панели</td><td>посмотреть, как выглядело</td></tr>
+        <tr><td>без модификатора</td><td>страницу с панелью архива и переписанными ссылками</td><td>только для чтения</td></tr>
+      </tbody>
+    </table>
+    <p>Разница принципиальная. Без <code>id_</code> в HTML все ссылки ведут обратно на <code>web.archive.org</code>, и локальная копия будет ходить в интернет вместо своих файлов. Поэтому при скачивании для восстановления берут именно <code>id_</code>:</p>
+    <pre class="code-body" style="border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:14px 16px;overflow-x:auto"><code>https://web.archive.org/web/20240101120000id_/https://example.com/about/</code></pre>
+
+    <h2 id="single">3. Скачать одну страницу</h2>
+    <ol>
+      <li>Откройте <code>web.archive.org</code> и введите адрес страницы.</li>
+      <li>Выберите нужную дату в календаре снимков.</li>
+      <li>Добавьте <code>id_</code> к метке времени и нажмите Enter — браузер покажет исходный файл.</li>
+      <li>Сохраните: <code>Ctrl+S</code> → «Веб-страница, только HTML».</li>
+    </ol>
+    <p>Так вы получите текст и разметку. Стилей и картинок в файле не будет — они подключаются по своим адресам, которых на диске нет. Для одной страницы это решается сохранением «Веб-страница, полностью», для сайта — нет: браузер заберёт ресурсы только одной страницы.</p>
+
+    <h2 id="whole">4. Скачать сайт целиком</h2>
+    <p>Порядок одинаковый у любого инструмента: сначала список, потом загрузка.</p>
+
+    <h3>Шаг 1. Получить список адресов</h3>
+    <p>Список отдаёт CDX-индекс — служебный интерфейс архива:</p>
+    <pre class="code-body" style="border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:14px 16px;overflow-x:auto"><code>https://web.archive.org/cdx/search/cdx?url=example.com&amp;matchType=domain&amp;output=json&amp;collapse=urlkey&amp;fl=timestamp,original,mimetype,statuscode</code></pre>
+    <p>Параметры, которые важны:</p>
+    <ul>
+      <li><code>matchType=domain</code> — все поддомены, а не одна страница;</li>
+      <li><code>collapse=urlkey</code> — одна строка на адрес вместо всех снимков;</li>
+      <li><code>fl</code> — какие поля вернуть: метка, адрес, тип, код ответа;</li>
+      <li><code>filter=statuscode:200</code> — отбросить редиректы и ошибки.</li>
+    </ul>
+    <p>На выходе — таблица «метка, адрес, тип». Это и есть план загрузки.</p>
+
+    <h3>Шаг 2. Забрать файлы</h3>
+    <p>Для каждого адреса запрос идёт в режиме <code>id_</code> с той меткой, что в списке:</p>
+    <pre class="code-body" style="border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:14px 16px;overflow-x:auto"><code>https://web.archive.org/web/20240101120000id_/https://example.com/about/</code></pre>
+    <p>Дальше начинается техническая часть, из-за которой самодельные скрипты обычно и останавливаются: лимиты архива (коды 429 и 503), обрывы соединений, тысячи адресов, повторная загрузка уже скачанного после перезапуска, ответы с кодом 200 и заглушкой внутри.</p>
+
+    <h2 id="tools">5. Инструменты и их пределы</h2>
+    <table>
+      <thead><tr><th>Инструмент</th><th>Что умеет</th><th>Ограничения</th></tr></thead>
+      <tbody>
+        <tr><td><code>wget</code></td><td>рекурсивная загрузка, докачка, фильтры</td><td>не понимает адреса архива: нужен готовый список и подстановка <code>id_</code>; кодировки и относительные ссылки придётся править отдельно</td></tr>
+        <tr><td>HTTrack</td><td>зеркалирование сайта по ссылкам</td><td>рассчитан на живой сайт; в архиве цепляет панель и служебные страницы</td></tr>
+        <tr><td>Скрипт на Python</td><td>полный контроль над логикой</td><td>всё пишется вручную: лимиты, повторы, кодировки, переписывание ссылок</td></tr>
+        <tr><td><a href="/">Site Restorer</a></td><td>список через CDX, параллельная загрузка с адаптивной конкурентностью, докачка, сборка копии, отчёт</td><td>не восстановит то, чего архив не сохранил; динамика (корзина, вход) не работает</td></tr>
+      </tbody>
+    </table>
+    <p>Практический вывод: <code>wget</code> и HTTrack хороши, когда есть список прямых адресов файлов на живом сервере. С архивом основная работа — не скачивание, а подготовка списка и обход лимитов.</p>
+
+    <div class="cta-inline">
+      <h3>Скачать Site Restorer</h3>
+      <p>Один exe для Windows и Linux: список адресов, загрузка, сборка копии и отчёт о полноте. MIT.</p>
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+
+    <h2 id="errors">6. Типичные ошибки</h2>
+    <ul>
+      <li><strong>Скачали без <code>id_</code>.</strong> Копия открывается, но тянет ресурсы с <code>web.archive.org</code> и разваливается без интернета.</li>
+      <li><strong>Забрали только HTML.</strong> Нет стилей, скриптов и картинок — нужен проход по всем типам файлов, а не только по <code>text/html</code>.</li>
+      <li><strong>Игнорировали коды ответов.</strong> Архив умеет отдавать 200 с заглушкой внутри; такой файл лучше отбросить, чем сохранить как страницу.</li>
+      <li><strong>Упёрлись в лимит.</strong> 429 и 503 — не сбой, а просьба подождать; без пауз и повторов загрузка встаёт на середине.</li>
+      <li><strong>Забыли про кодировку.</strong> Страницы 2010-х часто в <code>windows-1251</code>; без перекодировки в UTF-8 вместо текста будут кракозябры.</li>
+    </ul>
+
+    <h2 id="after">7. Что делать после скачивания</h2>
+    <p>Файлы на диске — ещё не сайт: нужно переписать ссылки в относительные, подставить ресурсы из кэша CMS, привести кодировки и открыть копию через локальный сервер. Полный порядок с проверками — в разборе <a href="/guide/vosstanovit-sajt-iz-veb-arhiva/">как восстановить сайт из веб-архива</a>.</p>
+    <p>Если архив ничего не сохранил, а сайт нужен — смотрите <a href="/guide/chto-delat-esli-hosting-poteryal-dannye/">что делать, когда хостинг потерял данные</a>: там порядок поиска других источников, домен и почта.</p>
+
+    <h2 id="faq">Частые вопросы</h2>
+    <h3>Можно ли скачать сайт из Wayback Machine целиком?</h3>
+    <p>Да, но не кнопкой. Wayback Machine отдаёт файлы по одному адресу, поэтому сначала получают список сохранённых адресов через CDX, а затем скачивают каждый. Готовые инструменты автоматизируют именно эти два шага.</p>
+
+    <h3>Зачем нужен <code>id_</code> в адресе?</h3>
+    <p>Без него архив отдаёт страницу с собственной панелью и переписанными ссылками на <code>web.archive.org</code>. С <code>id_</code> приходит исходный файл, и такую копию можно собирать локально.</p>
+
+    <h3>Почему после скачивания нет стилей и картинок?</h3>
+    <p>Потому что скачана только HTML-страница. Стили, скрипты и изображения — отдельные файлы по своим адресам, их нужно забирать тем же проходом по списку из CDX.</p>
+
+    <h3>Сколько страниц можно скачать за один раз?</h3>
+    <p>CDX отдаёт до 50 000 адресов на домен за запрос, больше — постранично. Реальный предел задают лимиты архива на частоту запросов с одного IP, а не размер списка.</p>
+
+    <h3>Законно ли скачивать чужой сайт из архива?</h3>
+    <p>Скачивать для личного анализа — как правило, да. Публиковать копию чужого сайта нельзя: контент защищён авторским правом, а у Internet Archive есть условия использования.</p>
+
+    <div class="article-cta">
+      <h2>Скачать и собрать копию за один проход</h2>
+      <p>Site Restorer делает обе части работы: получает список адресов из CDX, загружает файлы с паузами на лимитах, собирает локальную копию и показывает отчёт о полноте.</p>
+      <a class="btn btn-primary" href="/#download">Скачать для Windows</a>
+    </div>
+
+    <p class="article-note">Материал описывает публичные возможности Internet Archive и практику восстановления сайтов. Обновлено 10 ноября 2026.</p>
+  </article>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-bottom" style="margin-top:0;border-top:0;padding-top:0">
+      <span>© <span data-year>2026</span> Site Restorer. MIT.</span>
+      <span class="footer-note">Статистика посещений — Яндекс.Метрика; отключается в уведомлении или в браузере.</span>
+      <span><a href="/">Главная</a> · <a href="/guide/">Разборы</a> · <a href="/en/" hreflang="en">English</a> · <a href="/privacy/">Политика конфиденциальности</a> · <a href="#" data-consent-open>Настройки cookie</a></span>
+    </div>
+  </div>
+</footer>
+<script src="../../assets/app.js" defer></script>
+<script src="../../assets/consent.js?v=4" defer></script>
+</body>
+</html>

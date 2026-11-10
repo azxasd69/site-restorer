@@ -53,4 +53,20 @@
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>
+  <url>
+    <loc>https://lastcopy.ru/guide/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/guide/skachat-sajt-iz-wayback-machine/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/skachat-sajt-iz-wayback-machine/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/skachat-sajt-iz-wayback-machine/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
 </urlset>
