@@ -589,13 +589,13 @@ a:hover { text-decoration-color: currentColor; }
 
 /* ---------- Преимущества ---------- */
 
-.adv-grid {
+.benefit-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
 }
 
-.adv {
+.benefit {
   position: relative;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -605,7 +605,7 @@ a:hover { text-decoration-color: currentColor; }
   min-width: 0;
 }
 /* Левая полоса: половина — изумруд (что вернулось), половина — серый (что нет) */
-.adv::before {
+.benefit::before {
   content: "";
   position: absolute;
   inset: 0 auto 0 0;
@@ -614,7 +614,7 @@ a:hover { text-decoration-color: currentColor; }
   background: var(--accent);
 }
 
-.adv-num {
+.benefit-num {
   display: block;
   font-family: var(--mono);
   font-size: 11px;
@@ -623,18 +623,18 @@ a:hover { text-decoration-color: currentColor; }
   margin-bottom: 12px;
 }
 
-.adv h3 {
+.benefit h3 {
   font-size: 1.02rem;
   margin-bottom: 9px;
 }
 
-.adv p {
+.benefit p {
   font-size: 14.5px;
   line-height: 1.6;
   color: var(--muted);
 }
 
-.adv ul {
+.benefit ul {
   margin: 12px 0 0;
   padding: 0;
   list-style: none;
@@ -643,15 +643,15 @@ a:hover { text-decoration-color: currentColor; }
   font-size: 13px;
   color: var(--ink-2);
 }
-.adv ul li { display: flex; gap: 8px; align-items: baseline; }
-.adv ul li::before {
+.benefit ul li { display: flex; gap: 8px; align-items: baseline; }
+.benefit ul li::before {
   content: "·";
   color: var(--accent);
   font-weight: 700;
   flex: none;
 }
 
-.adv .adv-fact {
+.benefit .benefit-fact {
   display: inline-block;
   margin-top: 14px;
   padding: 3px 8px;
@@ -1221,7 +1221,7 @@ a:hover { text-decoration-color: currentColor; }
   .hero-grid { grid-template-columns: 1fr; gap: 38px; }
   .hero { padding-block: 52px 58px; }
   .hero-copy { padding: 0; }
-  .grid-3, .adv-grid, .dl-grid { grid-template-columns: repeat(2, 1fr); }
+  .grid-3, .benefit-grid, .dl-grid { grid-template-columns: repeat(2, 1fr); }
   .steps { grid-template-columns: repeat(2, 1fr); }
   .steps li:nth-child(3) { border-left: 0; }
   .steps li:nth-child(3), .steps li:nth-child(4) { border-top: 1px solid var(--line); }
@@ -1265,7 +1265,7 @@ a:hover { text-decoration-color: currentColor; }
   .stats { grid-template-columns: 1fr 1fr; gap: 18px 16px; }
   .stat:nth-child(3) { padding-left: 0; border-left: 0; }
   .stat:nth-child(3), .stat:nth-child(4) { border-top: 1px solid var(--line); padding-top: 16px; }
-  .grid-3, .grid-2, .adv-grid, .dl-grid, .compare, .footer-grid, .case-figures { grid-template-columns: 1fr; }
+  .grid-3, .grid-2, .benefit-grid, .dl-grid, .compare, .footer-grid, .case-figures { grid-template-columns: 1fr; }
   .steps { grid-template-columns: 1fr; }
   .steps li { border-left: 0; }
   .steps li + li { border-top: 1px solid var(--line); }

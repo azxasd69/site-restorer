@@ -30,7 +30,7 @@
 
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="../assets/img/touch-icon.png">
-<link rel="stylesheet" href="../assets/style.css?v=4">
+<link rel="stylesheet" href="../assets/style.css?v=5">
 <link rel="describedby" href="../llms.txt">
 <link rel="alternate" type="text/markdown" href="index.md" title="Markdown version of this page">
 <script src="../assets/app.js?v=2" defer></script>
@@ -140,7 +140,7 @@
     </a>
 
     <nav class="nav" id="site-nav" aria-label="Main navigation">
-      <a href="#advantages">Advantages</a>
+      <a href="#benefits">Advantages</a>
       <a href="#how">How it works</a>
       <a href="#case">Case</a>
       <a href="#faq">FAQ</a>
@@ -234,7 +234,7 @@
   </div>
 
   <!-- ADVANTAGES -->
-  <section class="section" id="advantages">
+  <section class="section" id="benefits">
     <div class="wrap">
       <div class="section-head">
         <p class="eyebrow">Advantages</p>
@@ -242,9 +242,9 @@
         <p class="lead">Not a feature list, but what you notice in the first half hour: speed, intact markup, honest numbers, archive completeness, the ability to continue later, and readable text in the files.</p>
       </div>
 
-      <div class="adv-grid">
-        <article class="adv">
-          <span class="adv-num">01 · SPEED</span>
+      <div class="benefit-grid">
+        <article class="benefit">
+          <span class="benefit-num">01 · SPEED</span>
           <h3>Multithreaded download</h3>
           <p>Pages, styles, scripts and images are fetched at the same time, and the thread count adapts to the archive's response: it grows while speed holds and drops when the server starts to slow down.</p>
           <ul>
@@ -252,11 +252,11 @@
             <li>HTTP 429 means a pause as the server asks, not a failed file</li>
             <li>optional rate limit when the link is shared</li>
           </ul>
-          <span class="adv-fact">1,200 files ≈ 4 minutes</span>
+          <span class="benefit-fact">1,200 files ≈ 4 minutes</span>
         </article>
 
-        <article class="adv">
-          <span class="adv-num">02 · RESULT</span>
+        <article class="benefit">
+          <span class="benefit-num">02 · RESULT</span>
           <h3>Automatic local assembly</h3>
           <p>What you get is not a folder of downloaded files but a working site: links are rewritten to relative paths, so the copy opens without the original domain and without the internet.</p>
           <ul>
@@ -264,11 +264,11 @@
             <li>CMS cache files with a hash in the name, thumbnails instead of originals</li>
             <li>the base tag is removed so paths resolve from the file</li>
           </ul>
-          <span class="adv-fact">75,387 links rewritten</span>
+          <span class="benefit-fact">75,387 links rewritten</span>
         </article>
 
-        <article class="adv">
-          <span class="adv-num">03 · TRUST</span>
+        <article class="benefit">
+          <span class="benefit-num">03 · TRUST</span>
           <h3>Honest completeness report</h3>
           <p>The report counts separately what came back, what the archive never stored, and what failed to download. Those are three different numbers and must not be mixed.</p>
           <ul>
@@ -276,11 +276,11 @@
             <li>broken links found by walking the finished pages</li>
             <li>an explicit warning that the copy is static</li>
           </ul>
-          <span class="adv-fact">report.html works offline</span>
+          <span class="benefit-fact">report.html works offline</span>
         </article>
 
-        <article class="adv">
-          <span class="adv-num">04 · COMPLETENESS</span>
+        <article class="benefit">
+          <span class="benefit-num">04 · COMPLETENESS</span>
           <h3>Addresses from every archived year</h3>
           <p>The index returns everything the crawler stored over ten years, not just the latest snapshot. When there is no snapshot for the chosen date, neighbouring years are tried.</p>
           <ul>
@@ -288,11 +288,11 @@
             <li>the index response is streamed: size and record count are visible</li>
             <li>truncation is not hidden — the log says so</li>
           </ul>
-          <span class="adv-fact">9,476 snapshots in one run</span>
+          <span class="benefit-fact">9,476 snapshots in one run</span>
         </article>
 
-        <article class="adv">
-          <span class="adv-num">05 · CONTINUATION</span>
+        <article class="benefit">
+          <span class="benefit-num">05 · CONTINUATION</span>
           <h3>Resume and re-run</h3>
           <p>A large site takes hours. You can stop the run, close the program and come back later: finished files are not requested again and work continues from where it stopped.</p>
           <ul>
@@ -300,11 +300,11 @@
             <li>an unfinished file stays under a temporary name</li>
             <li>folder structure and inventory are read by newer versions</li>
           </ul>
-          <span class="adv-fact">re-run without re-downloading</span>
+          <span class="benefit-fact">re-run without re-downloading</span>
         </article>
 
-        <article class="adv">
-          <span class="adv-num">06 · READABILITY</span>
+        <article class="benefit">
+          <span class="benefit-num">06 · READABILITY</span>
           <h3>Encodings and file integrity</h3>
           <p>Older sites were written in windows-1251 and KOI8-R. The program converts text to UTF-8 based on the content rather than the declaration, so Cyrillic does not turn into garbage.</p>
           <ul>
@@ -312,7 +312,7 @@
             <li>double-encoded text is repaired</li>
             <li>binary files behind a page address are copied as-is</li>
           </ul>
-          <span class="adv-fact">7 encodings → UTF-8</span>
+          <span class="benefit-fact">7 encodings → UTF-8</span>
         </article>
       </div>
 
@@ -686,7 +686,7 @@ python -m http.server 8080</code></pre>
       <div class="footer-col">
         <h4>Product</h4>
         <ul>
-          <li><a href="#advantages">Advantages</a></li>
+          <li><a href="#benefits">Advantages</a></li>
           <li><a href="#how">How it works</a></li>
           <li><a href="#case">Case</a></li>
           <li><a href="#download">Download</a></li>
