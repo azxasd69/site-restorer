@@ -35,4 +35,22 @@
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
+  <url>
+    <loc>https://lastcopy.ru/privacy/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/privacy/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lastcopy.ru/en/privacy/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/privacy/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/en/privacy/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/privacy/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lastcopy.ru/en/privacy/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/privacy/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
 </urlset>
