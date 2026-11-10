@@ -51,6 +51,9 @@ pub struct Progress {
     pub types: [(&'static str, usize, usize); 4],
 }
 
+/// Ответ архива: код, тело, `Retry-After`, `Content-Type`.
+type Fetched = (u16, Vec<u8>, Option<f64>, Option<String>);
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Stats {
     pub pages: usize,
@@ -190,7 +193,7 @@ impl Shared {
         }
     }
 
-    fn fetch(&self, url: &str) -> Result<(u16, Vec<u8>, Option<f64>, Option<String>), String> {
+    fn fetch(&self, url: &str) -> Result<Fetched, String> {
         self.wait_if_paused();
         self.rate_wait();
         let mut resp = self
@@ -274,13 +277,13 @@ impl Shared {
             return;
         }
         let full = self.mirror.join(&item.path);
-        if let Ok(meta) = fs::metadata(&full) {
-            if meta.len() > 0 {
-                self.counters.done.fetch_add(1, Ordering::Relaxed);
-                self.counters.ok.fetch_add(1, Ordering::Relaxed);
-                self.types.lock().unwrap().slot(item.kind)[0] += 1;
-                return;
-            }
+        if let Ok(meta) = fs::metadata(&full)
+            && meta.len() > 0
+        {
+            self.counters.done.fetch_add(1, Ordering::Relaxed);
+            self.counters.ok.fetch_add(1, Ordering::Relaxed);
+            self.types.lock().unwrap().slot(item.kind)[0] += 1;
+            return;
         }
 
         let year = &item.ts[..4.min(item.ts.len())];
@@ -328,16 +331,16 @@ impl Shared {
                             let _ = fs::remove_file(&tmp);
                         }
                         // файл мог не пережить переименование — считаем успех только по факту
-                        if let Ok(meta) = fs::metadata(&full) {
-                            if meta.len() > 0 {
-                                ok = true;
-                                size = body.len();
-                                if let Some(ct) = content_type {
-                                    self.content_types
-                                        .lock()
-                                        .unwrap()
-                                        .insert(item.path.clone(), ct);
-                                }
+                        if let Ok(meta) = fs::metadata(&full)
+                            && meta.len() > 0
+                        {
+                            ok = true;
+                            size = body.len();
+                            if let Some(ct) = content_type {
+                                self.content_types
+                                    .lock()
+                                    .unwrap()
+                                    .insert(item.path.clone(), ct);
                             }
                         }
                     }
@@ -1429,12 +1432,11 @@ impl Index {
         }
         // Обратная эвристика: страница ссылается на оригинал, а в архиве сохранена
         // только уменьшенная копия (типичная ситуация у Bitrix-каталогов).
-        if let Some(rest) = key.strip_prefix("upload/iblock/") {
-            if let Some((folder, name)) = rest.split_once('/') {
-                if let Some(found) = self.resized.get(&(folder.to_string(), name.to_string())) {
-                    return Some(found.clone());
-                }
-            }
+        if let Some(rest) = key.strip_prefix("upload/iblock/")
+            && let Some((folder, name)) = rest.split_once('/')
+            && let Some(found) = self.resized.get(&(folder.to_string(), name.to_string()))
+        {
+            return Some(found.clone());
         }
         let base = key.rsplit('/').next().unwrap_or(&key).to_string();
         if let Some(found) = self.by_name.get(&base) {
@@ -1535,10 +1537,10 @@ fn parse_pages(text: &str) -> Option<usize> {
             .skip_while(|c| !c.is_ascii_digit())
             .take_while(|c| c.is_ascii_digit())
             .collect();
-        if let Ok(n) = digits.parse::<usize>() {
-            if n > 0 {
-                return Some(n);
-            }
+        if let Ok(n) = digits.parse::<usize>()
+            && n > 0
+        {
+            return Some(n);
         }
         from += pos + "numpages".len();
     }

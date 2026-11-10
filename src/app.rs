@@ -19,7 +19,7 @@ enum Level {
 }
 
 enum Msg {
-    Progress(Progress),
+    Progress(Box<Progress>),
     Done(Result<String, String>),
 }
 
@@ -64,8 +64,6 @@ pub struct App {
     focus_site: bool,
     /// Момент последнего изменения поля адреса — для разбора по паузе.
     site_dirty_at: Option<f64>,
-    /// Текст, пришедший вставкой в этом кадре.
-    pasted: Option<String>,
 }
 
 /// Светлая тема одним местом: границы полей, фон всплывающих окон, скругления.
@@ -92,16 +90,17 @@ fn theme() -> egui::Visuals {
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         cc.egui_ctx.set_visuals(theme());
-        if let Some(mon) = cc.egui_ctx.input(|i| i.viewport().monitor_size) {
-            if mon.x > 400.0 && mon.y > 400.0 {
-                let size = egui::vec2(900.0, 660.0);
-                let pos = egui::pos2(
-                    ((mon.x - size.x) / 2.0).max(0.0),
-                    ((mon.y - 48.0 - size.y) / 2.0).max(0.0),
-                );
-                cc.egui_ctx
-                    .send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
-            }
+        if let Some(mon) = cc.egui_ctx.input(|i| i.viewport().monitor_size)
+            && mon.x > 400.0
+            && mon.y > 400.0
+        {
+            let size = egui::vec2(900.0, 660.0);
+            let pos = egui::pos2(
+                ((mon.x - size.x) / 2.0).max(0.0),
+                ((mon.y - 48.0 - size.y) / 2.0).max(0.0),
+            );
+            cc.egui_ctx
+                .send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
         }
         let lang = match std::env::var("SR_LANG").as_deref() {
             Ok("en") => Lang::En,
@@ -135,7 +134,6 @@ impl App {
                 .unwrap_or(false),
             focus_site: true,
             site_dirty_at: None,
-            pasted: None,
         }
     }
 
@@ -258,7 +256,7 @@ impl App {
         let (tx, rx) = mpsc::channel();
         let tx_progress = tx.clone();
         engine.set_progress_handler(move |p: &Progress| {
-            let _ = tx_progress.send(Msg::Progress(p.clone()));
+            let _ = tx_progress.send(Msg::Progress(Box::new(p.clone())));
         });
         self.cancel = Some(engine.cancel_token());
         self.rx = Some(rx);
@@ -271,19 +269,16 @@ impl App {
         // сообщения ядра должны идти на том же языке, что и окно
         crate::tr::set_english(self.lang == Lang::En);
         std::thread::spawn(move || {
-            let result = engine
-                .run()
-                .map(|o| {
-                    format!(
-                        "скачано {} из {}, страниц {}, битых ссылок {} — отчёт: {}",
-                        o.ok,
-                        o.total,
-                        o.stats.pages,
-                        o.stats.broken,
-                        o.report.display()
-                    )
-                })
-                .map_err(|e| e);
+            let result = engine.run().map(|o| {
+                format!(
+                    "скачано {} из {}, страниц {}, битых ссылок {} — отчёт: {}",
+                    o.ok,
+                    o.total,
+                    o.stats.pages,
+                    o.stats.broken,
+                    o.report.display()
+                )
+            });
             let _ = tx.send(Msg::Done(result));
         });
     }
@@ -532,10 +527,9 @@ impl eframe::App for App {
                 let cut = cmd && !shift && i.key_pressed(egui::Key::X);
                 (paste, copy, cut)
             });
-            if paste {
-                if let Some(text) = crate::clip::read_text() {
-                    ui.ctx().input_mut(|i| i.events.push(egui::Event::Paste(text)));
-                }
+            if paste && let Some(text) = crate::clip::read_text() {
+                ui.ctx()
+                    .input_mut(|i| i.events.push(egui::Event::Paste(text)));
             }
             if copy {
                 ui.ctx().input_mut(|i| i.events.push(egui::Event::Copy));
@@ -627,10 +621,10 @@ impl eframe::App for App {
                         if site_resp.changed() {
                             self.site_dirty_at = Some(ui.input(|i| i.time));
                         }
-                        if let Some(text) = pasted_now.clone() {
-                            if site_resp.has_focus() {
-                                self.apply_paste(&text);
-                            }
+                        if let Some(text) = pasted_now.clone()
+                            && site_resp.has_focus()
+                        {
+                            self.apply_paste(&text);
                         }
                         #[cfg(not(windows))]
                         if site_resp.has_focus() {
@@ -676,13 +670,13 @@ impl eframe::App for App {
                                     )
                                     .desired_width((ui.available_width() - buttons_w).max(120.0)),
                             );
-                            if action_button(ui, t.browse, 1, !self.running, 82.0, MUTED) {
-                                if let Some(dir) = crate::pick::pick_folder() {
-                                    self.out = std::path::PathBuf::from(dir)
-                                        .join("site")
-                                        .to_string_lossy()
-                                        .into_owned();
-                                }
+                            if action_button(ui, t.browse, 1, !self.running, 82.0, MUTED)
+                                && let Some(dir) = crate::pick::pick_folder()
+                            {
+                                self.out = std::path::PathBuf::from(dir)
+                                    .join("site")
+                                    .to_string_lossy()
+                                    .into_owned();
                             }
                             if action_button(ui, t.analyse, 1, !self.running, 96.0, MUTED) {
                                 self.analyse();
@@ -814,6 +808,17 @@ impl eframe::App for App {
                                     ui.with_layout(
                                         egui::Layout::right_to_left(egui::Align::Center),
                                         |ui| {
+                                            if self.eta > 0 && self.running {
+                                                ui.label(
+                                                    egui::RichText::new(format!(
+                                                        "{} {} s",
+                                                        t.eta_hint, self.eta
+                                                    ))
+                                                    .size(11.0)
+                                                    .color(MUTED),
+                                                );
+                                                ui.add_space(8.0);
+                                            }
                                             ui.label(
                                                 egui::RichText::new(format!(
                                                     "{:.0} %",
@@ -1019,16 +1024,15 @@ impl eframe::App for App {
                     }
                 }
             });
-            if !lines.is_empty() {
-                if let Ok(mut f) = std::fs::OpenOptions::new()
+            if !lines.is_empty()
+                && let Ok(mut f) = std::fs::OpenOptions::new()
                     .create(true)
                     .append(true)
                     .open(path)
-                {
-                    use std::io::Write as _;
-                    for line in lines {
-                        let _ = writeln!(f, "{line}");
-                    }
+            {
+                use std::io::Write as _;
+                for line in lines {
+                    let _ = writeln!(f, "{line}");
                 }
             }
         }

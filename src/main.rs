@@ -10,12 +10,12 @@
 
 #[cfg(feature = "gui")]
 mod app;
+#[cfg(feature = "gui")]
+mod clip;
 mod core;
 mod encoding;
 #[cfg(feature = "gui")]
 mod i18n;
-#[cfg(feature = "gui")]
-mod clip;
 mod paths;
 #[cfg(feature = "gui")]
 mod pick;
@@ -319,7 +319,7 @@ fn cli(args: &[String]) -> i32 {
     engine.set_progress_handler(|p: &Progress| match p.stage {
         "log" => println!("{}", p.text),
         "download" => {
-            if p.done % 5 == 0 || p.done == p.total {
+            if p.done.is_multiple_of(5) || p.done == p.total {
                 let eta = if p.eta > 0 {
                     format!(" ~{} с", p.eta)
                 } else {

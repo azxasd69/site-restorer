@@ -167,6 +167,39 @@ mod tests {
         );
     }
 
+    /// Эталоны получены python: `"…".encode("idna")`. Покрывают разные ветки
+    /// `adapt`: короткие метки, длинные, смешанные ASCII+кириллица, CJK, латиница
+    /// с диакритикой. Добавлены после прогона `cargo mutants`: без них мутации
+    /// в арифметике bias не ловились.
+    ///
+    /// Латинские буквы с диакритикой (`ü`, `ö`) сюда не входят осознанно:
+    /// python-кодек `idna` делает Nameprep (NFKC + свёртка регистра), а мы
+    /// нормализацию Unicode не выполняем — см. заголовок модуля.
+    #[test]
+    fn reference_vectors() {
+        let cases = [
+            (
+                "оченьдлинныйдомендляпроверкиадаптации.рф",
+                "xn--80aaafjaacdcc5afeaewkfrpdaenjf1aivd4e5ge1m4a9j.xn--p1ai",
+            ),
+            ("мама-мыла-раму.рф", "xn-----6kcabb8eebce0c2b7g.xn--p1ai"),
+            ("test-пример.рф", "xn--test--3weu6azakd.xn--p1ai"),
+            ("日本語.jp", "xn--wgv71a119e.jp"),
+            (
+                "aбвгдежзийклмнопрстуфхцчшщъыьэюя.рф",
+                "xn--a-btbdefghijklmnopqrstuvwxyz0a1a2a3a4a5a6a.xn--p1ai",
+            ),
+            ("почта.рф", "xn--80a1acny.xn--p1ai"),
+        ];
+        for (input, want) in cases {
+            assert_eq!(
+                domain_to_ascii(input).as_deref(),
+                Some(want),
+                "вход: {input}"
+            );
+        }
+    }
+
     #[test]
     fn ascii_passes_through() {
         assert_eq!(

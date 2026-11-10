@@ -1,0 +1,8 @@
+# Проверка опечаток: typos
+[default.extend-words]
+# AIMD — Additive Increase / Multiplicative Decrease, не опечатка
+AIMD = "AIMD"
+aimd = "aimd"
+
+[files]
+extend-exclude = ["target/", "legacy/", "landing/assets/"]

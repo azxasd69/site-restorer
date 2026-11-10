@@ -159,10 +159,10 @@ fn declared_encoding(
     data: &[u8],
     content_type: Option<&str>,
 ) -> Option<(&'static Encoding, &'static str)> {
-    if let Some(ct) = content_type {
-        if let Some(enc) = charset_from_header(ct) {
-            return Some((enc, "header"));
-        }
+    if let Some(ct) = content_type
+        && let Some(enc) = charset_from_header(ct)
+    {
+        return Some((enc, "header"));
     }
     let sniff = sniff_local(data);
     if let Some((enc, source)) = sniff {
@@ -195,20 +195,20 @@ fn sniff_local(data: &[u8]) -> Option<(&'static Encoding, &'static str)> {
     let cleaned = mask_comments_and_scripts(&text);
 
     // <?xml version="1.0" encoding="windows-1251"?>
-    if let Some(caps) = xml_decl_rx().captures(&cleaned) {
-        if let Some(enc) = encoding_for_label(&caps[1]) {
-            return Some((enc, "xml"));
-        }
+    if let Some(caps) = xml_decl_rx().captures(&cleaned)
+        && let Some(enc) = encoding_for_label(&caps[1])
+    {
+        return Some((enc, "xml"));
     }
-    if let Some(caps) = meta_charset_rx().captures(&cleaned) {
-        if let Some(enc) = encoding_for_label(&caps[1]) {
-            return Some((enc, "meta"));
-        }
+    if let Some(caps) = meta_charset_rx().captures(&cleaned)
+        && let Some(enc) = encoding_for_label(&caps[1])
+    {
+        return Some((enc, "meta"));
     }
-    if let Some(caps) = css_charset_rx().captures(&cleaned) {
-        if let Some(enc) = encoding_for_label(&caps[1]) {
-            return Some((enc, "css"));
-        }
+    if let Some(caps) = css_charset_rx().captures(&cleaned)
+        && let Some(enc) = encoding_for_label(&caps[1])
+    {
+        return Some((enc, "css"));
     }
     None
 }

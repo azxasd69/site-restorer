@@ -40,9 +40,36 @@ jobs:
           go test ./...
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Готовые бинарники инструментов — без сборки из исходников.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest,cargo-audit,cargo-machete,cargo-deny,typos
+
+      - name: Rust format
+        run: cargo fmt --all --check
+
+      - name: Rust clippy (CLI, warnings as errors)
+        run: cargo clippy --all-targets --release --no-default-features -- -D warnings
 
       - name: Rust tests (CLI)
-        run: cargo test --release --no-default-features
+        run: cargo nextest run --release --no-default-features
+
+      - name: Rust advisories
+        run: cargo audit
+
+      - name: Rust dependency policy
+        run: cargo deny check
+
+      - name: Rust unused dependencies
+        run: cargo machete
+
+      - name: Typos
+        run: typos
 
   # Windows-сборки линкуются со статическим CRT (+crt-static): иначе exe требует
   # установленный Visual C++ Redistributable и на чистой системе не стартует

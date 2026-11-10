@@ -32,3 +32,6 @@ mirror_cc/
 *.log
 test-out/
 exe-test/
+# рабочие каталоги инструментов — не в репозиторий
+mutants.out/
+mutants.out.old/

@@ -152,15 +152,16 @@ pub fn normalize_url(url: &str, host: &str) -> String {
     } else {
         parts.host.clone()
     };
-    if let Some(rest) = netloc.clone().strip_prefix("www.") {
-        if rest == host {
-            netloc = rest.to_string();
-        }
+    if let Some(rest) = netloc.clone().strip_prefix("www.")
+        && rest == host
+    {
+        netloc = rest.to_string();
     }
-    if let Some(port) = &parts.port {
-        if port != "80" && port != "443" {
-            netloc = format!("{netloc}:{port}");
-        }
+    if let Some(port) = &parts.port
+        && port != "80"
+        && port != "443"
+    {
+        netloc = format!("{netloc}:{port}");
     }
     let path = if parts.path.is_empty() {
         "/"

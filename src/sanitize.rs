@@ -121,12 +121,13 @@ pub fn pct_decode(s: &str) -> String {
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let (Some(hi), Some(lo)) = (hexval(bytes[i + 1]), hexval(bytes[i + 2])) {
-                out.push(hi * 16 + lo);
-                i += 3;
-                continue;
-            }
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && let (Some(hi), Some(lo)) = (hexval(bytes[i + 1]), hexval(bytes[i + 2]))
+        {
+            out.push(hi * 16 + lo);
+            i += 3;
+            continue;
         }
         out.push(bytes[i]);
         i += 1;
@@ -167,12 +168,13 @@ pub fn from_redirect(s: &str) -> String {
     {
         if let Some((_, query)) = s.split_once('?') {
             for pair in query.split('&') {
-                if let Some((k, v)) = pair.split_once('=') {
-                    if matches!(k, "q" | "url" | "u" | "target" | "text") && !v.is_empty() {
-                        let cand = pct_decode(v);
-                        if cand.contains("://") || cand.contains('.') {
-                            return cand;
-                        }
+                if let Some((k, v)) = pair.split_once('=')
+                    && matches!(k, "q" | "url" | "u" | "target" | "text")
+                    && !v.is_empty()
+                {
+                    let cand = pct_decode(v);
+                    if cand.contains("://") || cand.contains('.') {
+                        return cand;
                     }
                 }
             }
@@ -196,9 +198,7 @@ fn hostname_from_url(s: &str) -> Option<String> {
             break;
         }
     }
-    let end = rest
-        .find(|c| c == '/' || c == '?' || c == '#')
-        .unwrap_or(rest.len());
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
     let mut authority = &rest[..end];
     if let Some((_, host)) = authority.rsplit_once('@') {
         authority = host;
@@ -223,11 +223,11 @@ fn candidate_tokens(s: &str) -> Vec<(String, bool)> {
             continue;
         }
         let low = tok.to_lowercase();
-        if low.starts_with("http://") || low.starts_with("https://") || tok.starts_with("//") {
-            if let Some(host) = hostname_from_url(tok) {
-                out.push((host, false));
-                continue;
-            }
+        if (low.starts_with("http://") || low.starts_with("https://") || tok.starts_with("//"))
+            && let Some(host) = hostname_from_url(tok)
+        {
+            out.push((host, false));
+            continue;
         }
         if tok.contains('.') && !tok.contains(' ') {
             out.push((tok.split('/').next().unwrap_or(tok).to_string(), false));
@@ -267,20 +267,19 @@ fn finish(host: &str) -> Option<(String, Note)> {
     let latin_tld = latin_tld_rx().is_match(&tld);
     let cyr_tld = tld.len() > 1 && is_cyrillic(&tld);
 
-    if cyr_tld {
-        if let Some(puny) = crate::puny::domain_to_ascii(&host) {
-            if valid_host(&puny) {
-                return Some((puny, Note::Idn));
-            }
-        }
+    if cyr_tld
+        && let Some(puny) = crate::puny::domain_to_ascii(&host)
+        && valid_host(&puny)
+    {
+        return Some((puny, Note::Idn));
     }
     if (latin_tld || valid_host(&dekeyed)) && valid_host(&dekeyed) {
         return Some((dekeyed, Note::Layout));
     }
-    if let Some(puny) = crate::puny::domain_to_ascii(&host) {
-        if valid_host(&puny) {
-            return Some((puny, Note::Idn));
-        }
+    if let Some(puny) = crate::puny::domain_to_ascii(&host)
+        && valid_host(&puny)
+    {
+        return Some((puny, Note::Idn));
     }
     if valid_host(&dekeyed) {
         return Some((dekeyed, Note::Layout));
@@ -355,14 +354,12 @@ pub fn sanitize_site(text: &str) -> Option<(String, Note)> {
         (low.starts_with("http://") || low.starts_with("https://") || s.starts_with("//"))
             && !s.chars().any(|c| c.is_whitespace())
     };
-    if looks_like_url {
-        if let Some(host) = hostname_from_url(&s) {
-            if host.contains('.') {
-                if let Some(done) = finish(&host) {
-                    return Some(done);
-                }
-            }
-        }
+    if looks_like_url
+        && let Some(host) = hostname_from_url(&s)
+        && host.contains('.')
+        && let Some(done) = finish(&host)
+    {
+        return Some(done);
     }
 
     let mut tokens = candidate_tokens(&s);
