@@ -209,19 +209,26 @@ jobs:
           cat SHA256SUMS.txt
 
       # Релиз-ноты берём из CHANGELOG, а не из списка коммитов.
+      # python, а не awk: файл может приехать с CRLF, а заголовок содержит «—».
       - name: Release notes from CHANGELOG
         run: |
-          ver="${GITHUB_REF_NAME#v}"
-          awk -v ver="$ver" '
-            $0 ~ "^## " ver { flag = 1; next }
-            flag && /^## / { exit }
-            flag { print }
-          ' CHANGELOG.md > RELEASE_NOTES.md
-          if [ ! -s RELEASE_NOTES.md ]; then
-            echo "В CHANGELOG.md нет раздела $ver" > RELEASE_NOTES.md
-          fi
-          echo "Сборка: Rust. Контрольные суммы — в SHA256SUMS.txt." >> RELEASE_NOTES.md
-          cat RELEASE_NOTES.md
+          python3 - "$GITHUB_REF_NAME" <<'PY'
+          import re, sys, pathlib
+          tag = sys.argv[1]
+          ver = tag[1:] if tag.startswith("v") else tag
+          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8").replace("\r\n", "\n")
+          pattern = re.compile(rf"^##\s+{re.escape(ver)}\b.*$", re.M)
+          match = pattern.search(text)
+          if match:
+              rest = text[match.end():]
+              nxt = re.search(r"^##\s", rest, re.M)
+              body = text[match.start(): match.end() + (nxt.start() if nxt else len(rest))]
+          else:
+              body = f"В CHANGELOG.md нет раздела {ver}\n"
+          body = body.strip() + "\n\nСборка: Rust. Контрольные суммы — в SHA256SUMS.txt.\n"
+          pathlib.Path("RELEASE_NOTES.md").write_text(body, encoding="utf-8")
+          print(body)
+          PY
 
       - name: Attach to release
         uses: softprops/action-gh-release@v2
