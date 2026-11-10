@@ -625,7 +625,8 @@ impl Engine {
                             attempts += 1;
                             if attempts >= 3 {
                                 self.shared.log(format!(
-                                    "CDX: страница {page} — HTTP {code} после {attempts} попыток, останавливаюсь"
+                                    "CDX: страница {} — HTTP {code} после {attempts} попыток, останавливаюсь",
+                                page + 1
                                 ));
                                 self.inv_failed = true;
                                 break;
@@ -635,7 +636,8 @@ impl Engine {
                             self.shared.sleep(wait);
                             continue;
                         }
-                        self.shared.log(format!("CDX: страница {page} — HTTP {code}"));
+                        self.shared
+                            .log(format!("CDX: страница {} — HTTP {code}", page + 1));
                         self.inv_failed = true;
                         break;
                     }
@@ -643,7 +645,7 @@ impl Engine {
                         attempts += 1;
                         if attempts >= 3 {
                             self.shared
-                                .log(format!("CDX: страница {page} — ошибка {err}"));
+                                .log(format!("CDX: страница {} — ошибка {err}", page + 1));
                             self.inv_failed = true;
                             break;
                         }

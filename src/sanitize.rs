@@ -158,10 +158,13 @@ pub fn from_redirect(s: &str) -> String {
 
 /// Имя хоста из строки вида `https://user@host:8080/path?q=1`.
 fn hostname_from_url(s: &str) -> Option<String> {
-    let mut rest = s.trim();
+    let trimmed = s.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let mut rest = trimmed;
+    // схема может быть набрана в любом регистре: HTTPS://Example.COM
     for scheme in ["https://", "http://", "//"] {
-        if let Some(stripped) = rest.strip_prefix(scheme) {
-            rest = stripped;
+        if lower.starts_with(scheme) {
+            rest = &trimmed[scheme.len()..];
             break;
         }
     }
@@ -306,6 +309,16 @@ mod tests {
 
     fn host(input: &str) -> Option<String> {
         sanitize_site(input).map(|(h, _)| h)
+    }
+
+    #[test]
+    fn uppercase_scheme_and_host() {
+        assert_eq!(host("HTTPS://RDBZH.RU/").as_deref(), Some("rdbzh.ru"));
+        assert_eq!(
+            host("HTTP://WWW.Example.COM/Path").as_deref(),
+            Some("example.com")
+        );
+        assert_eq!(host("HtTpS://rdbzh.ru").as_deref(), Some("rdbzh.ru"));
     }
 
     #[test]

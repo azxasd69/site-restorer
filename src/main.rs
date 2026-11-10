@@ -83,6 +83,61 @@ fn attach_parent_console() {
     }
 }
 
+/// Консоль Windows по умолчанию использует кодовую страницу OEM (866 в русской
+/// системе), а мы пишем UTF-8. Переключаем консоль на UTF-8, иначе в cmd.exe и
+/// PowerShell 5.1 пользователь видит кракозябры.
+#[cfg(windows)]
+fn ensure_console_utf8() {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn SetConsoleOutputCP(code_page: u32) -> i32;
+        fn SetConsoleCP(code_page: u32) -> i32;
+    }
+    const CP_UTF8: u32 = 65001;
+    // SAFETY: меняем кодовую страницу текущей консоли; при её отсутствии вызов
+    // просто возвращает 0.
+    unsafe {
+        SetConsoleOutputCP(CP_UTF8);
+        SetConsoleCP(CP_UTF8);
+    }
+}
+
+/// Сообщение об ошибке отдельным окном: у GUI-сборки нет консоли, иначе
+/// пользователь видит только «ничего не произошло».
+#[cfg(windows)]
+fn message_box(text: &str) {
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn MessageBoxW(
+            hwnd: *mut std::ffi::c_void,
+            text: *const u16,
+            caption: *const u16,
+            flags: u32,
+        ) -> i32;
+    }
+    let wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() };
+    let body = wide(text);
+    let caption = wide("Site Restorer");
+    const MB_ICONERROR: u32 = 0x10;
+    // SAFETY: указатели на нуль-терминированные строки живут до конца вызова.
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            body.as_ptr(),
+            caption.as_ptr(),
+            MB_ICONERROR,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn message_box(text: &str) {
+    eprintln!("{text}");
+}
+
+#[cfg(not(windows))]
+fn ensure_console_utf8() {}
+
 #[cfg(not(windows))]
 fn attach_parent_console() {}
 
@@ -91,6 +146,7 @@ fn main() {
     let console_mode = args.iter().any(|a| a == "--cli" || a == "--version" || a == "-V");
     if console_mode || !cfg!(feature = "gui") {
         attach_parent_console();
+        ensure_console_utf8();
     }
     if args.iter().any(|a| a == "--version" || a == "-V") {
         println!("site-restorer {APP_VERSION}");
@@ -122,6 +178,16 @@ fn main() {
         );
         if let Err(err) = run {
             eprintln!("не удалось открыть окно: {err}");
+            let text = if std::env::var("SR_LANG").as_deref() == Ok("en") {
+                format!(
+                    "Cannot open the window.\n\n{err}\n\nThe graphics driver does not provide OpenGL 2.0+ (typical for virtual machines and remote sessions).\nUse the command-line build: SiteRestorer-rust-win-cli-*.exe --cli --site <address>"
+                )
+            } else {
+                format!(
+                    "Не удалось открыть окно.\n\n{err}\n\nВидеодрайвер не предоставляет OpenGL 2.0+ (обычное дело в виртуальных машинах и удалённых сеансах).\nВоспользуйтесь консольной сборкой: SiteRestorer-rust-win-cli-*.exe --cli --site <адрес>"
+                )
+            };
+            message_box(&text);
             std::process::exit(3);
         }
     }

@@ -44,6 +44,9 @@ jobs:
       - name: Rust tests (CLI)
         run: cargo test --release --no-default-features
 
+  # Windows-сборки линкуются со статическим CRT (+crt-static): иначе exe требует
+  # установленный Visual C++ Redistributable и на чистой системе не стартует
+  # (проверено на Win10 x86: код 0xC0000135).
   rust:
     needs: test
     strategy:
@@ -77,28 +80,28 @@ jobs:
             target: x86_64-pc-windows-msvc
             features: "gui"
             apt: ""
-            rustflags: ""
+            rustflags: "-C target-feature=+crt-static"
             optional: false
             out: SiteRestorer.exe
           - os: windows-latest
             target: i686-pc-windows-msvc
             features: "gui"
             apt: ""
-            rustflags: ""
+            rustflags: "-C target-feature=+crt-static"
             optional: false
             out: SiteRestorer-x86.exe
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             features: "cli"
             apt: ""
-            rustflags: ""
+            rustflags: "-C target-feature=+crt-static"
             optional: false
             out: SiteRestorer-rust-win-cli-x64.exe
           - os: windows-latest
             target: i686-pc-windows-msvc
             features: "cli"
             apt: ""
-            rustflags: ""
+            rustflags: "-C target-feature=+crt-static"
             optional: false
             out: SiteRestorer-rust-win-cli-x86.exe
     runs-on: ${{ matrix.os }}
