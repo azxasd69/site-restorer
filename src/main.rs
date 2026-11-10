@@ -17,6 +17,8 @@ mod core;
 mod encoding;
 #[cfg(feature = "gui")]
 mod i18n;
+#[cfg(feature = "gui")]
+mod links;
 mod paths;
 #[cfg(feature = "gui")]
 mod pick;
@@ -187,11 +189,12 @@ fn main() {
         unsafe {
             init_com();
         }
-        let title = if std::env::var("SR_LANG").as_deref() == Ok("en") {
-            i18n::EN.title
+        let lang = if std::env::var("SR_LANG").as_deref() == Ok("en") {
+            i18n::Lang::En
         } else {
-            i18n::RU.title
+            i18n::Lang::Ru
         };
+        let title = links::window_title(lang);
         let options = eframe::NativeOptions {
             renderer: eframe::Renderer::Glow,
             // На Windows вставку и копирование ведём сами (см. src/clip.rs):

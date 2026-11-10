@@ -201,6 +201,15 @@ impl App {
         }
     }
 
+    /// Внешняя ссылка: открываем браузером по умолчанию. Неудачу показываем
+    /// предупреждением в журнале — окно и прогон продолжают работать (ФТ-114).
+    fn open_link(&mut self, url: &str) {
+        if let Err(err) = crate::links::open(url) {
+            let text = format!("{}{}", self.lang.t().link_failed, err);
+            self.push_log(text, Level::Warn);
+        }
+    }
+
     fn analyse(&mut self) {
         self.normalize_field(false);
     }
@@ -775,6 +784,42 @@ impl eframe::App for App {
                     band.bottom(),
                     egui::Stroke::new(1.0, BORDER),
                 );
+            });
+
+        // ---------- нижняя полоса со ссылками ----------
+        // Панели-«прилипалы» разбирают края окна в порядке объявления, поэтому
+        // полоса объявлена до журнала: иначе она заняла бы место над ним.
+        egui::Panel::bottom("footer")
+            .resizable(false)
+            .exact_size(24.0)
+            .frame(egui::Frame::new().fill(WHITE))
+            .show(ui, |ui| {
+                let rect = ui.max_rect();
+                ui.painter()
+                    .hline(rect.x_range(), rect.top(), egui::Stroke::new(1.0, BORDER));
+                ui.style_mut().visuals.hyperlink_color = ACCENT;
+                ui.horizontal_centered(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add_space(20.0);
+                        let thanks = ui
+                            .add(egui::Link::new(
+                                egui::RichText::new(t.footer_thanks).size(11.5),
+                            ))
+                            .on_hover_text(t.footer_thanks_hint);
+                        if thanks.clicked() {
+                            self.open_link(crate::links::SUPPORT);
+                        }
+                        ui.label(egui::RichText::new("·").size(11.5).color(MUTED));
+                        let site = ui
+                            .add(egui::Link::new(
+                                egui::RichText::new(t.footer_site).size(11.5),
+                            ))
+                            .on_hover_text(t.footer_site_hint);
+                        if site.clicked() {
+                            self.open_link(crate::links::SITE);
+                        }
+                    });
+                });
             });
 
         // ---------- журнал ----------

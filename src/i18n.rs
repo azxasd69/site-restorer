@@ -57,10 +57,15 @@ pub struct T {
     pub k_pause: &'static str,
     pub help_reset: &'static str,
     pub help_reset_done: &'static str,
+    pub footer_site: &'static str,
+    pub footer_site_hint: &'static str,
+    pub footer_thanks: &'static str,
+    pub footer_thanks_hint: &'static str,
+    pub link_failed: &'static str,
 }
 
 pub static RU: T = T {
-    title: "Site Restorer — копия сайта из веб-архива",
+    title: "копия сайта из веб-архива",
     heading: "Восстановление сайта из веб-архива",
     subtitle: "Скачивает сохранённую копию сайта из Wayback Machine и собирает её для локального просмотра.",
     site: "Адрес сайта",
@@ -109,6 +114,11 @@ pub static RU: T = T {
     k_pause: "пауза, с:",
     help_reset: "Сбросить настройки",
     help_reset_done: "настройки сброшены",
+    footer_site: "lastcopy.ru",
+    footer_site_hint: "Открыть сайт программы в браузере",
+    footer_thanks: "Сказать спасибо",
+    footer_thanks_hint: "Поддержать автора: boosty.to/explosion",
+    link_failed: "не удалось открыть ссылку: ",
     help_text: "ЧТО ДЕЛАЕТ ПРОГРАММА\n\
 Скачивает из Wayback Machine (Internet Archive) все сохранённые страницы и файлы\n\
 указанного сайта и собирает статическую копию для локального просмотра.\n\n\
@@ -132,7 +142,7 @@ site-restorer --cli --site <адрес> --out <папка> [--limit N] [--worker
 };
 
 pub static EN: T = T {
-    title: "Site Restorer — a website copy from the web archive",
+    title: "a website copy from the web archive",
     heading: "Restore a website from the web archive",
     subtitle: "Downloads the archived copy of a site from the Wayback Machine and builds it for local viewing.",
     site: "Site address",
@@ -181,6 +191,11 @@ pub static EN: T = T {
     k_pause: "pause, s:",
     help_reset: "Reset settings",
     help_reset_done: "settings reset",
+    footer_site: "lastcopy.ru",
+    footer_site_hint: "Open the product site in the browser",
+    footer_thanks: "Say thanks",
+    footer_thanks_hint: "Support the author: boosty.to/explosion",
+    link_failed: "could not open the link: ",
     help_text: "WHAT IT DOES\n\
 Downloads every archived page and file of a site from the Wayback Machine\n\
 (Internet Archive) and builds a static copy for local viewing.\n\n\
