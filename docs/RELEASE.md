@@ -1,0 +1,91 @@
+# Релизы: что, как и по каким правилам
+
+Документ фиксирует одну схему. Всё, что ему противоречит в CI, README или
+лендинге, — ошибка, а не альтернатива.
+
+## Что выпускаем
+
+Одна реализация — Rust. В релиз попадают шесть бинарников и Linux-бандл:
+
+| Файл | Откуда | Лимит размера |
+|---|---|---|
+| `SiteRestorer-windows-x64.exe` | `cargo build --release`, target `x86_64-pc-windows-msvc`, `+crt-static` | 8 МБ |
+| `SiteRestorer-windows-x86.exe` | то же, `i686-pc-windows-msvc` | 7 МБ |
+| `SiteRestorer-windows-x64-cli.exe` | `--no-default-features`, `x86_64-pc-windows-msvc` | 2,5 МБ |
+| `SiteRestorer-windows-x86-cli.exe` | `--no-default-features`, `i686-pc-windows-msvc` | 2 МБ |
+| `SiteRestorer-linux-x64-gui` | features `gui`, target `x86_64-unknown-linux-gnu` | 9 МБ |
+| `SiteRestorer-linux-x64-cli` | `--no-default-features`, `x86_64-unknown-linux-musl`, статический | 3 МБ |
+| `SiteRestorer-linux-x64.tar.gz` | оба Linux-бинарника + `.desktop`, иконка, `install.sh`, `README.txt` | — |
+| `SHA256SUMS.txt` | контрольные суммы всех файлов | — |
+
+Python и Go не собираются и не публикуются: `legacy/python` и `ports/go` —
+архив исходников.
+
+## Как называем
+
+Схема: `SiteRestorer-<os>-<arch>[-cli][.exe]`.
+
+- `<os>` — `windows` или `linux`; `<arch>` — `x64` или `x86`;
+- `-cli` — только консольная сборка, без него — окно;
+- `.exe` — только Windows;
+- версии в имени **нет**: ссылки `releases/latest/download/<имя>` должны жить
+  между релизами.
+
+Версию видно в `--version`, в первой строке журнала окна, в `CHANGELOG.md`
+и в названии тега. Внутри `tar.gz` лежит каталог `site-restorer-linux-x64`,
+установщик ставит команды `site-restorer` и `site-restorer-gui`.
+
+## Нумерация версий
+
+- SemVer `MAJOR.MINOR.PATCH`, тег — `vX.Y.Z`.
+- Единственный источник версии — `version` в `Cargo.toml`; CI падает, если тег
+  ей не равен.
+- `PATCH` — исправления и внутренние улучшения без новых возможностей.
+- `MINOR` — новые возможности, совместимые с прежними.
+- `MAJOR` — несовместимые изменения интерфейса, CLI или формата результата.
+- Предрелизы — `vX.Y.Z-rc.N`: собираются тем же пайплайном, но не помечаются
+  как latest и не обновляют ссылки на лендинге.
+
+## Как собираем
+
+- Только из тега: `on: push: tags: ["v*"]`. Ветка `main` собирает бинарники,
+  но не публикует релиз.
+- Профиль релиза: `opt-level = "z"`, LTO, `panic = "abort"`, `strip = "symbols"`;
+  Windows — статический CRT (`+crt-static`), чтобы не требовать
+  Visual C++ Redistributable.
+- Перед сборкой обязательны гейты: `fmt`, `clippy -D warnings` (CLI и GUI),
+  `nextest`, `audit`, `deny`, `machete`, `typos`.
+- Каждый бинарник после сборки проверяется: `--version` печатает версию
+  из `Cargo.toml`, размер не превышает лимит из таблицы.
+- Контрольные суммы считаются в джобе релиза по фактическим файлам.
+- Релиз-ноты берутся **из `CHANGELOG.md`** (секция `## <версия>`), а не из
+  списка коммитов.
+
+## Порядок выпуска
+
+1. Изменения в `main`, гейты зелёные.
+2. Запись в `CHANGELOG.md` — новая секция `## X.Y.Z — ГГГГ-ММ-ДД`.
+3. `version` в `Cargo.toml` = X.Y.Z.
+4. Локально: `cargo fmt --check`, `clippy -D warnings`, `nextest run`.
+5. Коммит `chore(release): X.Y.Z`.
+6. `git tag -a vX.Y.Z -m "..." && git push origin main vX.Y.Z`.
+7. CI: гейты → сборки → релиз. Проверить, что в релизе ровно 8 файлов
+   и размеры совпадают с таблицей.
+8. Обновить размеры в `README.md` и `BUILD.md`, если они изменились; лендинг
+   правится только при смене имён файлов (сейчас имена стабильны).
+
+## Что делать при ошибке в релизе
+
+- Тег перевешивать можно только до того, как релиз кто-то скачал: удалить тег
+  и релиз, исправить, поставить заново.
+- После скачиваний — выпускать `PATCH` следом, старый релиз не переписывать.
+- Удалять ассеты прошлых версий нельзя: на них могут ссылаться.
+
+## Проверка релиза
+
+```bash
+gh release view vX.Y.Z --json assets --jq '.assets[].name'   # ровно 8 имён
+curl -sL .../releases/download/vX.Y.Z/SHA256SUMS.txt          # суммы на месте
+./SiteRestorer-windows-x64.exe --version                      # версия совпадает
+sha256sum -c SHA256SUMS.txt                                   # сходится
+```

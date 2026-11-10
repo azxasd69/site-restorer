@@ -12,32 +12,11 @@ permissions:
   contents: write
 
 jobs:
+  # Проверки кода. Сборки начинаются только после них.
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Python compile check
-        working-directory: legacy/python
-        run: python -m compileall -q src
-
-      - name: Python unit tests
-        working-directory: legacy/python
-        run: python -m unittest discover -s tests -v
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.24"
-
-      - name: Go vet and tests
-        working-directory: ports/go
-        run: |
-          go vet ./...
-          go test ./...
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -49,6 +28,15 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest,cargo-audit,cargo-machete,cargo-deny,typos
+
+      # Единый источник версии — Cargo.toml. Тег обязан совпадать.
+      - name: Version matches tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ver=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
+          echo "tag=$tag cargo=$ver"
+          test "$tag" = "$ver" || { echo "::error::тег $tag не совпадает с версией в Cargo.toml ($ver)"; exit 1; }
 
       - name: Rust format
         run: cargo fmt --all --check
@@ -71,6 +59,8 @@ jobs:
       - name: Typos
         run: typos
 
+  # Имена ассетов: SiteRestorer-<os>-<arch>[-cli][.exe], без версии — чтобы
+  # ссылки releases/latest/download/<имя> не менялись от релиза к релизу.
   # Windows-сборки линкуются со статическим CRT (+crt-static): иначе exe требует
   # установленный Visual C++ Redistributable и на чистой системе не стартует
   # (проверено на Win10 x86: код 0xC0000135).
@@ -85,10 +75,8 @@ jobs:
             features: "cli"
             apt: musl-tools
             rustflags: "-C linker=musl-gcc"
-            optional: false
-            out: SiteRestorer-rust-linux-cli
-          # i586-Linux исключён: ring/TLS не собирается под i686-musl, а из-за
-          # needs упавшая (даже необязательная) джоба блокировала release.
+            out: SiteRestorer-linux-x64-cli
+            max_mb: 3
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             features: "gui"
@@ -96,38 +84,37 @@ jobs:
               libxkbcommon-dev libgl1-mesa-dev libegl1-mesa-dev libx11-dev libxcursor-dev
               libxrandr-dev libxi-dev libwayland-dev libfontconfig1-dev
             rustflags: ""
-            optional: false
-            out: SiteRestorer-rust-linux-gui
+            out: SiteRestorer-linux-x64-gui
+            max_mb: 9
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             features: "gui"
             apt: ""
             rustflags: "-C target-feature=+crt-static"
-            optional: false
-            out: SiteRestorer.exe
+            out: SiteRestorer-windows-x64.exe
+            max_mb: 8
           - os: windows-latest
             target: i686-pc-windows-msvc
             features: "gui"
             apt: ""
             rustflags: "-C target-feature=+crt-static"
-            optional: false
-            out: SiteRestorer-x86.exe
+            out: SiteRestorer-windows-x86.exe
+            max_mb: 7
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             features: "cli"
             apt: ""
             rustflags: "-C target-feature=+crt-static"
-            optional: false
-            out: SiteRestorer-rust-win-cli-x64.exe
+            out: SiteRestorer-windows-x64-cli.exe
+            max_mb: 2.5
           - os: windows-latest
             target: i686-pc-windows-msvc
             features: "cli"
             apt: ""
             rustflags: "-C target-feature=+crt-static"
-            optional: false
-            out: SiteRestorer-rust-win-cli-x86.exe
+            out: SiteRestorer-windows-x86-cli.exe
+            max_mb: 2
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.optional }}
     steps:
       - uses: actions/checkout@v4
 
@@ -150,6 +137,11 @@ jobs:
           if [ "${{ matrix.features }}" = "cli" ]; then FLAGS="--no-default-features"; fi
           cargo build --release --target ${{ matrix.target }} $FLAGS
 
+      # Clippy для gui-сборки: в test-джобе проверяется только CLI.
+      - name: Clippy (gui)
+        if: matrix.features == 'gui' && matrix.os == 'ubuntu-latest'
+        run: cargo clippy --all-targets --release -- -D warnings
+
       - name: Collect binary
         shell: bash
         run: |
@@ -159,178 +151,31 @@ jobs:
           cp "$SRC" "dist/${{ matrix.out }}"
           ls -l "dist/${{ matrix.out }}"
 
+      # Бинарник обязан запускаться и печатать версию из Cargo.toml.
+      - name: Smoke test (--version)
+        shell: bash
+        run: |
+          ver=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
+          out=$(./dist/${{ matrix.out }} --version)
+          echo "$out"
+          echo "$out" | grep -q "$ver" || { echo "::error::--version не совпал с $ver"; exit 1; }
+
+      - name: Size limit
+        shell: bash
+        run: |
+          bytes=$(wc -c < "dist/${{ matrix.out }}")
+          mb=$(awk "BEGIN{printf \"%.2f\", $bytes/1048576}")
+          echo "${{ matrix.out }}: ${mb} MB (лимит ${{ matrix.max_mb }} MB)"
+          awk "BEGIN{exit !($mb <= ${{ matrix.max_mb }})}" || { echo "::error::ассет больше лимита"; exit 1; }
+
       - uses: actions/upload-artifact@v4
         with:
           name: rust-${{ matrix.target }}-${{ matrix.features }}
           path: dist/${{ matrix.out }}
 
-  go:
-    needs: test
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-            out: siterestorer-go-linux-x64
-          - goos: linux
-            goarch: arm64
-            out: siterestorer-go-linux-arm64
-          - goos: windows
-            goarch: amd64
-            out: siterestorer-go-win-x64.exe
-          - goos: windows
-            goarch: "386"
-            out: siterestorer-go-win-x86.exe
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.24"
-
-      - name: Build
-        working-directory: ports/go
-        env:
-          CGO_ENABLED: "0"
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        run: go build -trimpath -ldflags "-s -w" -o "$GITHUB_WORKSPACE/dist/${{ matrix.out }}" .
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: go-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/${{ matrix.out }}
-
-  python:
-    needs: test
-    runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x64
-            python_arch: x64
-            out: SiteRestorer-python-win-x64.exe
-          - arch: x86
-            python_arch: x86
-            out: SiteRestorer-python-win-x86.exe
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-          architecture: ${{ matrix.python_arch }}
-
-      - name: Install PyInstaller
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install pyinstaller==6.22.3
-
-      - name: Build
-        working-directory: legacy/python
-        run: |
-          python -m PyInstaller --noconfirm --onefile --windowed `
-            --name SiteRestorer `
-            --icon src/app.ico --add-data "src/app.ico;." `
-            --distpath dist --workpath build --specpath . `
-            src/main.py
-
-      - name: Rename artifact
-        shell: bash
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE/dist"
-          mv legacy/python/dist/SiteRestorer.exe "dist/${{ matrix.out }}"
-          ls -l "dist/${{ matrix.out }}"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: py-${{ matrix.arch }}
-          path: dist/${{ matrix.out }}
-
-  python-linux:
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Tk and PyInstaller
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-tk
-          python -m pip install --upgrade pip pyinstaller==6.22.3
-
-      - name: Build
-        working-directory: legacy/python
-        run: |
-          pyinstaller --noconfirm --onefile --name SiteRestorer \
-            --distpath dist --workpath build --specpath . src/main.py
-
-      - name: Rename
-        run: |
-          mkdir -p dist
-          mv legacy/python/dist/SiteRestorer dist/SiteRestorer-python-linux-x64
-          ls -l dist
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: py-linux
-          path: dist/SiteRestorer-python-linux-x64
-
-  smoke:
-    needs: [rust, python]
-    runs-on: windows-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: rust-x86_64-pc-windows-msvc-cli
-          path: rust
-      - uses: actions/download-artifact@v4
-        with:
-          name: py-x64
-          path: py64
-      - uses: actions/download-artifact@v4
-        with:
-          name: py-x86
-          path: py86
-
-      - name: Run Rust CLI (version, no network)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $exe = "rust/SiteRestorer-rust-win-cli-x64.exe"
-          $out = & $exe --version
-          Write-Host $out
-          if ($LASTEXITCODE -ne 0) { throw "cli exit code $LASTEXITCODE" }
-          if ($out -notmatch "site-restorer") { throw "unexpected output" }
-          Write-Host "OK: Rust CLI starts and prints version"
-
-      - name: Verify Python artefacts (size + PE architecture)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $x64 = "py64/SiteRestorer-python-win-x64.exe"
-          $x86 = "py86/SiteRestorer-python-win-x86.exe"
-          foreach ($f in @($x64, $x86)) {
-            if (-not (Test-Path $f)) { throw "missing $f" }
-            $size = (Get-Item $f).Length
-            Write-Host "$f = $([math]::Round($size/1MB,1)) MB"
-            if ($size -lt 5MB) { throw "$f is too small" }
-          }
-          python -c "import struct,sys; d=open(sys.argv[1],'rb').read(4096); e=struct.unpack_from('<I',d,0x3c)[0]; m=struct.unpack_from('<H',d,e+4)[0]; sys.exit(0 if m==0x8664 else 1)" $x64
-          python -c "import struct,sys; d=open(sys.argv[1],'rb').read(4096); e=struct.unpack_from('<I',d,0x3c)[0]; m=struct.unpack_from('<H',d,e+4)[0]; sys.exit(0 if m==0x14c else 1)" $x86
-          Write-Host "OK: x64 and x86 Python binaries are valid"
-
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [rust, go, python, python-linux]
+    needs: [rust]
     runs-on: ubuntu-latest
     steps:
       # checkout первым: его git clean удаляет untracked-файлы, поэтому
@@ -347,14 +192,15 @@ jobs:
           set -e
           mkdir -p bundle/site-restorer-linux-x64/share/applications
           mkdir -p bundle/site-restorer-linux-x64/share/icons
-          install -m755 assets/SiteRestorer-rust-linux-cli bundle/site-restorer-linux-x64/site-restorer
-          install -m755 assets/SiteRestorer-rust-linux-gui bundle/site-restorer-linux-x64/site-restorer-gui
+          install -m755 assets/SiteRestorer-linux-x64-cli bundle/site-restorer-linux-x64/site-restorer
+          install -m755 assets/SiteRestorer-linux-x64-gui bundle/site-restorer-linux-x64/site-restorer-gui
           install -m644 packaging/linux/site-restorer.desktop bundle/site-restorer-linux-x64/share/applications/
           install -m644 packaging/linux/site-restorer.svg bundle/site-restorer-linux-x64/share/icons/
           install -m755 packaging/linux/install.sh bundle/site-restorer-linux-x64/
           install -m644 packaging/linux/README.txt bundle/site-restorer-linux-x64/
-          tar -C bundle -czf assets/site-restorer-linux-x64.tar.gz site-restorer-linux-x64
-          ls -la assets/site-restorer-linux-x64.tar.gz
+          tar -C bundle -czf assets/SiteRestorer-linux-x64.tar.gz site-restorer-linux-x64
+          # Linux-бинарники остаются и отдельными файлами: бандл удобен не всем.
+          ls -la assets
 
       - name: Checksums
         run: |
@@ -362,8 +208,24 @@ jobs:
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
+      # Релиз-ноты берём из CHANGELOG, а не из списка коммитов.
+      - name: Release notes from CHANGELOG
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          awk -v ver="$ver" '
+            $0 ~ "^## " ver { flag = 1; next }
+            flag && /^## / { exit }
+            flag { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "В CHANGELOG.md нет раздела $ver" > RELEASE_NOTES.md
+          fi
+          echo "Сборка: Rust. Контрольные суммы — в SHA256SUMS.txt." >> RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
           files: assets/*
-          generate_release_notes: true
+          body_path: RELEASE_NOTES.md
+          generate_release_notes: false

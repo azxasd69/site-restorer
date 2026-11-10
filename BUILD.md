@@ -1,8 +1,8 @@
 # Сборки: что, где и сколько весит
 
-Основная реализация — **Rust** (`src/`, нативное окно egui + CLI в одном бинарнике).
-В репозитории также живут: исходная версия на Python (`legacy/python`) и
-экспериментальный порт на Go (`ports/go`).
+Реализация одна — **Rust** (`src/`, нативное окно egui + CLI в одном исходнике).
+Python (`legacy/python`) и Go (`ports/go`) переведены в архив: не развиваются,
+не собираются в CI и не попадают в релизы.
 
 Все файлы прикладываются к каждому релизу тегом `v*` и доступны по адресу
 `https://github.com/azxasd69/site-restorer/releases/latest/download/<имя файла>`.
@@ -12,38 +12,28 @@
 
 | Файл | Платформа | Размер | Что внутри |
 |---|---|---|---|
-| `SiteRestorer.exe` | Windows 10/11 x64 | 6,2 МБ | **Rust + egui**, основной вариант: окно, RU/EN |
-| `SiteRestorer-x86.exe` | Windows 10/11 x86 | 5,6 МБ | Rust + egui, 32-битная сборка |
-| `SiteRestorer-rust-win-cli-x64.exe` | Windows x64 | 2,7 МБ | Rust, только командная строка |
-| `SiteRestorer-rust-win-cli-x86.exe` | Windows x86 | 2,1 МБ | Rust, самый маленький бинарник для Windows |
-| `SiteRestorer-rust-linux-cli` | Linux x64 | 2,1 МБ | Rust, статический ELF (`ldd` → not a dynamic executable) |
-| `SiteRestorer-rust-linux-gui` | Linux x64 | 7,5 МБ | Rust + egui (нужны системные X11/GL) |
-| `SiteRestorer-rust-linux-i586-cli` | Linux i586 | — | опциональная цель: собирается, если на раннере есть 32-битный TLS-тулчейн |
-| `SiteRestorer-python-win-x64.exe` | Windows x64 | 12,6 МБ | классическая версия на Python + Tk |
-| `SiteRestorer-python-win-x86.exe` | Windows x86 | 10,2 МБ | классическая версия, 32 бита |
-| `SiteRestorer-python-linux-x64` | Linux x64 | 27 МБ | классическая версия (X11) |
-| `siterestorer-go-linux-x64` / `-linux-arm64` | Linux | 8,0 / 7,6 МБ | Go, один файл без зависимостей |
-| `siterestorer-go-win-x64.exe` / `-win-x86.exe` | Windows | 8,3 / 7,9 МБ | Go |
+| `SiteRestorer-windows-x64.exe` | Windows 10/11 x64 | 6,2 МБ | **основной вариант**: окно egui, RU/EN, статический CRT |
+| `SiteRestorer-windows-x86.exe` | Windows 10/11 x86 | 5,6 МБ | то же, 32 бита |
+| `SiteRestorer-windows-x64-cli.exe` | Windows x64 | 1,8 МБ | только командная строка |
+| `SiteRestorer-windows-x86-cli.exe` | Windows x86 | 1,3 МБ | самый маленький бинарник для Windows |
+| `SiteRestorer-linux-x64-gui` | Linux x64 | 7,5 МБ | окно egui (нужны системные X11/GL) |
+| `SiteRestorer-linux-x64-cli` | Linux x64 | 2,1 МБ | статический ELF (`ldd` → not a dynamic executable) |
+| `SiteRestorer-linux-x64.tar.gz` | Linux x64 | 4,7 МБ | оба бинарника + `.desktop`, иконка, `install.sh` |
 
-Размеры сняты с релиза **v3.0.0**. Python-сборка на Linux в CI получается крупнее
-локальной (≈13,6 МБ): раннер кладёт в onefile больше библиотек Tcl/Tk.
+Размеры сняты с релиза **v3.1.2**. Имя не содержит версию — ссылки
+`releases/latest/download/<имя>` постоянны; версию печатает `--version`
+и первая строка журнала окна.
 
-## Чем отличаются реализации
+## Что было раньше
 
-| | Rust + egui (основная) | Python + Tk (классическая) | Go (эксперимент) |
+| | Rust + egui (единственная) | Python + Tk (архив) | Go (архив) |
 |---|---|---|---|
-| Интерфейс | нативное окно, RU/EN | нативное окно на Tk, RU/EN | CLI |
-| Зависимости при запуске | нет (Windows — MSVC-рантайм системный; Linux CLI — статика) | нет (PyInstaller onefile) | нет |
-| Разбор адреса (раскладка, IDN) | да | да | да |
-| Инвентарь CDX, докачка, AIMD | да | да | да |
-| Переписывание ссылок, кодировки | да | да | да |
-| Отчёт `report.html` | да | да | да |
-| Тесты | 19 (`cargo test`) | 17 (`unittest`) | 24 (`go test`) |
-| Размер | 2,1–9,1 МБ | 10–27 МБ | 7,6–8,3 МБ |
+| Интерфейс | нативное окно, RU/EN | нативное окно на Tk | CLI |
+| Статус | развивается, публикуется | заморожен, не публикуется | заморожен, не публикуется |
+| Тесты | 50 (`cargo nextest`) | 17 (не запускаются в CI) | 24 (не запускаются в CI) |
 
-Живые прогоны: Rust — `prokupol.ru` целиком (518 адресов, 515 файлов, AIMD 2→19
-потоков), GUI до 100 %; Python — `example.com` 1/1; Go — `example.com`, полный
-конвейер с JSON-артефактами.
+Каталоги `legacy/python` и `ports/go` оставлены как история: код читается,
+но сборки из них больше не выпускаются.
 
 ## Как собрать самому
 
@@ -64,33 +54,10 @@ libwayland-dev libfontconfig1-dev`.
 
 Профиль релиза: `opt-level = "z"`, LTO, `panic = "abort"`, strip.
 
-### Python (классическая версия)
+### Python и Go
 
-```powershell
-cd legacy/python
-py -3.14 -m venv .venv
-.venv\Scripts\pip install pyinstaller==6.22.3
-.\build.ps1              # dist\SiteRestorer.exe
-.\build.ps1 -Arch x86    # 32-битная сборка
-```
-
-Linux:
-
-```bash
-cd legacy/python
-python3 -m venv .venv && .venv/bin/pip install pyinstaller==6.22.3
-.venv/bin/pyinstaller --onefile --name SiteRestorer src/main.py
-```
-
-### Go (эксперимент)
-
-```bash
-cd ports/go
-CGO_ENABLED=0 GOOS=linux  GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/siterestorer-go-linux-x64 .
-CGO_ENABLED=0 GOOS=linux  GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/siterestorer-go-linux-arm64 .
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/siterestorer-go-win-x64.exe .
-CGO_ENABLED=0 GOOS=windows GOARCH=386   go build -trimpath -ldflags "-s -w" -o dist/siterestorer-go-win-x86.exe .
-```
+Не собираются. Каталоги `legacy/python` и `ports/go` — архив исходников;
+в CI нет ни одной джобы, которая их трогает.
 
 ## Командная строка
 
@@ -107,20 +74,26 @@ site-restorer --version
 - `--rate` — максимум запросов в секунду (общий для всех воркеров);
 - `--lang` — язык окна (`ru`/`en`); сообщения CLI остаются русскими.
 
-У Go-варианта дополнительно `--stage all|inventory|download|build|verify|report`
-и `--sanitize "<строка>"` — только разобрать адрес и выйти.
+У архивного Go-варианта были свои `--stage` и `--sanitize`; в актуальной
+реализации их нет.
 
 ## Что проверяется автоматически
 
 На каждый push и pull request:
 
-- Python: `compileall` + 17 юнит-тестов (`legacy/python`);
-- Rust: 19 тестов (`cargo test`);
-- Go: `go vet` + 24 теста (`ports/go`);
-- сборка всех бинарников, smoke-проверка `--version` у Rust-CLI и PE-заголовков
-  у Python-сборок.
+- `cargo fmt --all --check`;
+- `cargo clippy --all-targets --release --no-default-features -- -D warnings`;
+- `cargo nextest run --release --no-default-features` — 50 тестов;
+- `cargo audit` (RUSTSEC), `cargo deny check` (лицензии и источники, политика
+  в `deny.toml`), `cargo machete` (неиспользуемые зависимости), `typos`.
 
-На тег `v*` те же артефакты прикладываются к релизу вместе с `SHA256SUMS.txt`.
+На тег `v*` дополнительно:
+
+- гейт «тег = версия в `Cargo.toml`» (иначе сборка падает);
+- сборка шести бинарников, у каждого — `--version` и лимит размера;
+- `SiteRestorer-linux-x64.tar.gz`, `SHA256SUMS.txt`, релиз-ноты из `CHANGELOG.md`.
+
+Те же команды локально — в разделе выше.
 
 ## Ограничения, общие для всех реализаций
 
@@ -136,8 +109,8 @@ site-restorer --version
 
 ### GUI и консоль
 
-`SiteRestorer.exe` (GUI) собирается как приложение подсистемы windows — окно
-консоли при запуске не появляется. Для командной строки используйте
-`SiteRestorer-rust-win-cli-*.exe` (собирается с `--no-default-features`);
-если запустить GUI-файл с `--cli`, он подключится к консоли терминала, а при
-перенаправлении вывода в файл — будет писать в файл.
+`SiteRestorer-windows-x64.exe` и `-windows-x86.exe` (GUI) собираются как
+приложения подсистемы windows — окно консоли при запуске не появляется.
+Для командной строки есть `SiteRestorer-windows-*-cli.exe` (сборка
+с `--no-default-features`); если запустить GUI-файл с `--cli`, он подключится
+к консоли терминала, а при перенаправлении вывода в файл — будет писать в файл.

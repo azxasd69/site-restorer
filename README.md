@@ -4,9 +4,9 @@
 сохранённую копию сайта из Wayback Machine (Internet Archive), собирает её для
 локального просмотра и показывает отчёт о полноте.
 
-Основная реализация — **Rust** (нативный интерфейс на egui + CLI в одном бинарнике).
-В репозитории также лежат: исходная версия на Python (`legacy/python`) и
-экспериментальный порт на Go (`ports/go`).
+Реализация — **Rust**: нативный интерфейс на egui и CLI в одном исходнике.
+Python-версия (`legacy/python`) и порт на Go (`ports/go`) оставлены в репозитории
+как история и **больше не разрабатываются и не публикуются**.
 
 ![Главное окно](docs/screenshots/01-idle.png)
 
@@ -18,15 +18,15 @@
 
 | Файл | Платформа | Размер |
 |---|---|---|
-| `SiteRestorer.exe` | Windows 10/11 x64 — **основной** | 6,2 МБ |
-| `SiteRestorer-x86.exe` | Windows 10/11 x86 | 5,6 МБ |
-| `SiteRestorer-rust-linux-cli` | Linux x64, статический бинарник | 2,1 МБ |
-| `SiteRestorer-rust-linux-gui` | Linux x64, нативное окно (X11/GL) | 7,5 МБ |
-| `SiteRestorer-rust-win-cli-x64.exe` / `-x86.exe` | Windows, только командная строка | 1,8 / 1,3 МБ |
-| `SiteRestorer-python-win-x64.exe` | Windows x64, классическая версия на Python | 12,6 МБ |
-| `SiteRestorer-python-win-x86.exe` | Windows x86, классическая версия | 10,2 МБ |
-| `SiteRestorer-python-linux-x64` | Linux x64, классическая версия | 27 МБ |
-| `siterestorer-go-*` | Linux x64/arm64, Windows x64/x86 | 7,9–8,3 МБ |
+| `SiteRestorer-windows-x64.exe` | Windows 10/11 x64 — **основной** | 6,2 МБ |
+| `SiteRestorer-windows-x86.exe` | Windows 10/11 x86 | 5,6 МБ |
+| `SiteRestorer-windows-x64-cli.exe` / `-x86-cli.exe` | Windows, только командная строка | 1,8 / 1,3 МБ |
+| `SiteRestorer-linux-x64-gui` | Linux x64, нативное окно (X11/GL) | 7,5 МБ |
+| `SiteRestorer-linux-x64-cli` | Linux x64, статический бинарник (musl) | 2,1 МБ |
+| `SiteRestorer-linux-x64.tar.gz` | Linux x64: оба бинарника + `.desktop`, иконка, `install.sh` | 4,7 МБ |
+
+Имена не содержат версию — ссылки `releases/latest/download/<имя>` постоянны.
+Версию печатает `--version` и первая строка журнала.
 
 Каждый релиз содержит `SHA256SUMS.txt` — контрольные суммы всех файлов.
 
@@ -36,8 +36,10 @@
 Для Linux:
 
 ```bash
-chmod +x SiteRestorer-rust-linux-cli
-./SiteRestorer-rust-linux-cli --cli --site example.com --out ~/SiteRestore/site
+tar -xzf SiteRestorer-linux-x64.tar.gz
+./site-restorer-linux-x64/install.sh          # в ~/.local, без root
+site-restorer-gui                              # окно
+site-restorer --cli --site example.com --out ~/SiteRestore/site
 ```
 
 ## Возможности
@@ -154,8 +156,8 @@ site-restorer/
 ├── src/                 Rust: main.rs, app.rs (egui), core.rs, paths.rs, sanitize.rs, i18n.rs
 ├── examples/            вспомогательные примеры (fetch.rs)
 ├── tests/               Rust-тесты (в src/*.rs, модули #[cfg(test)])
-├── legacy/python/       исходная реализация на Python + её тесты и сборка
-├── ports/go/            экспериментальная реализация на Go
+├── legacy/python/       архив: исходная реализация на Python (не развивается)
+├── ports/go/            архив: порт на Go (не развивается)
 ├── landing/             лендинг проекта (RU/EN) для GitHub Pages
 ├── docs/                скриншоты, кейс, заметки по сборке под Windows
 ├── .github/workflows/   CI: тесты, сборки всех стеков, релиз по тегу
@@ -169,10 +171,13 @@ site-restorer/
 ## Тесты
 
 ```bash
-cargo test --release --no-default-features   # Rust: 19 тестов, без сети
-cd legacy/python && python -m unittest discover -s tests -v   # Python: 17 тестов
-cd ports/go && go vet ./... && go test ./...                  # Go: 24 теста
+cargo nextest run --release --no-default-features   # 50 тестов, без сети
+cargo fmt --all --check
+cargo clippy --all-targets --release --no-default-features -- -D warnings
+cargo audit && cargo deny check && cargo machete && typos
 ```
+
+Те же команды выполняет CI на каждый push и pull request.
 
 ## Сборка из исходников
 
@@ -187,14 +192,8 @@ cargo build --release --target x86_64-unknown-linux-musl --no-default-features  
 Кросс-сборка под Windows x86: `rustup target add i686-pc-windows-msvc` и
 `cargo build --release --target i686-pc-windows-msvc`.
 
-Python (классическая версия):
-
-```powershell
-cd legacy/python
-py -3.14 -m venv .venv
-.venv\Scripts\pip install pyinstaller==6.22.3
-.\build.ps1              # dist\SiteRestorer.exe
-```
+Python-версия и порт на Go больше не собираются: их каталоги оставлены как
+архив исходников, сборки из них в релиз не попадают.
 
 ## Участие
 
@@ -210,10 +209,10 @@ MIT. Подробности — [LICENSE](LICENSE).
 
 ## English summary
 
-**Site Restorer** rebuilds a website from the Internet Archive. The primary
-implementation is Rust (native egui window + CLI in a single binary, 2–9 MB);
-the original Python/Tk version lives in `legacy/python`, and an experimental Go
-port is in `ports/go`.
+**Site Restorer** rebuilds a website from the Internet Archive. It is written in
+Rust (native egui window + CLI, 2–9 MB). The original Python/Tk version
+(`legacy/python`) and the Go port (`ports/go`) are kept as history only — they
+are no longer developed or published.
 
 It inventories the domain via the CDX API, downloads every archived file in
 parallel with adaptive concurrency (AIMD, 2–24 threads), politely handles rate
@@ -231,12 +230,12 @@ your own sites and respect the Internet Archive terms and copyright law.
 
 ## Linux
 
-В релизе есть `site-restorer-linux-x64.tar.gz`: консольная (`site-restorer`,
+В релизе есть `SiteRestorer-linux-x64.tar.gz`: консольная (`site-restorer`,
 статическая musl) и оконная (`site-restorer-gui`) сборки, `install.sh`, `.desktop`
 и иконка.
 
 ```bash
-tar -xzf site-restorer-linux-x64.tar.gz
+tar -xzf SiteRestorer-linux-x64.tar.gz
 cd site-restorer-linux-x64
 ./install.sh          # в ~/.local, или PREFIX=/usr/local sudo ./install.sh
 ```
