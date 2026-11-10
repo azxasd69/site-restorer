@@ -127,16 +127,27 @@
     deny.textContent = t.deny;
     deny.addEventListener('click', function () {
       saveChoice('denied');
-      // сначала отправляем цель, потом чистим cookie и перезагружаемся
-      try {
-        if (typeof window.ym === 'function') window.ym(COUNTER_ID, 'reachGoal', 'consent_off');
-      } catch (error) {
-        /* счётчик мог не загрузиться */
-      }
-      window.setTimeout(function () {
+
+      // Перезагружаемся только после того, как Метрика подтвердила отправку цели:
+      // иначе хит терялся при reload. Страховка — таймаут 1,5 с.
+      var finished = false;
+      function finish() {
+        if (finished) return;
+        finished = true;
         dropMetrikaCookies();
         window.location.reload();
-      }, 350);
+      }
+
+      if (typeof window.ym === 'function') {
+        try {
+          window.ym(COUNTER_ID, 'reachGoal', 'consent_off', {}, finish);
+        } catch (error) {
+          finish();
+        }
+        window.setTimeout(finish, 1500);
+      } else {
+        finish();
+      }
     });
 
     var accept = document.createElement('button');
