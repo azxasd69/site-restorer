@@ -35,3 +35,7 @@ exe-test/
 # рабочие каталоги инструментов — не в репозиторий
 mutants.out/
 mutants.out.old/
+
+# генерируется в CI для релиз-нот
+RELEASE_NOTES.md
+

@@ -213,7 +213,6 @@ jobs:
       # Текст передаём действию через output, а не через body_path: относительный
       # путь у action-gh-release молча не читается и старый текст остаётся.
       - name: Release notes from CHANGELOG
-        id: notes
         run: |
           python3 - "$GITHUB_REF_NAME" <<'PY'
           import re, sys, pathlib
@@ -231,16 +230,17 @@ jobs:
               body.strip() + "\n\nСборка: Rust. Контрольные суммы — в SHA256SUMS.txt.\n",
               encoding="utf-8")
           PY
-          {
-            echo "body<<NOTES_EOF"
-            cat RELEASE_NOTES.md
-            echo "NOTES_EOF"
-          } >> "$GITHUB_OUTPUT"
           echo "релиз-ноты: $(wc -c < RELEASE_NOTES.md) байт"
 
-      - name: Attach to release
+      - name: Attach assets to release
         uses: softprops/action-gh-release@v2
         with:
           files: assets/*
-          body: ${{ steps.notes.outputs.body }}
           generate_release_notes: false
+
+      # Текст ставим отдельным шагом через gh: softprops при пустом значении
+      # body молча оставляет прежний текст, и ошибку не видно.
+      - name: Release notes (body)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md
