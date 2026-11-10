@@ -3,6 +3,8 @@
 # AIMD — Additive Increase / Multiplicative Decrease, не опечатка
 AIMD = "AIMD"
 aimd = "aimd"
+# имя крейта сжатия flate2: typos режет его на «flate» и цифру
+flate = "flate"
 
 [files]
 extend-exclude = ["target/", "legacy/", "landing/assets/"]

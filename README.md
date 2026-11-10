@@ -66,7 +66,9 @@ site-restorer --cli --site example.com --out ~/SiteRestore/site
 1. Введите адрес — можно вставить что угодно: `example.com`,
    `https://www.example.com/catalog/?utm_source=x`, ссылку из архива или поиска.
    Адрес очистится автоматически.
-2. Выберите папку (по умолчанию `Документы\SiteRestore\site`).
+2. Выберите папку. По умолчанию — `%USERPROFILE%\SiteRestore\site` (в Linux
+   `~/SiteRestore/site`); в командной строке без параметра папки — `SiteRestore/site`
+   от текущего каталога.
 3. Нажмите **Начать** (или Enter в поле адреса).
 
 Адрес, папка, язык и размер окна запоминаются: в Windows — `%APPDATA%\SiteRestorer\config.json`,

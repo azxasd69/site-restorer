@@ -101,7 +101,18 @@ pub fn save_to(path: &Path, settings: &Settings) -> bool {
     {
         return false;
     }
-    std::fs::write(path, settings.render()).is_ok()
+    // Пишем во временный файл и переименовываем: обрыв на середине записи
+    // не должен оставить обрезанные настройки.
+    let tmp = path.with_extension("json.tmp");
+    if std::fs::write(&tmp, settings.render()).is_err() {
+        return false;
+    }
+    if std::fs::rename(&tmp, path).is_ok() {
+        true
+    } else {
+        let _ = std::fs::remove_file(&tmp);
+        false
+    }
 }
 
 impl Settings {

@@ -133,6 +133,9 @@ impl Gate {
 #[derive(Default)]
 struct Counters {
     done: AtomicUsize,
+    /// Сколько файлов уже было на диске к началу загрузки: скорость считается от них,
+    /// иначе при докачке «файлов/с» показывал бы тысячи.
+    baseline: AtomicUsize,
     ok: AtomicUsize,
     missing: AtomicUsize,
     errors: AtomicUsize,
@@ -268,7 +271,9 @@ impl Shared {
             let mut chunk = [0u8; 64 * 1024];
             loop {
                 if self.cancel.load(Ordering::Relaxed) {
-                    break;
+                    // Частичный ответ нельзя отдавать как инвентарь: получился бы
+                    // неполный список адресов без признака ошибки.
+                    return Err("cancelled".to_string());
                 }
                 let read = match reader.read(&mut chunk) {
                     Ok(0) => break,
@@ -603,11 +608,8 @@ impl Engine {
         self.shared.cancel.store(true, Ordering::Relaxed);
     }
 
-    fn emit(&self, stage: &'static str, overall: f32, text: &str, force: bool) {
+    fn emit(&self, stage: &'static str, overall: f32, text: &str, _force: bool) {
         let Some(cb) = &self.cb else { return };
-        if !force && stage != "log" {
-            // троттлинг по времени
-        }
         let counters = &self.shared.counters;
         let done = counters.done.load(Ordering::Relaxed);
         let total = self.items.len();
@@ -630,7 +632,8 @@ impl Engine {
             errors: counters.errors.load(Ordering::Relaxed),
             bytes: counters.bytes.load(Ordering::Relaxed),
             bps,
-            files_per_sec: (done as f64 / elapsed) as f32,
+            files_per_sec: (done.saturating_sub(counters.baseline.load(Ordering::Relaxed)) as f64
+                / elapsed) as f32,
             pause: self.shared.pause_left(),
             threads: self.shared.gate.limit(),
             eta,
@@ -735,6 +738,11 @@ impl Engine {
                     break;
                 }
                 Err(err) => {
+                    // Остановка пользователем — не ошибка списка: выходим сразу,
+                    // иначе журнал заполняется «ошибка cancelled» и прогон ждёт паузу.
+                    if self.shared.cancel.load(Ordering::Relaxed) {
+                        return Err("cancelled".to_string());
+                    }
                     self.shared.log(crate::tr::pick(
                         format!("CDX: список — ошибка {err}"),
                         format!("CDX: list failed: {err}"),
@@ -974,6 +982,10 @@ impl Engine {
         }
         self.shared.counters.done.store(already, Ordering::Relaxed);
         self.shared.counters.ok.store(already, Ordering::Relaxed);
+        self.shared
+            .counters
+            .baseline
+            .store(already, Ordering::Relaxed);
         self.started = Instant::now();
         self.shared.log(crate::tr::pick(
             format!("уже в папке: {already}, к скачиванию: {}", todo.len()),
@@ -1054,7 +1066,10 @@ impl Engine {
                             errors: shared.counters.errors.load(Ordering::Relaxed),
                             bytes: shared.counters.bytes.load(Ordering::Relaxed),
                             bps,
-                            files_per_sec: (done as f64 / elapsed) as f32,
+                            files_per_sec: (done
+                                .saturating_sub(shared.counters.baseline.load(Ordering::Relaxed))
+                                as f64
+                                / elapsed) as f32,
                             pause: shared.pause_left(),
                             threads: shared.gate.limit(),
                             eta: if done > 0
@@ -1099,7 +1114,7 @@ impl Engine {
         let _ = controller.join();
         self.save_content_types();
         self.emit("download", 85.0, "", true);
-        Ok(())
+        self.ensure_not_cancelled()
     }
 
     // ------------------------------------------------------------ build
@@ -1485,16 +1500,27 @@ impl Engine {
     }
 
     // ------------------------------------------------------------ run
+    /// Остановка пользователем — не ошибка: она возвращается отдельным значением,
+    /// чтобы интерфейс и командная строка показали «остановлено», а не сбой.
+    fn ensure_not_cancelled(&self) -> Result<(), String> {
+        if self.shared.cancel.load(Ordering::Relaxed) {
+            Err("cancelled".to_string())
+        } else {
+            Ok(())
+        }
+    }
+
     pub fn run(&mut self) -> Result<Outcome, String> {
         fs::create_dir_all(&self.out).map_err(|e| e.to_string())?;
         self.load_content_types();
         self.inventory()?;
+        self.ensure_not_cancelled()?;
         self.download()?;
+        self.ensure_not_cancelled()?;
         self.build()?;
+        self.ensure_not_cancelled()?;
         let stats = self.verify();
-        if self.shared.cancel.load(Ordering::Relaxed) {
-            return Err("cancelled".to_string());
-        }
+        self.ensure_not_cancelled()?;
         let report = self.report(stats)?;
         self.emit("report", 100.0, crate::tr::t("готово", "done"), true);
         let mut types = [0usize; 8];

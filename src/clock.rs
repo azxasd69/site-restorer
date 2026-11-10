@@ -123,6 +123,25 @@ mod tests {
         }
     }
 
+    /// Местное время отличается от UTC только часовым поясом: минуты и секунды
+    /// совпадают (все часовые пояса кратны 15 минутам). Тест ловит «зашитое» время,
+    /// которым можно случайно заменить системный вызов.
+    #[test]
+    fn local_matches_utc_in_minutes_and_seconds() {
+        let text = hh_mm_ss();
+        let parts: Vec<i32> = text.split(':').filter_map(|p| p.parse().ok()).collect();
+        assert_eq!(parts.len(), 3, "ожидалось ЧЧ:ММ:СС, получено {text}");
+        let (_, utc_min, utc_sec) = utc();
+        let (utc_min, utc_sec) = (utc_min as i32, utc_sec as i32);
+        let diff_min = (parts[1] - utc_min).rem_euclid(60);
+        assert_eq!(diff_min, 0, "минуты не совпали с UTC: {text}");
+        let diff_sec = (parts[2] - utc_sec).rem_euclid(60);
+        assert!(
+            diff_sec <= 2 || diff_sec >= 58,
+            "секунды разошлись с UTC: {text}"
+        );
+    }
+
     #[test]
     fn utc_stays_within_day() {
         let (h, m, s) = utc();

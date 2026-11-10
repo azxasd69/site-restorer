@@ -99,8 +99,17 @@ impl App {
         let settings = crate::settings::load();
         match settings.window {
             Some(w) => {
+                // Окно могло быть сохранено на мониторе, которого больше нет:
+                // возвращаем его в видимую область, иначе программа откроется «в никуда».
+                let (x, y) = match cc.egui_ctx.input(|i| i.viewport().monitor_size) {
+                    Some(mon) if mon.x > 400.0 && mon.y > 400.0 => (
+                        w.x.clamp(-40.0, (mon.x - 160.0).max(0.0)),
+                        w.y.clamp(0.0, (mon.y - 120.0).max(0.0)),
+                    ),
+                    _ => (w.x, w.y),
+                };
                 cc.egui_ctx
-                    .send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(w.x, w.y)));
+                    .send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(x, y)));
                 cc.egui_ctx
                     .send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(w.w, w.h)));
             }
@@ -547,6 +556,12 @@ fn stage_chip(ui: &mut egui::Ui, text: &str, state: u8) {
 }
 
 impl eframe::App for App {
+    /// Настройки пишутся с задержкой 1,5 с: при закрытии окна её надо снять,
+    /// иначе последний сдвиг окна или набранный адрес потеряются.
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.persist(true);
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.poll(ui.ctx());
         if self.pending_start && !self.running {
