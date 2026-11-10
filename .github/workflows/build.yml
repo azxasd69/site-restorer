@@ -210,7 +210,10 @@ jobs:
 
       # Релиз-ноты берём из CHANGELOG, а не из списка коммитов.
       # python, а не awk: файл может приехать с CRLF, а заголовок содержит «—».
+      # Текст передаём действию через output, а не через body_path: относительный
+      # путь у action-gh-release молча не читается и старый текст остаётся.
       - name: Release notes from CHANGELOG
+        id: notes
         run: |
           python3 - "$GITHUB_REF_NAME" <<'PY'
           import re, sys, pathlib
@@ -219,20 +222,25 @@ jobs:
           text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8").replace("\r\n", "\n")
           pattern = re.compile(rf"^##\s+{re.escape(ver)}\b.*$", re.M)
           match = pattern.search(text)
-          if match:
-              rest = text[match.end():]
-              nxt = re.search(r"^##\s", rest, re.M)
-              body = text[match.start(): match.end() + (nxt.start() if nxt else len(rest))]
-          else:
-              body = f"В CHANGELOG.md нет раздела {ver}\n"
-          body = body.strip() + "\n\nСборка: Rust. Контрольные суммы — в SHA256SUMS.txt.\n"
-          pathlib.Path("RELEASE_NOTES.md").write_text(body, encoding="utf-8")
-          print(body)
+          if not match:
+              sys.exit(f"В CHANGELOG.md нет раздела {ver}")
+          rest = text[match.end():]
+          nxt = re.search(r"^##\s", rest, re.M)
+          body = text[match.start(): match.end() + (nxt.start() if nxt else len(rest))]
+          pathlib.Path("RELEASE_NOTES.md").write_text(
+              body.strip() + "\n\nСборка: Rust. Контрольные суммы — в SHA256SUMS.txt.\n",
+              encoding="utf-8")
           PY
+          {
+            echo "body<<NOTES_EOF"
+            cat RELEASE_NOTES.md
+            echo "NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "релиз-ноты: $(wc -c < RELEASE_NOTES.md) байт"
 
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
           files: assets/*
-          body_path: RELEASE_NOTES.md
+          body: ${{ steps.notes.outputs.body }}
           generate_release_notes: false
