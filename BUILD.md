@@ -12,8 +12,8 @@
 
 | Файл | Платформа | Размер | Что внутри |
 |---|---|---|---|
-| `SiteRestorer.exe` | Windows 10/11 x64 | 7,1 МБ | **Rust + egui**, основной вариант: окно, RU/EN |
-| `SiteRestorer-x86.exe` | Windows 10/11 x86 | 6,3 МБ | Rust + egui, 32-битная сборка |
+| `SiteRestorer.exe` | Windows 10/11 x64 | 7,2 МБ | **Rust + egui**, основной вариант: окно, RU/EN |
+| `SiteRestorer-x86.exe` | Windows 10/11 x86 | 6,4 МБ | Rust + egui, 32-битная сборка |
 | `SiteRestorer-rust-win-cli-x64.exe` | Windows x64 | 2,7 МБ | Rust, только командная строка |
 | `SiteRestorer-rust-win-cli-x86.exe` | Windows x86 | 2,1 МБ | Rust, самый маленький бинарник для Windows |
 | `SiteRestorer-rust-linux-cli` | Linux x64 | 3,4 МБ | Rust, статический ELF (`ldd` → not a dynamic executable) |

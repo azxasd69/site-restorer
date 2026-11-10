@@ -18,8 +18,8 @@
 
 | Файл | Платформа | Размер |
 |---|---|---|
-| `SiteRestorer.exe` | Windows 10/11 x64 — **основной** | 7,1 МБ |
-| `SiteRestorer-x86.exe` | Windows 10/11 x86 | 6,3 МБ |
+| `SiteRestorer.exe` | Windows 10/11 x64 — **основной** | 7,2 МБ |
+| `SiteRestorer-x86.exe` | Windows 10/11 x86 | 6,4 МБ |
 | `SiteRestorer-rust-linux-cli` | Linux x64, статический бинарник | 3,4 МБ |
 | `SiteRestorer-rust-linux-gui` | Linux x64, нативное окно (X11/GL) | 9,1 МБ |
 | `SiteRestorer-rust-win-cli-x64.exe` / `-x86.exe` | Windows, только командная строка | 2,7 / 2,1 МБ |
