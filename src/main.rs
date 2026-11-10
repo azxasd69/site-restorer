@@ -1,4 +1,12 @@
 //! Site Restorer (Rust): разбор адреса, ядро (CDX + загрузка + сборка), нативный GUI и CLI.
+//!
+//! GUI-сборка — приложение подсистемы windows: без консольного окна при запуске
+//! двойным щелчком. Сборка только-CLI (`--no-default-features`) остаётся
+//! консольной, поэтому вывод `--cli` и `--version` работает как обычно.
+#![cfg_attr(
+    all(windows, not(debug_assertions), feature = "gui"),
+    windows_subsystem = "windows"
+)]
 
 #[cfg(feature = "gui")]
 mod app;
@@ -15,8 +23,75 @@ pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 use core::{Engine, Progress};
 use std::path::PathBuf;
 
+/// В GUI-сборке подсистема windows, поэтому консоли у процесса нет. Если
+/// пользователь всё же запустил `--cli`/`--version` из терминала, подключаемся
+/// к консоли родителя: иначе вывод молча пропадёт.
+#[cfg(windows)]
+fn attach_parent_console() {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn AttachConsole(dw_process_id: u32) -> i32;
+        fn CreateFileW(
+            name: *const u16,
+            access: u32,
+            share: u32,
+            sec: *mut std::ffi::c_void,
+            disposition: u32,
+            flags: u32,
+            template: *mut std::ffi::c_void,
+        ) -> *mut std::ffi::c_void;
+        fn SetStdHandle(kind: u32, handle: *mut std::ffi::c_void) -> i32;
+        fn GetStdHandle(kind: u32) -> *mut std::ffi::c_void;
+        fn GetFileType(handle: *mut std::ffi::c_void) -> u32;
+    }
+    const ATTACH_PARENT_PROCESS: u32 = 0xFFFF_FFFF;
+    const GENERIC_WRITE: u32 = 0x4000_0000;
+    const FILE_SHARE_WRITE: u32 = 0x0000_0002;
+    const OPEN_EXISTING: u32 = 3;
+    const STD_OUTPUT_HANDLE: u32 = 0xFFFF_FFF5;
+    const STD_ERROR_HANDLE: u32 = 0xFFFF_FFF4;
+
+    // SAFETY: вызовы WinAPI без предварительных условий; результат проверяется.
+    unsafe {
+        // Вывод уже перенаправлен в файл или пайп — не трогаем, иначе сломаем
+        // скрипты и CI, которые читают stdout.
+        let current = GetStdHandle(STD_OUTPUT_HANDLE);
+        if !current.is_null() && current as isize != -1 {
+            match GetFileType(current) {
+                1 | 3 => return, // FILE_TYPE_DISK | FILE_TYPE_PIPE
+                _ => {}
+            }
+        }
+        if AttachConsole(ATTACH_PARENT_PROCESS) == 0 {
+            return; // нет родительской консоли — молча работаем дальше
+        }
+        let name: Vec<u16> = "CONOUT$\0".encode_utf16().collect();
+        let handle = CreateFileW(
+            name.as_ptr(),
+            GENERIC_WRITE,
+            FILE_SHARE_WRITE,
+            std::ptr::null_mut(),
+            OPEN_EXISTING,
+            0,
+            std::ptr::null_mut(),
+        );
+        if handle as isize == -1 {
+            return;
+        }
+        SetStdHandle(STD_OUTPUT_HANDLE, handle);
+        SetStdHandle(STD_ERROR_HANDLE, handle);
+    }
+}
+
+#[cfg(not(windows))]
+fn attach_parent_console() {}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let console_mode = args.iter().any(|a| a == "--cli" || a == "--version" || a == "-V");
+    if console_mode || !cfg!(feature = "gui") {
+        attach_parent_console();
+    }
     if args.iter().any(|a| a == "--version" || a == "-V") {
         println!("site-restorer {APP_VERSION}");
         return;
