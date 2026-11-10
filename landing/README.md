@@ -30,52 +30,40 @@ C:\Python314\python.exe -m http.server 8090
 
 ## Публикация
 
-### GitHub Pages (рекомендуется)
+### GitHub Pages (текущая схема)
 
-Важно: GitHub Pages при деплое «из ветки» публикует только корень репозитория или
-папку `/docs` — произвольную папку `/landing` выбрать нельзя. Поэтому для этого
-лендинга нужен деплой через GitHub Actions.
+Сайт публикуется workflow `.github/workflows/pages.yml`: он забирает содержимое
+`landing/` как артефакт и деплоит на GitHub Pages. Source в Settings → Pages —
+**GitHub Actions**. После смены домена нужен новый прогон workflow (push в `landing/`
+или `workflow_dispatch`), иначе Pages отдаёт 404, пока не применит настройку.
 
-Готовая заготовка workflow лежит в `deploy/pages-workflow.yml`. Порядок:
+### Домен
 
-1. Скопировать её в репозиторий: `.github/workflows/pages.yml`.
-2. Settings → Pages → Build and deployment → Source: **GitHub Actions**.
-3. Закоммитить и запушить. Workflow публикует содержимое `landing/` как артефакт,
-   поэтому структура сайта сохраняется как есть.
-4. Через минуту сайт будет на `https://lastcopy.ru/`,
-   английская версия — `/site-restorer/en/`.
+- Основной: **https://lastcopy.ru/** (apex, домен в настройках Pages).
+- `www.lastcopy.ru` отдаёт 301 на apex силами Pages.
+- DNS: 4×`A` и 4×`AAAA` на apex (адреса GitHub Pages), `www` — `CNAME` на
+  `azxasd69.github.io`. `CNAME`-файл в `landing/` не нужен: при деплое артефактом
+  домен хранится в настройках Pages, файл игнорируется.
+- Альтернативные домены `last-copy.ru`, `lastcopy.online`, `last-copy.online`
+  указывают на VPS (`91.188.222.193`) и отдают `301` на основной с сохранением
+  пути и query. Конфиг nginx — `tools/vps/lastcopy-redirects.conf` в основном
+  репозитории, сертификат Let's Encrypt на 6 имён.
 
-Относительные ссылки внутри сайта работают и под подпапкой `/site-restorer/`,
-править пути не нужно. Для своего домена — CNAME и DNS (см. ниже).
+### Свой домен с нуля
 
-### Свой домен
+1. Купить домен, получить доступ к DNS-панели.
+2. Добавить `A`/`AAAA` на apex и `CNAME` для `www`.
+3. Settings → Pages → Custom domain → Save, дождаться DNS-чека.
+4. Включить Enforce HTTPS после выпуска сертификата (5–60 минут).
+5. Запустить workflow (push или `workflow_dispatch`) — без этого шага домен не применится.
 
-1. Скопировать содержимое `landing/` в корень веб-сервера (или в `current/`
-   при деплое через `tools\vps\deploy.ps1`).
-2. Прописать домен в блоке «после публикации».
-3. Для HTTPS — сертификат (Let's Encrypt / certbot).
-4. Для GitHub Pages + свой домен: файл `CNAME` с доменом в `landing/`
-   и DNS-записи `A`/`CNAME` по документации GitHub.
+### Если домен сменится
 
-## Чек-лист после публикации (домен известен)
-
-Сайт уже опубликован на GitHub Pages: `https://lastcopy.ru/`.
-Canonical, `hreflang`, абсолютные `og:url` / `og:image` / `twitter:image`, `sitemap.xml`
-и строка `Sitemap:` в `robots.txt` уже прописаны под этот адрес.
-
-Если сайт переедет на свой домен (или в другую подпапку), нужно заменить базовый URL
-(он встречается 4 раза на страницу + `sitemap.xml` + `robots.txt`):
-
-- [ ] `index.html`, `en/index.html`: `canonical`, три `hreflang`, `og:url`, `og:image`, `twitter:image`.
-- [ ] `sitemap.xml`: оба `<loc>` и `xhtml:link`.
-- [ ] `robots.txt`: строка `Sitemap:`.
-- [ ] При переезде на свой домен — файл `CNAME` с доменом в `landing/` и DNS-записи по документации GitHub.
-- [ ] Проверить превью: Telegram, X, VK, LinkedIn (кэш обновляется принудительно).
-
-Важно про `robots.txt`: для project pages (`/<repo>/`) файл лежит в подпапке и
-роботами не читается — они запрашивают `https://azxasd69.github.io/robots.txt`.
-На индексацию это влияет слабо (страницы не закрыты), а `sitemap.xml` можно
-отправить в Search Console вручную. Для своего домена ограничение исчезает.
+Заменить базовый URL: `canonical`, три `hreflang`, `og:url`, `og:image`,
+`twitter:image` (два файла), `sitemap.xml`, `robots.txt`, `llms.txt`,
+`index.md` и `en/index.md`. Затем проверить превью в Telegram, X, VK, LinkedIn
+(кэш обновляется принудительно). `robots.txt` и `sitemap.xml` лежат в корне
+домена, поэтому читаются роботами напрямую — ограничений project pages больше нет.
 
 ## Как обновлять
 
