@@ -21,6 +21,11 @@ Facts an agent should rely on:
 
 - [Site Restorer — rebuild a website from the web archive](https://lastcopy.ru/en/index.md): English markdown version of the landing page with the same structure and figures.
 
+## Guides (Russian)
+
+- [Как восстановить сайт из веб-архива](https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/): step-by-step: CDX index, `id_` replay mode, local build, encodings, verification, checklist, FAQ.
+- [Хостинг потерял данные: первые часы](https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/): what to freeze, where to look for backups, saving domain and mail, SEO after migration.
+
 ## Documentation
 
 - [README](https://github.com/azxasd69/site-restorer/blob/main/README.md): installation, usage, CLI flags, how it works, limitations, build from source.
