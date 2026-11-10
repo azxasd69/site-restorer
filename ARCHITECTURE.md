@@ -4,8 +4,8 @@
 описана в [legacy/python/ARCHITECTURE.md](legacy/python/ARCHITECTURE.md) —
 алгоритмы там те же, отличается язык и GUI-тулкит.
 
-Требования к системе в проверяемой форме — [docs/TZ.md](docs/TZ.md);
-ТЗ архивной Python-ветки — [legacy/python/TZ.md](legacy/python/TZ.md).
+Требования к системе в проверяемой форме — [TZ.md](TZ.md) (свод по обеим реализациям),
+детализация по Rust — [docs/TZ.md](docs/TZ.md), по архивной Python-ветке — [legacy/python/TZ.md](legacy/python/TZ.md).
 
 ## Конвейер
 

@@ -168,6 +168,7 @@ site-restorer/
 ├── Cargo.toml           Rust-пакет (бинарь + фича gui)
 ├── BUILD.md             матрица сборок и размеров
 ├── ARCHITECTURE.md      как устроено внутри
+├── TZ.md                сводное ТЗ по обеим реализациям
 ├── CHANGELOG.md         история версий
 └── LICENSE              MIT
 ```
