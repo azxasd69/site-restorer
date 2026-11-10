@@ -55,6 +55,22 @@ libwayland-dev libfontconfig1-dev`.
 Профиль релиза: `opt-level = "z"`, LTO, `panic = "abort"`, strip.
 Версия тулчейна закреплена в `rust-toolchain.toml` (1.99.1) и используется в CI.
 
+### Иконки
+
+Иконки — знак с сайта продукта (lastcopy.ru), — но хранятся готовыми в `packaging/icons/`:
+SVG-мастер, PNG 16…512, ICO и сырой RGBA для окна. Пересобрать — одной командой:
+
+```bash
+pip install pillow
+python scripts/make-icons.py
+```
+
+Скрипт перезаписывает `packaging/icons/`; после этого `install -m644` для Linux — вручную
+(строка в `packaging/linux/install.sh` уже есть). На Windows `build.rs` сам берёт
+`packaging/icons/site-restorer.ico` и `packaging/windows/site-restorer.rc.in` и вызывает `rc.exe`
+из Windows SDK: если SDK нет, сборка идёт без иконки и с предупреждением. Компилятор ресурсов
+не понимает кириллицу в пути, поэтому `build.rs` передаёт ему короткие (8.3) пути.
+
 ### Python и Go
 
 Не собираются. Каталоги `legacy/python` и `ports/go` — архив исходников;

@@ -107,7 +107,7 @@ git push origin v2.4
 | `CHANGELOG.md` | история версий |
 | `ARCHITECTURE.md` | разбор алгоритмов |
 | `src/` | исходники на Rust: ядро (`core.rs`), окно (`app.rs`), настройки, часы, отчёт |
-| `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` | версия 3.2.0 и закреплённый тулчейн |
+| `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` | версия изделия и закреплённый тулчейн |
 | `.github/workflows/build.yml` | CI: сборка и релиз по тегу |
 | `BUILD.md`, `docs/RELEASE.md` | локальная сборка и порядок выпуска |
 | `docs/screenshots/` | снимки окна для README и лендинга |
