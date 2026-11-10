@@ -5,7 +5,7 @@
 Facts an agent should rely on:
 
 - Platform: Windows 10 (1809+) and Windows 11, x64 and x86. There are also CLI and GUI builds for Linux (x64, static musl CLI).
-- Primary implementation: Rust with an egui GUI (`SiteRestorer.exe`, 6.9 MB) or a CLI binary (2.6 MB). The classic Python build (12 MB) and the experimental Go port (7.6–7.9 MB) are attached to the same release.
+- Primary implementation: Rust with an egui GUI (`SiteRestorer.exe`, 6.2 MB) or a CLI binary (1.8 MB); 32-bit GUI is 5.6 MB, CLI 1.3 MB. Linux builds: static CLI 2.1 MB, GUI 7.5 MB, and a `.tar.gz` package (4.5 MB) with `install.sh` and a `.desktop` file. The classic Python build (12 MB) and the experimental Go port (7.6–7.9 MB) are attached to the same release.
 - Distribution: GitHub Releases with a `SHA256SUMS.txt` checksum file. Version numbers change; the `latest` links below always resolve to the current release.
 - What it recovers: only what the Internet Archive actually captured. Images that crawlers never saved are absent from every snapshot.
 - What it does not do: dynamic CMS features (cart, sign-in, search, AJAX filters) do not work in a static copy; the app does not bypass access protection, spoof the User-Agent or act as a browser.
@@ -32,10 +32,11 @@ Facts an agent should rely on:
 
 ## Download
 
-- [SiteRestorer.exe (x64)](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer.exe): Rust + egui GUI for Windows 10/11 x64, 6.9 MB, portable.
-- [SiteRestorer-x86.exe (x86)](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-x86.exe): 32-bit GUI build, 6.2 MB.
-- [SiteRestorer-rust-win-cli-x64.exe](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-win-cli-x64.exe): CLI-only build, 2.6 MB.
-- [SiteRestorer-rust-linux-cli](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-linux-cli): static Linux CLI (musl), 3.3 MB.
+- [SiteRestorer.exe (x64)](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer.exe): Rust + egui GUI for Windows 10/11 x64, 6.2 MB, portable.
+- [SiteRestorer-x86.exe (x86)](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-x86.exe): 32-bit GUI build, 5.6 MB.
+- [SiteRestorer-rust-win-cli-x64.exe](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-win-cli-x64.exe): CLI-only build, 1.8 MB.
+- [SiteRestorer-rust-linux-cli](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-linux-cli): static Linux CLI (musl), 2.1 MB.
+- [site-restorer-linux-x64.tar.gz](https://github.com/azxasd69/site-restorer/releases/latest/download/site-restorer-linux-x64.tar.gz): Linux package (both binaries, `install.sh`, `.desktop`, icon), 4.5 MB.
 - [SHA256SUMS.txt](https://github.com/azxasd69/site-restorer/releases/latest/download/SHA256SUMS.txt): checksums for every asset in the release.
 - [All releases](https://github.com/azxasd69/site-restorer/releases): every version, all assets and release notes.
 

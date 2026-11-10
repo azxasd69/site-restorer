@@ -9,7 +9,7 @@
 - Назначение: восстановление собственного сайта, когда нет ни файлов, ни резервных копий, ни доступа к хостингу.
 - Платформа: Windows 10 (1809+) и Windows 11, x64 и x86. Есть CLI и GUI сборки для Linux (x64).
 - Реализация: Rust + egui для интерфейса; CLI-бинарник без GUI. Классическая версия на Python и экспериментальный порт на Go приложены к тому же релизу.
-- Размеры: GUI для Windows x64 — 6,9 МБ, x86 — 6,2 МБ, CLI — 2,6 МБ, статический CLI для Linux — 3,3 МБ.
+- Размеры: GUI для Windows x64 — 6,2 МБ, x86 — 5,6 МБ, CLI — 1,8 МБ (x86 — 1,3 МБ), статический CLI для Linux — 2,1 МБ, Linux GUI — 7,5 МБ, пакет `.tar.gz` — 4,5 МБ.
 - Поставка: GitHub Releases, к релизу прилагается `SHA256SUMS.txt` с контрольными суммами.
 - Лицензия: MIT. Исходный код открыт.
 - Языки интерфейса: русский, английский, переключение на лету.
@@ -23,6 +23,8 @@
 - Сборка локальной копии: абсолютные ссылки → относительные; эвристики для кэша CMS с хэшем в имени и для миниатюр.
 - Проверка и отчёт: обход готовых страниц, подсчёт внутренних и битых ссылок, файл `report.html` с покрытием по типам файлов, объёмом копии и списком ошибок.
 - Кодировки: страницы и стили в cp1251 (и другой объявленной кодировке) перекодируются в UTF-8, `<meta charset>` приводится в порядок.
+- Вставка адреса: Ctrl+V, Ctrl+Shift+V, Shift+Insert (Linux), разбор многострочного текста из браузера (URL + заголовок); Enter запускает, Esc снимает фокус.
+- Диалог выбора папки и переключение RU/EN на лету.
 - Любой ввод адреса: ссылка из письма, поиска или архива, русская раскладка клавиатуры, IDN-домены.
 - Любая CMS: проверено на Bitrix, WordPress, MODX, Craft CMS, Laravel.
 - Диагностика: журнал с URL, HTTP-кодом, размером и временем каждого запроса.
@@ -87,10 +89,13 @@ SiteRestorer.exe --cli --site example.com --out D:\mirror --workers 16
 
 ## Скачать
 
-- x64 (GUI, Rust + egui, 6,9 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer.exe
-- x86 (GUI, 6,2 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-x86.exe
-- CLI для Windows x64 (2,6 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-win-cli-x64.exe
-- CLI для Linux x64 (статический, 3,3 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-linux-cli
+- x64 (GUI, Rust + egui, 6,2 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer.exe
+- x86 (GUI, 5,6 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-x86.exe
+- CLI для Windows x64 (1,8 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-win-cli-x64.exe
+- CLI для Windows x86 (1,3 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-win-cli-x86.exe
+- CLI для Linux x64 (статический, 2,1 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-linux-cli
+- Linux GUI x64 (7,5 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-linux-gui
+- Пакет для Linux (бинари + install.sh + .desktop, 4,5 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/site-restorer-linux-x64.tar.gz
 - Контрольные суммы: https://github.com/azxasd69/site-restorer/releases/latest/download/SHA256SUMS.txt
 - Все версии: https://github.com/azxasd69/site-restorer/releases
 

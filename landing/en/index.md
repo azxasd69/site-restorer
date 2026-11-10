@@ -9,7 +9,7 @@ Key point: the app recovers only what the archive actually saved; dynamic CMS fe
 - Purpose: restoring your own site when there are no files, no backups and no hosting access.
 - Platform: Windows 10 (1809+) and Windows 11, x64 and x86. CLI and GUI builds for Linux (x64) are published too.
 - Implementation: Rust with an egui GUI, plus a CLI-only binary. The classic Python build and the experimental Go port ship in the same release.
-- Sizes: Windows GUI x64 — 6.9 MB, x86 — 6.2 MB, CLI — 2.6 MB, static Linux CLI — 3.3 MB.
+- Sizes: Windows GUI x64 — 6.2 MB, x86 — 5.6 MB, CLI — 1.8 MB (x86 — 1.3 MB), static Linux CLI — 2.1 MB, Linux GUI — 7.5 MB, Linux `.tar.gz` package — 4.5 MB.
 - Distribution: GitHub Releases, with a `SHA256SUMS.txt` checksum file attached.
 - License: MIT, source code is open.
 - UI languages: Russian, English, switched on the fly.
@@ -23,6 +23,8 @@ Key point: the app recovers only what the archive actually saved; dynamic CMS fe
 - Offline build: absolute links rewritten to relative ones; heuristics for CMS caches with build hashes and for image thumbnails.
 - Verification and report: pages are scanned, internal and broken links counted, `report.html` shows coverage by file type, total size and errors.
 - Encodings: pages and stylesheets saved in cp1251 (or another declared encoding) are converted to UTF-8 and `<meta charset>` is fixed.
+- Address paste: Ctrl+V, Ctrl+Shift+V, Shift+Insert (Linux), multi-line browser payload is parsed down to the host; Enter starts, Esc unfocuses.
+- Native folder picker and RU/EN switching on the fly.
 - Any address format: links from email, search or the archive, wrong keyboard layout, IDN domains.
 - Any CMS: tested on Bitrix, WordPress, MODX, Craft CMS, Laravel.
 - Diagnostics: a log entry with URL, HTTP status, size and timing for every request.
@@ -87,10 +89,13 @@ What did not come back:
 
 ## Download
 
-- x64 GUI (Rust + egui, 6.9 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer.exe
-- x86 GUI (6.2 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-x86.exe
-- Windows x64 CLI (2.6 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-win-cli-x64.exe
-- Linux x64 CLI, static (3.3 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-linux-cli
+- x64 GUI (Rust + egui, 6.2 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer.exe
+- x86 GUI (5.6 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-x86.exe
+- Windows x64 CLI (1.8 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-win-cli-x64.exe
+- Windows x86 CLI (1.3 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-win-cli-x86.exe
+- Linux x64 CLI, static (2.1 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-linux-cli
+- Linux x64 GUI (7.5 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-linux-gui
+- Linux package (binaries + install.sh + .desktop, 4.5 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/site-restorer-linux-x64.tar.gz
 - Checksums: https://github.com/azxasd69/site-restorer/releases/latest/download/SHA256SUMS.txt
 - All releases: https://github.com/azxasd69/site-restorer/releases
 
