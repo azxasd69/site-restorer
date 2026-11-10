@@ -3,7 +3,7 @@
 
 use crate::paths;
 use crate::sanitize::sanitize_site;
-use encoding_rs::{Encoding, WINDOWS_1251};
+
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -64,6 +64,8 @@ pub struct Outcome {
     pub report: PathBuf,
     pub site: PathBuf,
     pub stats: Stats,
+    /// Пары «скачано, всего» по типам: HTML, CSS/JS, IMG, прочее.
+    pub types: [usize; 8],
 }
 
 pub type Cb = Arc<dyn Fn(&Progress) + Send + Sync>;
@@ -173,6 +175,8 @@ struct Shared {
     /// Минимальный интервал между запросами (наносекунды), 0 — без ограничения.
     rate_nanos: AtomicU64,
     rate_next: Mutex<Instant>,
+    /// Кодировка из заголовка ответа: путь в копии -> Content-Type.
+    content_types: Mutex<HashMap<String, String>>,
 }
 
 impl Shared {
@@ -186,7 +190,7 @@ impl Shared {
         }
     }
 
-    fn fetch(&self, url: &str) -> Result<(u16, Vec<u8>, Option<f64>), String> {
+    fn fetch(&self, url: &str) -> Result<(u16, Vec<u8>, Option<f64>, Option<String>), String> {
         self.wait_if_paused();
         self.rate_wait();
         let mut resp = self
@@ -202,8 +206,13 @@ impl Shared {
             .get("retry-after")
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.parse::<f64>().ok());
+        let content_type = resp
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.to_string());
         let body = resp.body_mut().read_to_vec().map_err(|e| e.to_string())?;
-        Ok((status, body, retry_after))
+        Ok((status, body, retry_after, content_type))
     }
 
     /// Поставить глобальную паузу: воркеры увидят её перед следующим запросом.
@@ -293,7 +302,7 @@ impl Shared {
             }
             let url = format!("{}{path_q}", self.agent_archive);
             for attempt in 0..2u32 {
-                let (status, body, retry_after) = match self.fetch(&url) {
+                let (status, body, retry_after, content_type) = match self.fetch(&url) {
                     Ok(res) => res,
                     Err(err) => {
                         self.log(format!("сеть: {err}"));
@@ -316,6 +325,12 @@ impl Shared {
                             if meta.len() > 0 {
                                 ok = true;
                                 size = body.len();
+                                if let Some(ct) = content_type {
+                                    self.content_types
+                                        .lock()
+                                        .unwrap()
+                                        .insert(item.path.clone(), ct);
+                                }
                             }
                         }
                     }
@@ -380,6 +395,9 @@ pub struct Engine {
     started: Instant,
     items: Vec<Item>,
     inv_failed: bool,
+    /// Сколько файлов пришлось перекодировать: кодировка -> число.
+    enc_stats: std::sync::Mutex<HashMap<&'static str, usize>>,
+    enc_logged: std::sync::atomic::AtomicUsize,
 }
 
 impl Engine {
@@ -409,11 +427,14 @@ impl Engine {
                 pause_until: Mutex::new(Instant::now()),
                 rate_nanos: AtomicU64::new(0),
                 rate_next: Mutex::new(Instant::now()),
+                content_types: Mutex::new(HashMap::new()),
             }),
             cb: None,
             started: Instant::now(),
             items: Vec::new(),
             inv_failed: false,
+            enc_stats: std::sync::Mutex::new(HashMap::new()),
+            enc_logged: std::sync::atomic::AtomicUsize::new(0),
         })
     }
 
@@ -425,6 +446,7 @@ impl Engine {
         let paused = *self.shared.pause_until.lock().unwrap();
         let rate = self.shared.rate_nanos.load(Ordering::Relaxed);
         let next = *self.shared.rate_next.lock().unwrap();
+        let ct = self.shared.content_types.lock().unwrap().clone();
         self.shared = Arc::new(Shared {
             agent: self.shared.agent.clone(),
             agent_archive: self.shared.agent_archive.clone(),
@@ -437,7 +459,43 @@ impl Engine {
             pause_until: Mutex::new(paused),
             rate_nanos: AtomicU64::new(rate),
             rate_next: Mutex::new(next),
+            content_types: Mutex::new(ct),
         });
+    }
+
+    /// Заголовки ответов (кодировки) пригодятся при сборке: meta в документе
+    /// может отсутствовать, а заголовок архива — врать.
+    fn content_types_path(&self) -> PathBuf {
+        self.data_dir.join("content-types.tsv")
+    }
+
+    fn load_content_types(&self) {
+        let path = self.content_types_path();
+        let Ok(text) = fs::read_to_string(&path) else {
+            return;
+        };
+        let mut map = self.shared.content_types.lock().unwrap();
+        for line in text.lines() {
+            if let Some((rel, ct)) = line.split_once('\t') {
+                map.insert(rel.to_string(), ct.to_string());
+            }
+        }
+    }
+
+    fn save_content_types(&self) {
+        let map = self.shared.content_types.lock().unwrap().clone();
+        if map.is_empty() {
+            return;
+        }
+        let mut out = String::new();
+        for (rel, ct) in map {
+            out.push_str(&rel);
+            out.push('\t');
+            out.push_str(&ct.replace(['\t', '\n', '\r'], " "));
+            out.push('\n');
+        }
+        let _ = fs::create_dir_all(&self.data_dir);
+        let _ = fs::write(self.content_types_path(), out);
     }
 
     /// Ограничение скорости: запросов в секунду (0 — без ограничения).
@@ -450,6 +508,7 @@ impl Engine {
         self.shared.rate_nanos.store(nanos, Ordering::Relaxed);
     }
 
+    #[allow(dead_code)] // публичный API для внешних обвязок
     pub fn cancel_token(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.shared.cancel)
     }
@@ -505,12 +564,12 @@ impl Engine {
         self.emit("inventory", 2.0, "оценка объёма архива", true);
         let mut pages = 1usize;
         match self.shared.fetch(&self.cdx_query("showNumPages=true&output=json")) {
-            Ok((200, body, _)) => {
+            Ok((200, body, _, _)) => {
                 if let Some(n) = parse_pages(&String::from_utf8_lossy(&body)) {
                     pages = n;
                 }
             }
-            Ok((code, _, _)) => self
+            Ok((code, _, _, _)) => self
                 .shared
                 .log(format!("CDX: оценка недоступна (HTTP {code})")),
             Err(err) => self.shared.log(format!("CDX: оценка — ошибка {err}")),
@@ -523,8 +582,8 @@ impl Engine {
             );
             self.emit("inventory", 4.0, "получение списка адресов", true);
             match self.shared.fetch(&query) {
-                Ok((200, body, _)) => rows = parse_rows(&body),
-                Ok((code, _, _)) => self.shared.log(format!("CDX: список — HTTP {code}")),
+                Ok((200, body, _, _)) => rows = parse_rows(&body),
+                Ok((code, _, _, _)) => self.shared.log(format!("CDX: список — HTTP {code}")),
                 Err(err) => self.shared.log(format!("CDX: список — ошибка {err}")),
             }
             if rows.is_empty() {
@@ -550,7 +609,7 @@ impl Engine {
                     true,
                 );
                 match self.shared.fetch(&query) {
-                    Ok((200, body, _)) => {
+                    Ok((200, body, _, _)) => {
                         attempts = 0;
                         let chunk = parse_rows(&body);
                         let got = chunk.len();
@@ -561,7 +620,7 @@ impl Engine {
                         }
                         continue;
                     }
-                    Ok((code, _, retry)) => {
+                    Ok((code, _, retry, _)) => {
                         if code == 429 || code >= 500 {
                             attempts += 1;
                             if attempts >= 3 {
@@ -810,6 +869,7 @@ impl Engine {
         stop.store(true, Ordering::Relaxed);
         let _ = progress_thread.join();
         let _ = controller.join();
+        self.save_content_types();
         self.emit("download", 85.0, "", true);
         Ok(())
     }
@@ -862,7 +922,44 @@ impl Engine {
                     Ok(d) => d,
                     Err(_) => continue,
                 };
-                let mut text = decode_text(&data);
+                if crate::encoding::looks_binary(&data) {
+                    // под расширением .html в архиве бывает картинка или PDF:
+                    // копируем байты как есть, иначе файл будет испорчен
+                    let _ = fs::copy(src, &dst);
+                    if console_verbose()
+                        && self.enc_logged.fetch_add(1, Ordering::Relaxed) < 3
+                    {
+                        self.shared
+                            .log(format!("двоичный файл под текстовым расширением: {rel}"));
+                    }
+                    continue;
+                }
+                let ct = self
+                    .shared
+                    .content_types
+                    .lock()
+                    .unwrap()
+                    .get(&rel)
+                    .cloned();
+                let decoded = crate::encoding::decode_document(&data, ct.as_deref());
+                if decoded.was_converted() {
+                    *self
+                        .enc_stats
+                        .lock()
+                        .unwrap()
+                        .entry(decoded.label)
+                        .or_insert(0) += 1;
+                    // в журнал — только первые несколько примеров, дальше сводка
+                    if console_verbose()
+                        && self.enc_logged.fetch_add(1, Ordering::Relaxed) < 3
+                    {
+                        self.shared.log(format!(
+                            "кодировка: {} ({}, {}%) — {}",
+                            decoded.label, decoded.source, decoded.confidence, rel
+                        ));
+                    }
+                }
+                let mut text = decoded.text;
                 if lower.ends_with(".js") {
                     text = site_rx
                         .replace_all(&text, |caps: &regex::Captures| caps[1].to_string())
@@ -913,7 +1010,7 @@ impl Engine {
                         })
                         .into_owned();
                     text = base_rx.replace_all(&text, "").into_owned();
-                    text = force_utf8(&text);
+                    text = crate::encoding::normalize_utf8(&text);
                 }
                 let _ = fs::write(&dst, text.as_bytes());
             } else if fs::copy(src, &dst).is_err() {
@@ -928,7 +1025,34 @@ impl Engine {
                 );
             }
         }
+        let summary = self.enc_summary();
+        if !summary.is_empty() {
+            self.shared.log(format!("перекодировано в UTF-8: {summary}"));
+        }
         Ok(total)
+    }
+
+    /// «windows-1251: 120, koi8-r: 2» — для журнала и отчёта.
+    /// HTML-фрагмент про перекодировку (пустая строка, если конвертировать не пришлось).
+    fn report_encodings(&self) -> String {
+        let summary = self.enc_summary();
+        if summary.is_empty() {
+            return String::new();
+        }
+        format!(
+            "<tr><td>Перекодировано в UTF-8</td><td class=\"n\">{summary}</td></tr>"
+        )
+    }
+
+    fn enc_summary(&self) -> String {
+        let stats = self.enc_stats.lock().unwrap();
+        let mut pairs: Vec<(&&'static str, &usize)> = stats.iter().collect();
+        pairs.sort_by(|a, b| b.1.cmp(a.1));
+        pairs
+            .iter()
+            .map(|(label, count)| format!("{label}: {count}"))
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     fn rewrite_ref(
@@ -1071,7 +1195,8 @@ impl Engine {
                 "{{errors}}",
                 &self.shared.counters.errors.load(Ordering::Relaxed).to_string(),
             )
-            .replace("{{rows}}", &rows);
+            .replace("{{rows}}", &rows)
+            .replace("{{encodings}}", &self.report_encodings());
         let path = self.out.join("report.html");
         fs::write(&path, doc).map_err(|e| e.to_string())?;
         Ok(path)
@@ -1080,20 +1205,32 @@ impl Engine {
     // ------------------------------------------------------------ run
     pub fn run(&mut self) -> Result<Outcome, String> {
         fs::create_dir_all(&self.out).map_err(|e| e.to_string())?;
+        self.load_content_types();
         self.inventory()?;
         self.download()?;
         self.build()?;
         let stats = self.verify();
         let report = self.report(stats)?;
         self.emit("report", 100.0, "готово", true);
+        let mut types = [0usize; 8];
+        for (i, (_, ok, total)) in self.shared.types.lock().unwrap().as_array().iter().enumerate() {
+            types[i * 2] = *ok;
+            types[i * 2 + 1] = *total;
+        }
         Ok(Outcome {
             ok: self.shared.counters.ok.load(Ordering::Relaxed),
             total: self.items.len(),
             report,
             site: self.site_dir.clone(),
             stats,
+            types,
         })
     }
+}
+
+/// Подробные сообщения о кодировках — только в CLI (в GUI журнал короткий).
+fn console_verbose() -> bool {
+    std::env::var("SR_QUIET").is_err()
 }
 
 fn label(kind: &str) -> &'static str {
@@ -1301,66 +1438,6 @@ fn parse_pages(text: &str) -> Option<usize> {
     None
 }
 
-fn sniff_charset(data: &[u8]) -> Option<String> {
-    let head = String::from_utf8_lossy(&data[..data.len().min(4096)]).to_lowercase();
-    let meta = Regex::new(r#"charset\s*=\s*["']?\s*([a-z0-9_.:\-]+)"#).unwrap();
-    let css = Regex::new(r#"@charset\s+["']([^"']+)["']"#).unwrap();
-    if let Some(c) = meta.captures(&head) {
-        return Some(c[1].to_string());
-    }
-    if let Some(c) = css.captures(&head) {
-        return Some(c[1].to_string());
-    }
-    None
-}
-
-fn decode_text(data: &[u8]) -> String {
-    if let Ok(s) = std::str::from_utf8(data) {
-        return s.to_string();
-    }
-    if let Some(label) = sniff_charset(data) {
-        if let Some(enc) = Encoding::for_label(label.as_bytes()) {
-            return enc.decode(data).0.into_owned();
-        }
-    }
-    WINDOWS_1251.decode(data).0.into_owned()
-}
-
-fn force_utf8(text: &str) -> String {
-    let meta = Regex::new(r#"(?i)(charset\s*=\s*["']?\s*)([a-z0-9_.:\-]+)"#).unwrap();
-    let css = Regex::new(r#"(?i)(@charset\s+["'])([^"']+)(["'])"#).unwrap();
-    let out = meta.replace_all(text, "${1}utf-8").into_owned();
-    let out = css.replace_all(&out, "${1}utf-8${3}").into_owned();
-    ensure_charset_in_head(&out)
-}
-
-/// Браузер ищет кодировку только в первых 1024 байтах документа. Если объявление
-/// лежит глубже (обычное дело: длинный скрипт в начале head), добавляем свой
-/// <meta charset="utf-8"> сразу после <head>.
-fn ensure_charset_in_head(text: &str) -> String {
-    let declared = Regex::new(r#"(?i)charset\s*=\s*["']?\s*[a-z0-9_.:\-]+"#)
-        .ok()
-        .and_then(|rx| rx.find(text))
-        .map(|m| m.start())
-        .unwrap_or(usize::MAX);
-    if declared < 1024 {
-        return text.to_string();
-    }
-    let insert_at = match Regex::new(r"(?i)<head\b[^>]*>")
-        .ok()
-        .and_then(|rx| rx.find(text))
-        .map(|m| m.end())
-    {
-        Some(pos) => pos,
-        None => return text.to_string(),
-    };
-    let mut out = String::with_capacity(text.len() + 32);
-    out.push_str(&text[..insert_at]);
-    out.push_str("<meta charset=\"utf-8\">");
-    out.push_str(&text[insert_at..]);
-    out
-}
-
 fn is_error_page(body: &[u8]) -> bool {
     let head = &body[..body.len().min(2000)];
     ERROR_MARKERS
@@ -1435,6 +1512,7 @@ th,td{padding:9px 12px;border-bottom:1px solid #eee;text-align:left}th{backgroun
 <h2>Целостность</h2><table>
 <tr><td>Внутренних ссылок</td><td class="n">{{refs}}</td></tr>
 <tr><td>Битых ссылок <span style="color:#6b7280">(нет в копии)</span></td><td class="n">{{broken}}</td></tr>
+{{encodings}}
 <tr><td>Отказов 404 при загрузке</td><td class="n">{{missing}}</td></tr>
 <tr><td>Ошибок загрузки</td><td class="n">{{errors}}</td></tr></table>
 <p style="color:#6b7280;margin-top:24px">Статическая копия: корзина, вход и AJAX исходного сайта не работают.
@@ -1500,7 +1578,7 @@ mod build_tests {
     }
 
     fn build(root: &Path) -> Engine {
-        let mut engine = Engine::new("example.com", root, 1, 0).unwrap();
+        let engine = Engine::new("example.com", root, 1, 0).unwrap();
         engine.build().unwrap();
         engine
     }
@@ -1542,7 +1620,7 @@ mod build_tests {
             "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=windows-1251\">\
              </head><body>Привет</body></html>",
         );
-        let out = force_utf8(&body);
+        let out = crate::encoding::normalize_utf8(&body);
         let meta_at = out
             .find("<meta charset=\"utf-8\">")
             .expect("meta добавлена");
@@ -1550,7 +1628,7 @@ mod build_tests {
         assert!(out.contains("charset=utf-8"));
 
         let early = "<html><head><meta charset=\"utf-8\"></head><body>x</body></html>";
-        assert_eq!(force_utf8(early), early, "корректный документ не меняем");
+        assert_eq!(crate::encoding::normalize_utf8(early), early, "корректный документ не меняем");
     }
 
     #[test]

@@ -3,6 +3,8 @@
 #[cfg(feature = "gui")]
 mod app;
 mod core;
+mod encoding;
+#[cfg(feature = "gui")]
 mod i18n;
 mod paths;
 mod sanitize;
@@ -132,8 +134,13 @@ fn cli(args: &[String]) -> i32 {
         "log" => println!("{}", p.text),
         "download" => {
             if p.done % 5 == 0 || p.done == p.total {
+                let eta = if p.eta > 0 {
+                    format!(" ~{} с", p.eta)
+                } else {
+                    String::new()
+                };
                 println!(
-                    "[{:5.1}%] {}  {} | {:.0} КБ/с потоков={} ok={} нет={} ошибок={}",
+                    "[{:5.1}%] {}  {} | {:.0} КБ/с потоков={} ok={} нет={} ошибок={} {:.1} МБ{}",
                     p.overall,
                     p.stage,
                     p.text,
@@ -141,9 +148,18 @@ fn cli(args: &[String]) -> i32 {
                     p.threads,
                     p.ok,
                     p.missing,
-                    p.errors
+                    p.errors,
+                    p.bytes as f64 / 1_048_576.0,
+                    eta
                 );
-                let _ = p.eta;
+                if p.done == p.total && p.total > 0 {
+                    let names: Vec<String> = p
+                        .types
+                        .iter()
+                        .map(|(name, ok, total)| format!("{name} {ok}/{total}"))
+                        .collect();
+                    println!("  готово по типам: {}", names.join(", "));
+                }
             }
         }
         _ => {
@@ -158,6 +174,16 @@ fn cli(args: &[String]) -> i32 {
             println!(
                 "ИТОГ: скачано {} из {}, страниц {}, ссылок {}, битых {}",
                 outcome.ok, outcome.total, outcome.stats.pages, outcome.stats.refs, outcome.stats.broken
+            );
+            let (html, code, img, other) = (
+                outcome.types[0],
+                outcome.types[2],
+                outcome.types[4],
+                outcome.types[6],
+            );
+            println!(
+                "типы: HTML {html}/{}, CSS-JS {code}/{}, IMG {img}/{}, прочее {other}/{}",
+                outcome.types[1], outcome.types[3], outcome.types[5], outcome.types[7]
             );
             println!("копия:  {}", outcome.site.display());
             println!("отчёт:  {}", outcome.report.display());

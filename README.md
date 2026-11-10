@@ -205,3 +205,17 @@ Windows 10/11 builds (x64 and x86) are published on the Releases page together
 with Linux binaries and `SHA256SUMS.txt`. Only what the archive actually saved
 can be recovered; dynamic CMS features do not work in a static copy. Use it for
 your own sites and respect the Internet Archive terms and copyright law.
+
+## Кодировки
+
+Копия всегда собирается в UTF-8. Кодировка исходной страницы определяется по
+цепочке: BOM → валидный UTF-8 → `Content-Type` → `<meta charset>` →
+`<?xml encoding?>` → `@charset` → статистика по содержимому (`chardetng`).
+Объявление не считается приказом: если по нему текст нечитаем, а альтернатива
+читается, выбирается альтернатива — заголовки веб-архива часто не совпадают
+с телом. Если `<meta charset>` оказалась глубже первых 1024 байт (браузер
+дальше не смотрит), сразу после `<head>` вставляется `<meta charset="utf-8">`.
+Двоичные файлы под текстовым расширением (JPEG или PDF с адресом `.html`)
+копируются без изменений. Подробный разбор и варианты решения —
+[docs/encodings.md](docs/encodings.md).
+
