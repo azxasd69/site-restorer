@@ -4,36 +4,58 @@
 
 ## Окружение
 
-- Windows 10/11 x64 (для 32-битной сборки — 32-битный Python).
-- Python 3.13 или 3.14, tkinter в комплекте.
-- Внешних зависимостей у приложения нет: только стандартная библиотека.
+Разработка ведётся только на Rust. Python- и Go-реализации переведены в архив
+(`legacy/python`, `ports/go`): они не собираются, не тестируются и не попадают
+в релиз. Правки в них не принимаются.
+
+- Windows 10/11 x64 (для 32-битной сборки — MSVC x86), либо Linux x64.
+- Rust — версия закреплена в `rust-toolchain.toml` (компоненты `clippy` и `rustfmt`
+  подтянутся сами).
+- Для Windows-сборок — MSVC Build Tools; для Linux-GUI — `libxkbcommon-dev`,
+  `libgl1-mesa-dev`, `libegl1-mesa-dev`.
 
 ```powershell
 git clone https://github.com/azxasd69/site-restorer.git
 cd site-restorer
-python -m venv .venv
-.venv\Scripts\pip install pyinstaller==6.22.3
+cargo build --release            # GUI: target\release\site-restorer.exe
+cargo build --release --no-default-features   # CLI
 ```
 
 ## Тесты
 
 ```powershell
-python -m unittest discover -s tests -v
+cargo nextest run --release --no-default-features
 ```
 
-Тесты не ходят в сеть: проверяются парсер адреса и построение путей.
-CI запускает их на каждый push и pull request — PR без зелёных тестов не мержится.
+Тесты не ходят в сеть: проверяются парсер адреса, построение путей, punycode,
+разбор архива. CI запускает их на каждый push и pull request — PR без зелёных
+тестов не мержится.
 
-## Сборка
+## Проверки перед PR
 
 ```powershell
-.\build.ps1            # x64 -> dist\SiteRestorer-windows-x64.exe
-.\build.ps1 -Arch x86  # x86 -> dist\SiteRestorer-windows-x86.exe
+cargo fmt --all --check
+cargo clippy --all-targets --release --no-default-features -- -D warnings
+cargo clippy --all-targets --release -- -D warnings   # GUI
+cargo nextest run --release --no-default-features
+cargo deny check
+cargo machete
+typos
 ```
+
+Всё это же делает CI (`.github/workflows/build.yml`), поэтому локальный прогон
+экономит цикл.
+
+## Сборка и релиз
+
+Матрица сборок, лимиты размера и порядок выпуска — в [BUILD.md](BUILD.md) и
+[docs/RELEASE.md](docs/RELEASE.md). Релиз делает CI по тегу; вручную бинарники
+в релиз не заливаются.
 
 ## Правила кода
 
-- Только стандартная библиотека. Новые зависимости — отдельное обсуждение в issue.
+- Новые зависимости — отдельное обсуждение в issue: размер бинарника растёт
+  от каждой (см. `cargo bloat`).
 - Публичные функции — с docstring; сложные места — с комментарием «почему», а не «что».
 - Никакой маскировки под браузер, обхода капчи и ротации IP. Инструмент работает
   с архивом вежливо: честный User-Agent, Retry-After, паузы.
@@ -44,11 +66,12 @@ CI запускает их на каждый push и pull request — PR без 
 
 Формат: `<область>: <краткое описание>` — например `ui: show live byte counters`
 или `core: deterministic hashing for file names`. Один коммит — одна мысль.
+Сообщения — на английском.
 
 ## Pull request
 
 1. Ответвление от `main`, ветка `fix/...` или `feat/...`.
-2. Тесты проходят, сборка собирается.
+2. Тесты и проверки выше проходят, сборка собирается.
 3. В описании: что меняется, зачем, как проверено (команды и результат).
 4. Изменения поведения UI — со скриншотом до/после.
 
