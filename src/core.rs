@@ -19,6 +19,12 @@ const MIN_THREADS: usize = 2;
 const MAX_THREADS: usize = 24;
 const MAX_PAGES: usize = 200;
 const PAGE_LIMIT: usize = 20_000;
+/// Основной адрес архива: сначала шифрованный канал, открытый — запасной.
+/// Часть сетей блокирует порт 80, часть — только 443 (ОШ-2 в docs/DEFECTS.md).
+const ARCHIVE_PRIMARY: &str = "https://web.archive.org";
+const ARCHIVE_FALLBACK: &str = "http://web.archive.org";
+/// Сколько попыток даётся на обращение к индексу архива.
+const ARCHIVE_TRIES: u32 = 5;
 const ERROR_MARKERS: [&[u8]; 3] = [
     b"This page is not available",
     b"doesn't have that page archived",
@@ -67,6 +73,9 @@ pub struct Stats {
     pub pages: usize,
     pub refs: usize,
     pub broken: usize,
+    /// Файлы под именем страницы, содержимое которых страницей не является
+    /// (картинка, PDF): в число страниц они не входят (ОШ-5).
+    pub foreign: usize,
 }
 
 pub struct Outcome {
@@ -77,6 +86,12 @@ pub struct Outcome {
     pub stats: Stats,
     /// Пары «скачано, всего» по типам: HTML, CSS/JS, IMG, прочее.
     pub types: [usize; 8],
+    /// Файлов в готовой копии (не адресов: разные адреса могут вести на один файл).
+    pub site_files: usize,
+    /// Файлов в зеркале: всё скачанное, включая то, на что не ссылаются страницы.
+    pub mirror_files: usize,
+    /// Уникальных путей в инвентаре: столько файлов максимум может быть в зеркале.
+    pub unique_paths: usize,
 }
 
 pub type Cb = Arc<dyn Fn(&Progress) + Send + Sync>;
@@ -178,6 +193,10 @@ impl TypeCounts {
 struct Shared {
     agent: ureq::Agent,
     agent_archive: String,
+    /// Запасной адрес архива; переключение после сетевой ошибки (ОШ-2).
+    archive_alt: String,
+    archive_switched: AtomicBool,
+    archive_switch_logged: AtomicBool,
     mirror: PathBuf,
     gate: Gate,
     cancel: Arc<AtomicBool>,
@@ -191,9 +210,40 @@ struct Shared {
     rate_next: Mutex<Instant>,
     /// Кодировка из заголовка ответа: путь в копии -> Content-Type.
     content_types: Mutex<HashMap<String, String>>,
+    /// Сколько файлов пришло не тем типом, чем обещал индекс (ОШ-5).
+    foreign: AtomicUsize,
+    /// Сколько примеров такого несовпадения уже попало в журнал.
+    foreign_logged: AtomicUsize,
 }
 
 impl Shared {
+    /// Действующий адрес архива: основной или запасной после переключения.
+    fn archive_base(&self) -> &str {
+        if self.archive_switched.load(Ordering::Relaxed) {
+            &self.archive_alt
+        } else {
+            &self.agent_archive
+        }
+    }
+
+    /// Переключает схему доступа к архиву после сетевой ошибки.
+    /// Сообщение в журнал — один раз на прогон, чтобы не засорять его.
+    fn switch_archive(&self, reason: &str) {
+        let was_alt = self.archive_switched.fetch_xor(true, Ordering::Relaxed);
+        if !was_alt && !self.archive_switch_logged.swap(true, Ordering::Relaxed) {
+            let to = self.archive_base().to_string();
+            self.log(crate::tr::pick(
+                format!("архив: {reason}, переключаюсь на {to}"),
+                format!("archive: {reason}, switching to {to}"),
+            ));
+        }
+    }
+
+    /// Считает файл, пришедший не тем типом, чем обещал индекс (ОШ-5).
+    fn note_foreign(&self) {
+        self.foreign.fetch_add(1, Ordering::Relaxed);
+    }
+
     fn log(&self, msg: impl Into<String>) {
         if let Some(cb) = &self.cb {
             cb(&Progress {
@@ -382,7 +432,7 @@ impl Shared {
             if self.cancel.load(Ordering::Relaxed) {
                 return;
             }
-            let url = format!("{}{path_q}", self.agent_archive);
+            let url = format!("{}{path_q}", self.archive_base());
             for attempt in 0..2u32 {
                 let (status, body, retry_after, content_type) = match self.fetch(&url) {
                     Ok(res) => res,
@@ -391,6 +441,9 @@ impl Shared {
                             format!("сеть: {err}"),
                             format!("network: {err}"),
                         ));
+                        // Сетевая ошибка может означать, что закрыт порт схемы:
+                        // пробуем другую схему, не бросая загрузку (ОШ-2).
+                        self.switch_archive("сеть недоступна");
                         self.sleep(0.6 * (attempt + 1) as f64);
                         continue;
                     }
@@ -411,6 +464,19 @@ impl Shared {
                         {
                             ok = true;
                             size = body.len();
+                            // Индекс обещает страницу, а приходит картинка или PDF:
+                            // файл сохраняем как есть, но страницей не считаем (ОШ-5).
+                            if item.kind == "html" && crate::encoding::looks_binary(&body) {
+                                self.note_foreign();
+                                if console_verbose()
+                                    && self.foreign_logged.fetch_add(1, Ordering::Relaxed) < 3
+                                {
+                                    self.log(crate::tr::pick(
+                                        format!("вместо страницы — двоичный файл: {}", item.path),
+                                        format!("binary content behind a page path: {}", item.path),
+                                    ));
+                                }
+                            }
                             if let Some(ct) = content_type {
                                 self.content_types
                                     .lock()
@@ -507,7 +573,10 @@ impl Engine {
             workers: workers.clamp(1, 64),
             shared: Arc::new(Shared {
                 agent: ureq::Agent::new_with_config(config),
-                agent_archive: "http://web.archive.org".to_string(),
+                agent_archive: ARCHIVE_PRIMARY.to_string(),
+                archive_alt: ARCHIVE_FALLBACK.to_string(),
+                archive_switched: AtomicBool::new(false),
+                archive_switch_logged: AtomicBool::new(false),
                 mirror: out.join("mirror"),
                 gate: Gate::new(MIN_THREADS),
                 cancel: Arc::new(AtomicBool::new(false)),
@@ -518,6 +587,8 @@ impl Engine {
                 rate_nanos: AtomicU64::new(0),
                 rate_next: Mutex::new(Instant::now()),
                 content_types: Mutex::new(HashMap::new()),
+                foreign: AtomicUsize::new(0),
+                foreign_logged: AtomicUsize::new(0),
             }),
             cb: None,
             started: Instant::now(),
@@ -540,6 +611,11 @@ impl Engine {
         self.shared = Arc::new(Shared {
             agent: self.shared.agent.clone(),
             agent_archive: self.shared.agent_archive.clone(),
+            archive_alt: self.shared.archive_alt.clone(),
+            archive_switched: AtomicBool::new(self.shared.archive_switched.load(Ordering::Relaxed)),
+            archive_switch_logged: AtomicBool::new(
+                self.shared.archive_switch_logged.load(Ordering::Relaxed),
+            ),
             mirror: self.shared.mirror.clone(),
             gate: Gate::new(MIN_THREADS),
             cancel: Arc::clone(&self.shared.cancel),
@@ -550,6 +626,8 @@ impl Engine {
             rate_nanos: AtomicU64::new(rate),
             rate_next: Mutex::new(next),
             content_types: Mutex::new(ct),
+            foreign: AtomicUsize::new(0),
+            foreign_logged: AtomicUsize::new(0),
         });
     }
 
@@ -644,7 +722,8 @@ impl Engine {
     // ------------------------------------------------------------ inventory
     fn cdx_query(&self, extra: &str) -> String {
         format!(
-            "http://web.archive.org/cdx/search/cdx?url={}&matchType=domain&{}",
+            "{}/cdx/search/cdx?url={}&matchType=domain&{}",
+            self.shared.archive_base(),
             urlencode(&self.host),
             extra
         )
@@ -689,10 +768,11 @@ impl Engine {
             crate::tr::t("получение списка адресов", "fetching the address list"),
             true,
         );
-        // Архив регулярно отвечает 429/503 на большие выборки: три попытки
-        // с паузой дешевле, чем уход в постраничный режим, который у части
-        // сайтов вообще не поддерживается.
-        for attempt in 0..3u32 {
+        // Архив регулярно отвечает 429/503 на большие выборки: несколько попыток
+        // с нарастающей паузой дешевле, чем уход в постраничный режим, который у части
+        // сайтов вообще не поддерживается. Сетевая ошибка значит, что порт схемы может
+        // быть закрыт: тогда переключаем схему и пробуем снова (ОШ-2, ОШ-3).
+        for attempt in 0..ARCHIVE_TRIES {
             let result = {
                 let started = Instant::now();
                 let mut on_index = |bytes: u64, lines: usize| {
@@ -747,7 +827,19 @@ impl Engine {
                         format!("CDX: список — ошибка {err}"),
                         format!("CDX: list failed: {err}"),
                     ));
-                    self.shared.sleep(5.0);
+                    self.shared.switch_archive("список недоступен");
+                    let wait = 5.0 * (1u32 << attempt.min(4)) as f64;
+                    self.shared.log(crate::tr::pick(
+                        format!(
+                            "CDX: пауза {wait:.0} с, попытка {}/{ARCHIVE_TRIES}",
+                            attempt + 2
+                        ),
+                        format!(
+                            "CDX: pause {wait:.0}s, attempt {}/{ARCHIVE_TRIES}",
+                            attempt + 2
+                        ),
+                    ));
+                    self.shared.sleep(wait);
                     continue;
                 }
             }
@@ -855,6 +947,7 @@ impl Engine {
                     }
                     Err(err) => {
                         attempts += 1;
+                        self.shared.switch_archive("страница недоступна");
                         if attempts >= 3 {
                             self.shared.log(crate::tr::pick(
                                 format!("CDX: страница {} — ошибка {err}", page + 1),
@@ -1352,8 +1445,18 @@ impl Engine {
             if !name.ends_with(".html") && !name.ends_with(".htm") {
                 continue;
             }
+            // Под именем страницы в копии может лежать картинка или PDF:
+            // это не страница, и в число страниц она не входит (ОШ-5).
+            let head = match fs::read(&path) {
+                Ok(data) => data,
+                Err(_) => continue,
+            };
+            if crate::encoding::looks_binary(&head) {
+                stats.foreign += 1;
+                continue;
+            }
             stats.pages += 1;
-            let text = match fs::read_to_string(&path) {
+            let text = match String::from_utf8(head) {
                 Ok(t) => t,
                 Err(_) => continue,
             };
@@ -1435,6 +1538,16 @@ impl Engine {
             .filter_map(|f| fs::metadata(f).ok())
             .map(|m| m.len())
             .sum();
+        // Адресов в инвентаре может быть больше, чем файлов: разные адреса
+        // (варианты с параметрами, повторы адреса) ведут на один файл (ОШ-6).
+        let site_files = walk_files(&self.site_dir).len();
+        let mirror_files = walk_files(&self.mirror).len();
+        let unique_paths = self
+            .items
+            .iter()
+            .map(|i| i.path.as_str())
+            .collect::<HashSet<&str>>()
+            .len();
         let tr2 = |ru: &str, en: &str| crate::tr::pick(ru.to_string(), en.to_string());
         let doc = REPORT_TMPL
             .replace("{{lang}}", if crate::tr::is_english() { "en" } else { "ru" })
@@ -1445,6 +1558,17 @@ impl Engine {
             .replace("{{t_coverage}}", &tr2("Покрытие", "Coverage"))
             .replace("{{t_size}}", &tr2("Объём", "Size"))
             .replace("{{t_pages}}", &tr2("Страниц", "Pages"))
+            .replace("{{t_files}}", &tr2("Файлов в копии", "Files in copy"))
+            .replace("{{t_mirror}}", &tr2("Файлов в зеркале", "Files in mirror"))
+            .replace("{{t_unique}}", &tr2("Уникальных путей в инвентаре", "Unique paths in inventory"))
+            .replace("{{t_foreign}}", &tr2("Под видом страницы не страница", "Not a page behind a page name"))
+            .replace(
+                "{{t_files_note}}",
+                &tr2(
+                    "Скачанных адресов может быть больше, чем файлов: разные адреса (варианты с параметрами) ведут на один файл. В готовую копию попадают файлы, на которые ссылаются страницы; остальные остаются в папке mirror.",
+                    "There can be more downloaded addresses than files: different addresses (query variants) lead to one file. The copy gets the files that pages reference; the rest stay in the mirror folder.",
+                ),
+            )
             .replace("{{unit_mb}}", &tr2("МБ", "MB"))
             .replace("{{t_types}}", &tr2("По типам файлов", "By file type"))
             .replace("{{t_type}}", &tr2("Тип", "Type"))
@@ -1472,6 +1596,10 @@ impl Engine {
             )
             .replace("{{mb}}", &format!("{:.1}", bytes as f64 / 1_048_576.0))
             .replace("{{pages}}", &stats.pages.to_string())
+            .replace("{{site_files}}", &site_files.to_string())
+            .replace("{{mirror_files}}", &mirror_files.to_string())
+            .replace("{{unique_paths}}", &unique_paths.to_string())
+            .replace("{{foreign}}", &stats.foreign.to_string())
             .replace("{{refs}}", &stats.refs.to_string())
             .replace("{{broken}}", &stats.broken.to_string())
             .replace(
@@ -1543,6 +1671,14 @@ impl Engine {
             site: self.site_dir.clone(),
             stats,
             types,
+            site_files: walk_files(&self.site_dir).len(),
+            mirror_files: walk_files(&self.mirror).len(),
+            unique_paths: self
+                .items
+                .iter()
+                .map(|i| i.path.as_str())
+                .collect::<HashSet<&str>>()
+                .len(),
         })
     }
 }
@@ -1935,14 +2071,19 @@ th,td{padding:9px 12px;border-bottom:1px solid #eee;text-align:left}th{backgroun
 <div class="g"><div class="c"><div class="k">{{t_downloaded}}</div><div class="v">{{ok}} / {{total}}</div></div>
 <div class="c"><div class="k">{{t_coverage}}</div><div class="v">{{pct}}%</div></div>
 <div class="c"><div class="k">{{t_size}}</div><div class="v">{{mb}} {{unit_mb}}</div></div>
-<div class="c"><div class="k">{{t_pages}}</div><div class="v">{{pages}}</div></div></div>
+<div class="c"><div class="k">{{t_pages}}</div><div class="v">{{pages}}</div></div>
+<div class="c"><div class="k">{{t_files}}</div><div class="v">{{site_files}}</div></div></div>
 <h2>{{t_types}}</h2><table><tr><th>{{t_type}}</th><th class="n">{{t_downloaded}}</th><th class="n">{{t_total}}</th><th class="n">{{t_share}}</th></tr>{{rows}}</table>
 <h2>{{t_integrity}}</h2><table>
+<tr><td>{{t_mirror}}</td><td class="n">{{mirror_files}}</td></tr>
+<tr><td>{{t_unique}}</td><td class="n">{{unique_paths}}</td></tr>
+<tr><td>{{t_foreign}}</td><td class="n">{{foreign}}</td></tr>
 <tr><td>{{t_refs}}</td><td class="n">{{refs}}</td></tr>
 <tr><td>{{t_broken}} <span style="color:#6b7280">{{t_broken_note}}</span></td><td class="n">{{broken}}</td></tr>
 {{encodings}}
 <tr><td>{{t_404}}</td><td class="n">{{missing}}</td></tr>
 <tr><td>{{t_errors}}</td><td class="n">{{errors}}</td></tr></table>
+<p style="color:#6b7280;margin-top:10px">{{t_files_note}}</p>
 <p style="color:#6b7280;margin-top:24px">{{t_footer}}</p>
 </div></body></html>"#;
 
@@ -2043,6 +2184,63 @@ mod build_tests {
 
     fn read(root: &Path, rel: &str) -> String {
         fs::read_to_string(root.join("site").join(rel)).unwrap()
+    }
+
+    /// ОШ-5: под именем страницы может лежать картинка. Она остаётся в копии,
+    /// но страницей не считается, и это видно в отчёте.
+    #[test]
+    fn binary_content_behind_page_name_is_not_a_page() {
+        let root = workdir("foreign");
+        put(&root, "index.html", b"<html><body>ok</body></html>");
+        let png = [
+            0x89u8, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, b'I', b'H', b'D', b'R',
+        ];
+        put(&root, "clamps/index.html", &png);
+        let engine = build(&root);
+        let stats = engine.verify();
+        assert_eq!(stats.pages, 1, "страница должна быть одна: {stats:?}");
+        assert_eq!(
+            stats.foreign, 1,
+            "картинка под index.html не учтена: {stats:?}"
+        );
+        assert!(
+            root.join("site/clamps/index.html").exists(),
+            "файл не должен исчезать из копии"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// ОШ-6: отчёт показывает число файлов копии и пояснение о зеркале.
+    #[test]
+    fn report_shows_copy_file_count() {
+        let root = workdir("counts");
+        put(&root, "index.html", b"<html><body>a</body></html>");
+        put(&root, "assets/a.css", b"body{color:#000}");
+        let engine = build(&root);
+        let stats = engine.verify();
+        let path = engine.report(stats).unwrap();
+        let doc = fs::read_to_string(path).unwrap();
+        assert!(doc.contains("Файлов в копии"), "нет карточки числа файлов");
+        assert!(doc.contains("Файлов в зеркале"), "нет строки зеркала");
+        assert!(
+            doc.contains("остаются в папке mirror"),
+            "нет пояснения о зеркале"
+        );
+        assert!(!doc.contains("{{site_files}}"), "не подставлено значение");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// ОШ-2: схема доступа к архиву переключается и возвращается обратно.
+    #[test]
+    fn archive_scheme_switches_both_ways() {
+        let root = workdir("scheme");
+        let engine = Engine::new("example.com", &root, 1, 0).unwrap();
+        assert_eq!(engine.shared.archive_base(), "https://web.archive.org");
+        engine.shared.switch_archive("тест");
+        assert_eq!(engine.shared.archive_base(), "http://web.archive.org");
+        engine.shared.switch_archive("тест");
+        assert_eq!(engine.shared.archive_base(), "https://web.archive.org");
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
