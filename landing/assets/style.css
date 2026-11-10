@@ -788,6 +788,14 @@ a:hover { text-decoration-color: currentColor; }
 .footer-col ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 9px; }
 .footer-col a { color: var(--ink-2); text-decoration: none; }
 .footer-col a:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.footer-note {
+  flex-basis: 100%;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  opacity: 0.85;
+}
+
 .footer-bottom {
   margin-top: 34px;
   padding-top: 18px;
