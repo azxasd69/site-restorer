@@ -176,6 +176,8 @@ impl App {
         self.status = t.preparing.to_string();
         self.push_log(format!("{} → {}", host, out.display()), Level::Ok);
 
+        // сообщения ядра должны идти на том же языке, что и окно
+        crate::tr::set_english(self.lang == Lang::En);
         std::thread::spawn(move || {
             let result = engine
                 .run()

@@ -305,7 +305,7 @@ impl Shared {
                 let (status, body, retry_after, content_type) = match self.fetch(&url) {
                     Ok(res) => res,
                     Err(err) => {
-                        self.log(format!("сеть: {err}"));
+                        self.log(crate::tr::pick(format!("сеть: {err}"), format!("network: {err}")));
                         self.sleep(0.6 * (attempt + 1) as f64);
                         continue;
                     }
@@ -339,7 +339,7 @@ impl Shared {
                 if status == 429 {
                     self.counters.win_429.fetch_add(1, Ordering::Relaxed);
                     let wait = retry_after.unwrap_or(20.0 * (attempt + 1) as f64);
-                    self.log(format!("429: пауза {wait:.0} с"));
+                    self.log(crate::tr::pick(format!("429: пауза {wait:.0} с"), format!("429: pause {wait:.0}s")));
                     self.sleep(wait);
                     continue;
                 }
@@ -561,7 +561,12 @@ impl Engine {
     }
 
     fn inventory(&mut self) -> Result<(), String> {
-        self.emit("inventory", 2.0, "оценка объёма архива", true);
+        self.emit(
+            "inventory",
+            2.0,
+            crate::tr::t("оценка объёма архива", "estimating archive size"),
+            true,
+        );
         let mut pages = 1usize;
         match self.shared.fetch(&self.cdx_query("showNumPages=true&output=json")) {
             Ok((200, body, _, _)) => {
@@ -572,24 +577,67 @@ impl Engine {
             Ok((code, _, _, _)) => self
                 .shared
                 .log(format!("CDX: оценка недоступна (HTTP {code})")),
-            Err(err) => self.shared.log(format!("CDX: оценка — ошибка {err}")),
+            Err(err) => self.shared.log(crate::tr::pick(format!("CDX: оценка — ошибка {err}"), format!("CDX: estimate failed: {err}"))),
         }
 
+        // Быстрый запрос выполняется ВСЕГДА: постраничный режим (`page=N`) у
+        // web.archive.org поддерживается не для всех сайтов и бывает пустым,
+        // а запрос с limit=50000 отдаёт те же данные.
         let mut rows: Vec<Vec<String>> = Vec::new();
-        if pages <= 1 {
-            let query = self.cdx_query(
-                "output=json&fl=timestamp,original,mimetype,statuscode&filter=statuscode:200&collapse=urlkey&limit=50000",
-            );
-            self.emit("inventory", 4.0, "получение списка адресов", true);
+        let query = self.cdx_query(
+            "output=json&fl=timestamp,original,mimetype,statuscode&filter=statuscode:200&collapse=urlkey&limit=50000",
+        );
+        self.emit(
+            "inventory",
+            4.0,
+            crate::tr::t("получение списка адресов", "fetching the address list"),
+            true,
+        );
+        // Архив регулярно отвечает 429/503 на большие выборки: три попытки
+        // с паузой дешевле, чем уход в постраничный режим, который у части
+        // сайтов вообще не поддерживается.
+        for attempt in 0..3u32 {
             match self.shared.fetch(&query) {
-                Ok((200, body, _, _)) => rows = parse_rows(&body),
-                Ok((code, _, _, _)) => self.shared.log(format!("CDX: список — HTTP {code}")),
-                Err(err) => self.shared.log(format!("CDX: список — ошибка {err}")),
+                Ok((200, body, _, _)) => {
+                    rows = parse_rows(&body);
+                    if !rows.is_empty() {
+                        break;
+                    }
+                }
+                Ok((code, _, retry, _)) => {
+                    self.shared.log(crate::tr::pick(
+                        format!("CDX: список — HTTP {code}"),
+                        format!("CDX: list — HTTP {code}"),
+                    ));
+                    if code == 429 || code >= 500 {
+                        let wait = retry.unwrap_or(10.0 * (attempt + 1) as f64);
+                        self.shared.sleep(wait);
+                        continue;
+                    }
+                    break;
+                }
+                Err(err) => {
+                    self.shared.log(crate::tr::pick(
+                        format!("CDX: список — ошибка {err}"),
+                        format!("CDX: list failed: {err}"),
+                    ));
+                    self.shared.sleep(5.0);
+                    continue;
+                }
             }
-            if rows.is_empty() {
-                self.shared.log("CDX: быстрый запрос пуст — постраничный обход");
-                pages = 2;
-            }
+            break;
+        }
+        if rows.is_empty() {
+            self.shared.log(crate::tr::t(
+                "CDX: быстрый запрос пуст — постраничный обход",
+                "CDX: quick query empty — switching to paging",
+            ));
+            pages = pages.max(2);
+        } else if rows.len() >= 50_000 {
+            self.shared.log(crate::tr::t(
+                "CDX: список обрезан на 50000 адресах",
+                "CDX: address list truncated at 50000",
+            ));
         }
         if rows.is_empty() && pages > 1 {
             let max_pages = pages.min(MAX_PAGES);
@@ -605,7 +653,10 @@ impl Engine {
                 self.emit(
                     "inventory",
                     2.0 + 5.0 * (page + 1) as f32 / max_pages as f32,
-                    &format!("CDX: страница {} из {}", page + 1, max_pages),
+                    &crate::tr::pick(
+                        format!("CDX: страница {} из {}", page + 1, max_pages),
+                        format!("CDX: page {} of {}", page + 1, max_pages),
+                    ),
                     true,
                 );
                 match self.shared.fetch(&query) {
@@ -632,12 +683,15 @@ impl Engine {
                                 break;
                             }
                             let wait = retry.unwrap_or(15.0);
-                            self.shared.log(format!("CDX: HTTP {code}, пауза {wait:.0} с"));
+                            self.shared.log(crate::tr::pick(format!("CDX: HTTP {code}, пауза {wait:.0} с"), format!("CDX: HTTP {code}, pause {wait:.0}s")));
                             self.shared.sleep(wait);
                             continue;
                         }
                         self.shared
-                            .log(format!("CDX: страница {} — HTTP {code}", page + 1));
+                            .log(crate::tr::pick(
+                            format!("CDX: страница {} — HTTP {code}", page + 1),
+                            format!("CDX: page {} — HTTP {code}", page + 1),
+                        ));
                         self.inv_failed = true;
                         break;
                     }
@@ -645,7 +699,7 @@ impl Engine {
                         attempts += 1;
                         if attempts >= 3 {
                             self.shared
-                                .log(format!("CDX: страница {} — ошибка {err}", page + 1));
+                                .log(crate::tr::pick(format!("CDX: страница {} — ошибка {err}", page + 1), format!("CDX: page {} failed: {err}", page + 1)));
                             self.inv_failed = true;
                             break;
                         }
@@ -709,7 +763,7 @@ impl Engine {
             });
         }
         self.shared
-            .log(format!("адресов найдено: {}", self.items.len()));
+            .log(crate::tr::pick(format!("адресов найдено: {}", self.items.len()), format!("addresses found: {}", self.items.len())));
         self.emit("inventory", 8.0, "", true);
         Ok(())
     }
@@ -759,9 +813,9 @@ impl Engine {
         self.shared.counters.done.store(already, Ordering::Relaxed);
         self.shared.counters.ok.store(already, Ordering::Relaxed);
         self.started = Instant::now();
-        self.shared.log(format!(
-            "уже в папке: {already}, к скачиванию: {}",
-            todo.len()
+        self.shared.log(crate::tr::pick(
+            format!("уже в папке: {already}, к скачиванию: {}", todo.len()),
+            format!("already on disk: {already}, to download: {}", todo.len()),
         ));
         if todo.is_empty() {
             self.emit("download", 85.0, "", true);
@@ -792,7 +846,10 @@ impl Engine {
                         bad_streak += 1;
                         if bad_streak >= 3 {
                             shared.gate.set_limit(MIN_THREADS);
-                            shared.log("много 429 — пауза 120 с, потоков: 2");
+                            shared.log(crate::tr::t(
+                                "много 429 — пауза 120 с, потоков: 2",
+                                "many 429 — pause 120s, threads: 2",
+                            ));
                             shared.pause(120.0);
                             bad_streak = 0;
                         } else {
@@ -824,7 +881,7 @@ impl Engine {
                         cb(&Progress {
                             stage: "download",
                             overall: 10.0 + 75.0 * done as f32 / total.max(1) as f32,
-                            text: format!("Скачано {done} из {total}"),
+                            text: crate::tr::pick(format!("Скачано {done} из {total}"), format!("Downloaded {done} of {total}")),
                             done,
                             total,
                             ok: shared.counters.ok.load(Ordering::Relaxed),
@@ -932,7 +989,7 @@ impl Engine {
                         && self.enc_logged.fetch_add(1, Ordering::Relaxed) < 3
                     {
                         self.shared
-                            .log(format!("двоичный файл под текстовым расширением: {rel}"));
+                            .log(crate::tr::pick(format!("двоичный файл под текстовым расширением: {rel}"), format!("binary file behind a text extension: {rel}")));
                     }
                     continue;
                 }
@@ -955,10 +1012,16 @@ impl Engine {
                     if console_verbose()
                         && self.enc_logged.fetch_add(1, Ordering::Relaxed) < 3
                     {
-                        self.shared.log(format!(
-                            "кодировка: {} ({}, {}%) — {}",
-                            decoded.label, decoded.source, decoded.confidence, rel
-                        ));
+                        self.shared.log(crate::tr::pick(
+                                format!(
+                                    "кодировка: {} ({}, {}%) — {}",
+                                    decoded.label, decoded.source, decoded.confidence, rel
+                                ),
+                                format!(
+                                    "encoding: {} ({}, {}%) — {}",
+                                    decoded.label, decoded.source, decoded.confidence, rel
+                                ),
+                            ));
                     }
                 }
                 let mut text = decoded.text;
@@ -1029,7 +1092,7 @@ impl Engine {
         }
         let summary = self.enc_summary();
         if !summary.is_empty() {
-            self.shared.log(format!("перекодировано в UTF-8: {summary}"));
+            self.shared.log(crate::tr::pick(format!("перекодировано в UTF-8: {summary}"), format!("converted to UTF-8: {summary}")));
         }
         Ok(total)
     }
@@ -1213,7 +1276,7 @@ impl Engine {
         self.build()?;
         let stats = self.verify();
         let report = self.report(stats)?;
-        self.emit("report", 100.0, "готово", true);
+        self.emit("report", 100.0, crate::tr::t("готово", "done"), true);
         let mut types = [0usize; 8];
         for (i, (_, ok, total)) in self.shared.types.lock().unwrap().as_array().iter().enumerate() {
             types[i * 2] = *ok;

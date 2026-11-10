@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Site Restorer
+Name[ru]=Site Restorer — копия сайта из веб-архива
+Comment=Restore a website from the Wayback Machine
+Comment[ru]=Восстановление сайта из веб-архива
+Exec=site-restorer-gui
+Icon=site-restorer
+Terminal=false
+Categories=Network;Utility;
+Keywords=archive;wayback;website;backup;
+StartupWMClass=site-restorer

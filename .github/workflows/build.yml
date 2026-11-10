@@ -316,6 +316,22 @@ jobs:
           path: assets
           merge-multiple: true
 
+      - uses: actions/checkout@v4
+
+      - name: Package Linux bundle
+        run: |
+          set -e
+          mkdir -p bundle/site-restorer-linux-x64/share/applications \
+                   bundle/site-restorer-linux-x64/share/icons
+          install -m755 assets/SiteRestorer-rust-linux-cli bundle/site-restorer-linux-x64/site-restorer
+          install -m755 assets/SiteRestorer-rust-linux-gui bundle/site-restorer-linux-x64/site-restorer-gui
+          install -m644 packaging/linux/site-restorer.desktop bundle/site-restorer-linux-x64/share/applications/
+          install -m644 packaging/linux/site-restorer.svg bundle/site-restorer-linux-x64/share/icons/
+          install -m755 packaging/linux/install.sh bundle/site-restorer-linux-x64/
+          install -m644 packaging/linux/README.txt bundle/site-restorer-linux-x64/
+          tar -C bundle -czf assets/site-restorer-linux-x64.tar.gz site-restorer-linux-x64
+          ls -la assets/site-restorer-linux-x64.tar.gz
+
       - name: Checksums
         run: |
           cd assets

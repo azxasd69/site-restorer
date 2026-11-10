@@ -206,6 +206,22 @@ with Linux binaries and `SHA256SUMS.txt`. Only what the archive actually saved
 can be recovered; dynamic CMS features do not work in a static copy. Use it for
 your own sites and respect the Internet Archive terms and copyright law.
 
+## Linux
+
+В релизе есть `site-restorer-linux-x64.tar.gz`: консольная (`site-restorer`,
+статическая musl) и оконная (`site-restorer-gui`) сборки, `install.sh`, `.desktop`
+и иконка.
+
+```bash
+tar -xzf site-restorer-linux-x64.tar.gz
+cd site-restorer-linux-x64
+./install.sh          # в ~/.local, или PREFIX=/usr/local sudo ./install.sh
+```
+
+Окну нужны `libxkbcommon-x11-0`, `libgl1`, `libegl1`
+(`sudo apt install libxkbcommon-x11-0 libgl1 libegl1`). Без OpenGL 2.0+ (ВМ, RDP)
+окно покажет сообщение — используйте консольную версию.
+
 ## Кодировки
 
 Копия всегда собирается в UTF-8. Кодировка исходной страницы определяется по

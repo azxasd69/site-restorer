@@ -101,7 +101,7 @@ function Build-ArgLine {
     foreach ($a in $Arguments) {
         if ($null -eq $a) { continue }
         $text = [string]$a
-        if ($text -match '[\s"]') { $parts += '"' + ($text -replace '"', '\"') + '"' } else { $parts += $text }
+        if ($text -match '[\s"]') { $parts += '"' + $text + '"' } else { $parts += $text }
     }
     return ($parts -join ' ')
 }
@@ -151,7 +151,7 @@ Run-Case "start-out-spaces-cyrillic" "start" @("--cli", "--site", $small, "--out
     else { "пробелы и кириллица в пути" }
 }
 
-Run-Case "start-out-long-path" "start" @("--cli", "--site", $small, "--out", ("длинный-путь-" + ("a" * 60) + "\" + ("b" * 60))) {
+Run-Case "start-out-long-path" "start" @("--cli", "--site", $small, "--out", ("длинный-путь-" + ("a" * 60) + "" + ("b" * 60))) {
     param($c)
     if ($c.Code -ne 0) { throw "код $($c.Code)" }
     else { "длинный путь ($(($c.Dir.Length))) создан" }
@@ -257,6 +257,107 @@ Run-Case "fetch-mixed-404" "fetch" @("--cli", "--site", "http://old.russ.ru", "-
     if ($c.Code -ne 0) { throw "код $($c.Code)" }
     elseif ($c.Stdout -notmatch "битых") { throw "нет итоговой строки" }
     else { "прогон с отсутствующими файлами завершён" }
+}
+
+# ---------------------------------------------------------------- нагрузка
+# Группа load: длинные прогоны (много файлов, обрыв, два процесса).
+if ($onlyList.Count -eq 0 -or ($onlyList -contains "load")) {
+    # 1. тысяча с лишним файлов: устойчивость на объёме
+    $big = Join-Path $Work "load-1200"
+    if (Test-Path $big) { Remove-Item -Recurse -Force $big -ErrorAction SilentlyContinue }
+    New-Item -ItemType Directory -Force -Path $big | Out-Null
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $exePath
+    $psi.Arguments = "`"--cli`" `"--site`" `"anekdot.ru`" `"--out`" `"$big`" `"--limit`" `"1200`""
+    $psi.WorkingDirectory = $big
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+    $lp = [System.Diagnostics.Process]::Start($psi)
+    $outTask = $lp.StandardOutput.ReadToEndAsync()
+    $errTask = $lp.StandardError.ReadToEndAsync()
+    $finished = $lp.WaitForExit(3600 * 1000)
+    if (-not $finished) { try { $lp.Kill() } catch { } }
+    $sw.Stop()
+    $lout = $outTask.Result
+    $files = @(Get-ChildItem (Join-Path $big "site") -Recurse -File -ErrorAction SilentlyContinue).Count
+    $hasReport = Test-Path (Join-Path $big "report.html")
+    $ok = ($finished -and $lp.ExitCode -eq 0 -and $hasReport -and $files -ge 900)
+    [void]$results.Add([pscustomobject]@{
+        Case = "load-1200-files"; Group = "load"; Code = $lp.ExitCode
+        Verdict = $(if ($ok) { "OK" } else { "FAIL" })
+        Seconds = [math]::Round($sw.Elapsed.TotalSeconds, 1)
+        Note = "файлов $files, отчёт $hasReport, $([math]::Round($sw.Elapsed.TotalMinutes, 1)) мин"
+    })
+    Write-Host ("{0,-24} {1,5} {2,5} {3,7}s  файлов {4}, отчёт {5}" -f "load-1200-files", $lp.ExitCode, $(if ($ok) { "OK" } else { "FAIL" }), [math]::Round($sw.Elapsed.TotalSeconds, 1), $files, $hasReport)
+
+    # 2. обрыв процесса и докачка
+    $killDir = Join-Path $Work "load-kill-resume"
+    if (Test-Path $killDir) { Remove-Item -Recurse -Force $killDir -ErrorAction SilentlyContinue }
+    New-Item -ItemType Directory -Force -Path $killDir | Out-Null
+    $psi2 = New-Object System.Diagnostics.ProcessStartInfo
+    $psi2.FileName = $exePath
+    $psi2.Arguments = "`"--cli`" `"--site`" `"anekdot.ru`" `"--out`" `"$killDir`" `"--limit`" `"200`""
+    $psi2.UseShellExecute = $false
+    $psi2.RedirectStandardOutput = $true
+    $psi2.RedirectStandardError = $true
+    $k1 = [System.Diagnostics.Process]::Start($psi2)
+    Start-Sleep -Seconds 12
+    $before = @(Get-ChildItem (Join-Path $killDir "mirror") -Recurse -File -ErrorAction SilentlyContinue).Count
+    try { $k1.Kill() } catch { }
+    Start-Sleep -Seconds 2
+    $parts = @(Get-ChildItem (Join-Path $killDir "mirror") -Recurse -File -Filter "*.part" -ErrorAction SilentlyContinue).Count
+
+    $psi3 = New-Object System.Diagnostics.ProcessStartInfo
+    $psi3.FileName = $exePath
+    $psi3.Arguments = "`"--cli`" `"--site`" `"anekdot.ru`" `"--out`" `"$killDir`" `"--limit`" `"200`""
+    $psi3.UseShellExecute = $false
+    $psi3.RedirectStandardOutput = $true
+    $psi3.RedirectStandardError = $true
+    $psi3.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $k2 = [System.Diagnostics.Process]::Start($psi3)
+    $k2out = $k2.StandardOutput.ReadToEnd()
+    $k2.WaitForExit(1800 * 1000) | Out-Null
+    $after = @(Get-ChildItem (Join-Path $killDir "site") -Recurse -File -ErrorAction SilentlyContinue).Count
+    $resumed = ($k2out -match "уже в папке")
+    $okKill = ($k2.ExitCode -eq 0 -and $after -ge 150 -and $before -gt 0)
+    [void]$results.Add([pscustomobject]@{
+        Case = "load-kill-resume"; Group = "load"; Code = $k2.ExitCode
+        Verdict = $(if ($okKill) { "OK" } else { "FAIL" })
+        Seconds = 0
+        Note = "до обрыва $before, .part $parts, после докачки $after, докачка $resumed"
+    })
+    Write-Host ("{0,-24} {1,5} {2,5}            до обрыва {3}, .part {4}, после {5}, докачка {6}" -f "load-kill-resume", $k2.ExitCode, $(if ($okKill) { "OK" } else { "FAIL" }), $before, $parts, $after, $resumed)
+
+    # 3. два процесса в одну папку (конкурентность)
+    $raceDir = Join-Path $Work "load-race"
+    if (Test-Path $raceDir) { Remove-Item -Recurse -Force $raceDir -ErrorAction SilentlyContinue }
+    New-Item -ItemType Directory -Force -Path $raceDir | Out-Null
+    $procs = @()
+    for ($i = 0; $i -lt 2; $i++) {
+        $psiR = New-Object System.Diagnostics.ProcessStartInfo
+        $psiR.FileName = $exePath
+        $psiR.Arguments = "`"--cli`" `"--site`" `"example.com`" `"--out`" `"$raceDir`""
+        $psiR.UseShellExecute = $false
+        $psiR.RedirectStandardOutput = $true
+        $psiR.RedirectStandardError = $true
+        $procs += [System.Diagnostics.Process]::Start($psiR)
+    }
+    Start-Sleep -Seconds 2
+    foreach ($pp in $procs) { $pp.WaitForExit(600 * 1000) | Out-Null }
+    $codes = $procs | ForEach-Object { $_.ExitCode }
+    $raceReport = Test-Path (Join-Path $raceDir "report.html")
+    $okRace = ($raceReport -and -not ($codes -contains -999))
+    [void]$results.Add([pscustomobject]@{
+        Case = "load-two-processes"; Group = "load"; Code = ($codes -join ",")
+        Verdict = $(if ($okRace) { "OK" } else { "FAIL" })
+        Seconds = 0
+        Note = "коды $($codes -join '/'), отчёт $raceReport"
+    })
+    Write-Host ("{0,-24} {1,} {2,5}            коды {3}, отчёт {4}" -f "load-two-processes", "", $(if ($okRace) { "OK" } else { "FAIL" }), ($codes -join "/"), $raceReport)
 }
 
 if ($results.Count -gt 0) {

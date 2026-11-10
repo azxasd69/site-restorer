@@ -16,6 +16,7 @@ mod encoding;
 mod i18n;
 mod paths;
 mod sanitize;
+mod tr;
 
 /// Версия берётся из Cargo.toml.
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -102,6 +103,7 @@ fn ensure_console_utf8() {
     }
 }
 
+#[allow(dead_code)] // используется только GUI-сборкой
 /// Сообщение об ошибке отдельным окном: у GUI-сборки нет консоли, иначе
 /// пользователь видит только «ничего не произошло».
 #[cfg(windows)]
@@ -255,18 +257,32 @@ fn parse_args(args: &[String]) -> Args {
 
 fn cli(args: &[String]) -> i32 {
     let parsed = parse_args(args);
-    // Язык влияет на GUI (окно читает SR_LANG); сообщения CLI остаются русскими.
-    if parsed.lang == "en" {
+    // Язык действует и на окно, и на сообщения ядра/CLI.
+    let english = parsed.lang == "en" || std::env::var("SR_LANG").as_deref() == Ok("en");
+    tr::set_english(english);
+    if english {
         // SAFETY: до запуска потоков, окружение больше не меняется.
         unsafe { std::env::set_var("SR_LANG", "en") };
     }
     if parsed.site.is_empty() {
-        eprintln!("использование: site-restorer --cli --site <адрес> [--out <папка>] [--workers N] [--rate N] [--limit N]");
+        eprintln!(
+            "{}",
+            tr::t(
+                "использование: site-restorer --cli --site <адрес> [--out <папка>] [--workers N] [--rate N] [--limit N]",
+                "usage: site-restorer --cli --site <address> [--out <folder>] [--workers N] [--rate N] [--limit N]",
+            )
+        );
         return 2;
     }
     let Some(mut engine) = Engine::new(&parsed.site, &parsed.out, parsed.workers, parsed.limit)
     else {
-        eprintln!("не разобрал адрес: {:?}", parsed.site);
+        eprintln!(
+            "{}",
+            tr::pick(
+                format!("не разобрал адрес: {:?}", parsed.site),
+                format!("cannot parse address: {:?}", parsed.site),
+            )
+        );
         return 2;
     };
 
@@ -281,17 +297,35 @@ fn cli(args: &[String]) -> i32 {
                     String::new()
                 };
                 println!(
-                    "[{:5.1}%] {}  {} | {:.0} КБ/с потоков={} ok={} нет={} ошибок={} {:.1} МБ{}",
-                    p.overall,
-                    p.stage,
-                    p.text,
-                    p.bps / 1024.0,
-                    p.threads,
-                    p.ok,
-                    p.missing,
-                    p.errors,
-                    p.bytes as f64 / 1_048_576.0,
-                    eta
+                    "{}",
+                    tr::pick(
+                        format!(
+                            "[{:5.1}%] {}  {} | {:.0} КБ/с потоков={} ok={} нет={} ошибок={} {:.1} МБ{}",
+                            p.overall,
+                            p.stage,
+                            p.text,
+                            p.bps / 1024.0,
+                            p.threads,
+                            p.ok,
+                            p.missing,
+                            p.errors,
+                            p.bytes as f64 / 1_048_576.0,
+                            eta
+                        ),
+                        format!(
+                            "[{:5.1}%] {}  {} | {:.0} KB/s threads={} ok={} missing={} errors={} {:.1} MB{}",
+                            p.overall,
+                            p.stage,
+                            p.text,
+                            p.bps / 1024.0,
+                            p.threads,
+                            p.ok,
+                            p.missing,
+                            p.errors,
+                            p.bytes as f64 / 1_048_576.0,
+                            eta
+                        ),
+                    )
                 );
                 if p.done == p.total && p.total > 0 {
                     let names: Vec<String> = p
@@ -299,7 +333,7 @@ fn cli(args: &[String]) -> i32 {
                         .iter()
                         .map(|(name, ok, total)| format!("{name} {ok}/{total}"))
                         .collect();
-                    println!("  готово по типам: {}", names.join(", "));
+                    println!("{}", tr::pick(format!("  готово по типам: {}", names.join(", ")), format!("  done by type: {}", names.join(", "))));
                 }
             }
         }
@@ -313,8 +347,17 @@ fn cli(args: &[String]) -> i32 {
     match engine.run() {
         Ok(outcome) => {
             println!(
-                "ИТОГ: скачано {} из {}, страниц {}, ссылок {}, битых {}",
-                outcome.ok, outcome.total, outcome.stats.pages, outcome.stats.refs, outcome.stats.broken
+                "{}",
+                tr::pick(
+                    format!(
+                        "ИТОГ: скачано {} из {}, страниц {}, ссылок {}, битых {}",
+                        outcome.ok, outcome.total, outcome.stats.pages, outcome.stats.refs, outcome.stats.broken
+                    ),
+                    format!(
+                        "RESULT: downloaded {} of {}, pages {}, links {}, broken {}",
+                        outcome.ok, outcome.total, outcome.stats.pages, outcome.stats.refs, outcome.stats.broken
+                    ),
+                )
             );
             let (html, code, img, other) = (
                 outcome.types[0],
@@ -322,20 +365,33 @@ fn cli(args: &[String]) -> i32 {
                 outcome.types[4],
                 outcome.types[6],
             );
+            let totals = (outcome.types[1], outcome.types[3], outcome.types[5], outcome.types[7]);
             println!(
-                "типы: HTML {html}/{}, CSS-JS {code}/{}, IMG {img}/{}, прочее {other}/{}",
-                outcome.types[1], outcome.types[3], outcome.types[5], outcome.types[7]
+                "{}",
+                tr::pick(
+                    format!(
+                        "типы: HTML {html}/{}, CSS-JS {code}/{}, IMG {img}/{}, прочее {other}/{}",
+                        totals.0, totals.1, totals.2, totals.3
+                    ),
+                    format!(
+                        "types: HTML {html}/{}, CSS-JS {code}/{}, IMG {img}/{}, other {other}/{}",
+                        totals.0, totals.1, totals.2, totals.3
+                    ),
+                )
             );
-            println!("копия:  {}", outcome.site.display());
-            println!("отчёт:  {}", outcome.report.display());
+            println!("{}", tr::pick(format!("копия:  {}", outcome.site.display()), format!("copy:   {}", outcome.site.display())));
+            println!("{}", tr::pick(format!("отчёт:  {}", outcome.report.display()), format!("report: {}", outcome.report.display())));
             0
         }
         Err(err) if err == "cancelled" => {
-            println!("остановлено; повторный запуск продолжит с места остановки");
+            println!("{}", tr::t(
+                "остановлено; повторный запуск продолжит с места остановки",
+                "stopped; run again to continue from the same folder",
+            ));
             130
         }
         Err(err) => {
-            eprintln!("ошибка: {err}");
+            eprintln!("{}", tr::pick(format!("ошибка: {err}"), format!("error: {err}")));
             1
         }
     }
