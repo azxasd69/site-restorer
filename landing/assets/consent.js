@@ -1,6 +1,7 @@
-/* Site Restorer — согласие на cookie и загрузка Яндекс.Метрики.
-   Счётчик не загружается, пока посетитель не согласился; выбор хранится
-   в localStorage по ключу pf-consent. Без JavaScript счётчик не работает. */
+/* Site Restorer — уведомление о cookie и Яндекс.Метрика.
+   Режим «только уведомление»: счётчик загружается сразу, баннер сообщает об этом
+   и даёт отключить статистику (выбор хранится в localStorage по ключу pf-consent).
+   Значения: 'notified' — посетитель прочитал уведомление, 'denied' — отказался. */
 (function () {
   'use strict';
 
@@ -10,20 +11,20 @@
 
   var TEXT = {
     ru: {
-      text: 'Сайт использует cookie и Яндекс.Метрику, чтобы считать посещения. Пока вы не согласитесь, счётчик не загружается.',
-      accept: 'Принять',
-      deny: 'Только необходимые',
+      text: 'Сайт использует cookie и Яндекс.Метрику для статистики посещений. Счётчик уже работает — вы можете его отключить.',
+      accept: 'Понятно',
+      deny: 'Отключить статистику',
       more: 'Политика конфиденциальности',
       moreHref: '/privacy/',
-      label: 'Согласие на использование cookie'
+      label: 'Уведомление об использовании cookie'
     },
     en: {
-      text: 'This site uses cookies and Yandex Metrica to count visits. The counter stays off until you agree.',
-      accept: 'Accept',
-      deny: 'Essential only',
+      text: 'This site uses cookies and Yandex Metrica for visit statistics. The counter is already running — you can turn it off.',
+      accept: 'Got it',
+      deny: 'Turn off statistics',
       more: 'Privacy policy',
       moreHref: '/en/privacy/',
-      label: 'Cookie consent'
+      label: 'Cookie notice'
     }
   };
 
@@ -44,8 +45,22 @@
     try {
       window.localStorage.setItem(STORAGE_KEY, value);
     } catch (error) {
-      /* приватный режим — выбор не сохранится, баннер покажется снова */
+      /* приватный режим — выбор не сохранится */
     }
+  }
+
+  function dropMetrikaCookies() {
+    var cookies = document.cookie ? document.cookie.split(';') : [];
+    var hosts = ['', '; path=/', '; path=/; domain=' + location.hostname, '; path=/; domain=.' + location.hostname];
+    cookies.forEach(function (item) {
+      var name = item.split('=')[0].trim();
+      if (!name) return;
+      if (name.indexOf('_ym') === 0 || name.indexOf('ymex') === 0) {
+        hosts.forEach(function (scope) {
+          document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT' + scope;
+        });
+      }
+    });
   }
 
   function loadMetrika() {
@@ -85,7 +100,7 @@
     var bar = document.createElement('div');
     bar.className = 'cookie-bar';
     bar.setAttribute('data-cookie-bar', '');
-    bar.setAttribute('role', 'dialog');
+    bar.setAttribute('role', 'region');
     bar.setAttribute('aria-label', t.label);
     bar.setAttribute('aria-live', 'polite');
 
@@ -112,7 +127,9 @@
     deny.textContent = t.deny;
     deny.addEventListener('click', function () {
       saveChoice('denied');
-      removeBar();
+      dropMetrikaCookies();
+      // перезагружаем страницу, чтобы счётчик не стартовал заново
+      window.location.reload();
     });
 
     var accept = document.createElement('button');
@@ -120,8 +137,7 @@
     accept.className = 'btn btn-primary btn-small';
     accept.textContent = t.accept;
     accept.addEventListener('click', function () {
-      saveChoice('granted');
-      loadMetrika();
+      saveChoice('notified');
       removeBar();
     });
 
@@ -133,7 +149,6 @@
     document.body.appendChild(bar);
   }
 
-  // Ссылки «Настройки cookie» в подвале
   document.querySelectorAll('[data-consent-open]').forEach(function (el) {
     el.addEventListener('click', function (event) {
       event.preventDefault();
@@ -142,9 +157,14 @@
   });
 
   var choice = readChoice();
-  if (choice === 'granted') {
+
+  // Режим «только уведомление»: считаем всех, кроме тех, кто отказался.
+  if (choice !== 'denied') {
     loadMetrika();
-  } else if (choice !== 'denied') {
+  }
+
+  // Уведомление показываем один раз — пока посетитель не нажмёт кнопку.
+  if (!choice) {
     showBar();
   }
 
