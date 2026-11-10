@@ -23,12 +23,26 @@ Facts an agent should rely on:
 
 ## Guides (Russian)
 
-- [Сайт удалили: что делать в первые часы](https://lastcopy.ru/guide/chto-delat-esli-sajt-udalili/): domain rescue, written hosting request, sources of content, archive rebuild, traffic recovery, checklist.
-- [How to rebuild a website from the Wayback Machine](https://lastcopy.ru/en/guide/how-to-rebuild-a-website-from-the-wayback-machine/): English guide — coverage check, CDX export, id_ mode, assembly, verification.
-- [Как скачать сайт из Wayback Machine](https://lastcopy.ru/guide/skachat-sajt-iz-wayback-machine/): archive URL formats, the `id_` modifier, CDX export, wget/HTTrack limits, common errors, FAQ.
-- [Все разборы](https://lastcopy.ru/guide/): the index of guides.
-- [Как восстановить сайт из веб-архива](https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/): step-by-step: CDX index, `id_` replay mode, local build, encodings, verification, checklist, FAQ.
-- [Хостинг потерял данные: первые часы](https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/): what to freeze, where to look for backups, saving domain and mail, SEO after migration.
+- [Все разборы](https://lastcopy.ru/guide/): the index of all guides, grouped by task.
+- [Сайт не открывается: диагностика за 15 минут](https://lastcopy.ru/guide/sajt-ne-otkryvaetsya-diagnostika/): Цепочка от DNS до сервера: где именно ломается, что означает 502 и когда писать в поддержку.
+- [Сайт удалили: что делать в первые часы](https://lastcopy.ru/guide/chto-delat-esli-sajt-udalili/): Пять сценариев аварии, домен, источники контента, восстановление и чек-лист.
+- [Хостинг закрылся: как забрать домен и данные](https://lastcopy.ru/guide/hosting-zakrylsya-kak-zabrat-domen/): Кто на самом деле владелец домена, как получить код переноса и что забрать с сервера до отключения.
+- [Хостинг потерял данные: первые часы](https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/): Что заморозить, где искать бэкапы, как спасти домен и почту.
+- [CDX API: как получить все страницы сайта из архива](https://lastcopy.ru/guide/cdx-api-vse-stranicy-sajta/): Выгрузка полного списка адресов: параметры, готовые запросы, разбор ответа и пагинация.
+- [Восстановление сайта на Bitrix: что вернёт архив, а что нет](https://lastcopy.ru/guide/vosstanovlenie-sajta-bitrix/): Шаблон и статика возвращаются, инфоблоки — нет: что делать в каком порядке.
+- [Восстановление сайта на WordPress из архива](https://lastcopy.ru/guide/vosstanovlenie-sajta-wordpress/): Тема и часть медиатеки возвращаются, записи и настройки — только из базы.
+- [Как восстановить сайт из веб-архива](https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/): Полный порядок: проверка индекса, загрузка, сборка, кодировки, проверка ссылок.
+- [Как скачать сайт из Wayback Machine](https://lastcopy.ru/guide/skachat-sajt-iz-wayback-machine/): Адреса архива, режим id_, выгрузка списка через CDX, wget и HTTrack.
+- [Почему картинки и файлы не восстанавливаются из архива](https://lastcopy.ru/guide/pochemu-kartinki-ne-vosstanavlivayutsya/): Что краулер забирает, а что нет: почему пропадают изображения, файлы и шрифты.
+- [Веб-архив или резервная копия: что выбрать](https://lastcopy.ru/guide/arhiv-ili-rezervnaya-kopiya/): Полнота, сроки, стоимость: где заканчиваются возможности архива.
+- [Как проверить, что архив сохранил ваш сайт](https://lastcopy.ru/guide/kak-proverit-chto-arhiv-sohranil-sajt/): Три сигнала и честная оценка полноты до того, как начинать восстановление.
+- [Site Restorer и HTTrack: что выбрать для архива](https://lastcopy.ru/guide/site-restorer-vs-httrack/): Где заканчивается HTTrack и начинается работа с веб-архивом.
+- [Чем Site Restorer отличается от Wayback Downloader](https://lastcopy.ru/guide/chem-otlichaetsya-ot-wayback-machine-downloader/): Консольная утилита против приложения с отчётом: где разница принципиальна.
+
+## Guides (English)
+
+- [How to rebuild a website from the Wayback Machine](https://lastcopy.ru/en/guide/how-to-rebuild-a-website-from-the-wayback-machine/): Coverage check, CDX export, the id_ mode, assembly and verification — in English.
+- [Hosting lost your data: what to do in the first hours](https://lastcopy.ru/en/guide/hosting-lost-your-data-first-hours/): What to freeze, which backups to ask for, and how to keep the domain and email.
 
 ## Documentation
 

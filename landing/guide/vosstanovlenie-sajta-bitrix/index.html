@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Восстановление сайта на Bitrix из архива</title>
+<meta name="description" content="Что реально вернуть из веб-архива при потере сайта на Bitrix: шаблон, статические страницы, upload-файлы, и что придётся собирать из бэкапа и базы.">
+<meta name="theme-color" content="#f3f4f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15181c" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+
+<link rel="canonical" href="https://lastcopy.ru/guide/vosstanovlenie-sajta-bitrix/">
+<link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/vosstanovlenie-sajta-bitrix/">
+<link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/vosstanovlenie-sajta-bitrix/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Site Restorer">
+<meta property="og:title" content="Восстановление сайта на Bitrix из архива">
+<meta property="og:description" content="Что реально вернуть из веб-архива при потере сайта на Bitrix: шаблон, статические страницы, upload-файлы, и что придётся собирать из бэкапа и базы.">
+<meta property="og:url" content="https://lastcopy.ru/guide/vosstanovlenie-sajta-bitrix/">
+<meta property="og:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+<meta property="og:locale" content="ru_RU">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+
+<link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/style.css?v=3">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "@id": "https://lastcopy.ru/guide/vosstanovlenie-sajta-bitrix/#article",
+      "headline": "Восстановление сайта на Bitrix: что вернёт архив, а что нет",
+      "description": "Что реально вернуть из веб-архива при потере сайта на Bitrix: шаблон, статические страницы, upload-файлы, и что придётся собирать из бэкапа и базы.",
+      "inLanguage": "ru",
+      "datePublished": "2026-11-10",
+      "dateModified": "2026-11-10",
+      "author": {
+        "@type": "Organization",
+        "name": "Site Restorer",
+        "url": "https://lastcopy.ru/"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "Site Restorer",
+        "url": "https://lastcopy.ru/"
+      },
+      "mainEntityOfPage": "https://lastcopy.ru/guide/vosstanovlenie-sajta-bitrix/"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Главная",
+          "item": "https://lastcopy.ru/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Разборы",
+          "item": "https://lastcopy.ru/guide/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "Bitrix из архива",
+          "item": "https://lastcopy.ru/guide/vosstanovlenie-sajta-bitrix/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Можно ли восстановить интернет-магазин на Bitrix только из архива?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Нет. Архив содержит отрендеренные страницы, но не базу: товары, цены, остатки и заказы останутся недоступны. Получится статический каталог без оформления заказов."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Где Bitrix хранит бэкапы?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "В разделе резервного копирования в админке; файлы обычно лежат в каталоге /bitrix/backup/. Восстановление штатно выполняется через restore.php в корне сайта."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Что делать, если бэкап старый?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Развернуть его как основу и дописать контент из архива: страницы за период после бэкапа берутся из снимков. Так получается гибрид: рабочая база плюс свежий текстовый слой."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Вернутся ли изображения товаров?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Обычно нет: они в /upload/, и обход туда доходит редко. Источники возврата — бэкап, каталоги поставщиков, повторная съёмка."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Сколько времени занимает восстановление?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "С бэкапом — часы. Без бэкапа — от нескольких дней на статическую копию и недель на каталог, если данные собираются заново."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="/" aria-label="Site Restorer — на главную">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><rect x="3" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="16.5" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="3" y="16.5" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="17.2" y="17.2" width="9.6" height="9.6" rx="1" fill="none" stroke="#9FB0C2" stroke-width="1.5" stroke-dasharray="2.2 2"/></svg>
+      </span>
+      <span class="brand-name">Site Restorer</span>
+    </a>
+    <div class="header-actions">
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <nav class="breadcrumbs" aria-label="Хлебные крошки">
+    <a href="/">Главная</a><span aria-hidden="true">/</span><a href="/guide/">Разборы</a><span aria-hidden="true">/</span>Bitrix из архива
+  </nav>
+
+  <article class="article">
+    <h1>Восстановление сайта на Bitrix: что вернёт архив, а что нет</h1>
+    <div class="article-meta">
+      <span>Обновлено 10 ноября 2026</span>
+      <span>Чтение: 8 минут</span>
+      <span>CMS: Bitrix</span>
+    </div>
+
+    <div class="tldr">
+      <p>Коротко</p>
+      <ol>
+        <li><strong>Архив даёт слепок страниц</strong> — HTML, часть стилей и картинок, из которого видно, как сайт выглядел.</li>
+        <li><strong>Инфоблоки, заказы и пользователи</strong> живут в базе: из архива их не достать.</li>
+        <li><strong>Бэкап Bitrix</strong> — единственный путь вернуть полноценный сайт: файлы плюс дамп базы.</li>
+        <li><strong>Нет бэкапа</strong> — собирайте статическую копию: она держит трафик и контент, но не магазин.</li>
+        <li><strong>Порядок: база → файлы → шаблон → медиа.</strong> Наоборот делать бессмысленно.</li>
+      </ol>
+    </div>
+
+<p>Сайт на Bitrix — это шаблон, компоненты и база. Из веб-архива вы получите картинку того, как всё выглядело, но не механизм. Разберём, что именно возвращается, а что придётся собирать заново, и в каком порядке это делать, чтобы не потратить день на работу, которую потом выбросить.</p>
+
+    <div class="toc">
+      <p>Содержание</p>
+      <ol>
+        <li><a href="#what">1. Что даёт архив для Bitrix</a></li>
+        <li><a href="#backup">2. Если бэкап есть — работаем с ним</a></li>
+        <li><a href="#static">3. Если бэкапа нет — статическая копия</a></li>
+        <li><a href="#template">4. Вытащить шаблон и стили</a></li>
+        <li><a href="#infoblocks">5. Инфоблоки: единственный путь — данные</a></li>
+        <li><a href="#order">6. Порядок работ</a></li>
+        <li><a href="#checklist">7. Чек-лист</a></li>
+        <li><a href="#faq">Частые вопросы</a></li>
+      </ol>
+    </div>
+
+    <h2 id="what">1. Что даёт архив для Bitrix</h2>
+    <table>
+      <thead><tr><th>Элемент</th><th>Возвращается</th><th>Комментарий</th></tr></thead>
+      <tbody>
+        <tr><td>HTML-страницы</td><td>да</td><td>основа статической копии</td></tr>
+        <tr><td>Стили шаблона</td><td>часто</td><td>файлы <code>template_styles.css</code> и изображения шаблона</td></tr>
+        <tr><td>Скрипты</td><td>частично</td><td>библиотеки Bitrix обычно есть, кастомные — не всегда</td></tr>
+        <tr><td>Изображения товаров</td><td>редко</td><td>живут в <code>/upload/</code>, обход туда доходит не всегда</td></tr>
+        <tr><td>Инфоблоки</td><td>нет</td><td>данные в базе; в HTML видны только результаты</td></tr>
+        <tr><td>Заказы и пользователи</td><td>нет</td><td>только из бэкапа базы</td></tr>
+        <tr><td>Админка и компоненты</td><td>нет</td><td>PHP не сохраняется как рабочий код</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="backup">2. Если бэкап есть — работаем с ним</h2>
+    <p>Bitrix умеет делать полный бэкап штатно: архив содержит файлы и базу, восстановление идёт через <code>restore.php</code> в корне сайта.</p>
+    <ol>
+      <li>Возьмите самый свежий полный бэкап, а не «последний по имени файла».</li>
+      <li>Разверните его на чистом хостинге с той же версией PHP, что была у сайта.</li>
+      <li>Проверьте, что шаблон на месте, а инфоблоки открываются.</li>
+      <li>Только после этого настраивайте домен и HTTPS.</li>
+    </ol>
+    <p>Если бэкапов несколько, восстановите последний и убедитесь, что он не битый: распакуйте архив локально и посмотрите структуру. Битый архив, развёрнутый поверх рабочего сайта, — это две потери вместо одной.</p>
+
+    <h2 id="static">3. Если бэкапа нет — статическая копия</h2>
+    <p>Тогда задача меняется: не вернуть магазин, а сохранить контент и трафик. Порядок такой:</p>
+    <ol>
+      <li>Выгрузите список страниц через CDX.</li>
+      <li>Скачайте страницы и ресурсы в режиме <code>id_</code>.</li>
+      <li>Перепишите ссылки на относительные, приведите кодировки к UTF-8.</li>
+      <li>Проверьте копию без интернета.</li>
+      <li>Опубликуйте на том же домене, сохранив адреса.</li>
+    </ol>
+    <p>Практическая выгода: если структура URL сохранилась, поисковые системы возвращают страницы в индекс, а посетители видят контент вместо ошибки. Формы и корзина при этом не работают — это статический слепок.</p>
+
+    <div class="cta-inline">
+      <h3>Собрать статическую копию каталога</h3>
+      <p>Если бэкапа нет, Site Restorer вытащит из архива все сохранённые страницы и покажет, каких не хватает.</p>
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+
+    <h2 id="template">4. Вытащить шаблон и стили</h2>
+    <p>Из архива видно, какие файлы подключались: ищите в HTML ссылки на <code>/bitrix/templates/&lt;название&gt;/</code>. По ним собирается представление о вёрстке.</p>
+    <ul>
+      <li>Скачайте <code>styles.css</code>, шрифты и изображения шаблона по этим адресам.</li>
+      <li>Сверьте разметку ключевых страниц: она покажет, какие компоненты использовались.</li>
+      <li>Не пытайтесь восстановить PHP-компоненты из HTML: их там нет, только результат.</li>
+    </ul>
+    <p>Шаблон полезен как основа для новой вёрстки: структура, классы, сетка. Это экономит дни работы даже без базы.</p>
+
+    <h2 id="infoblocks">5. Инфоблоки: единственный путь — данные</h2>
+    <p>Товары, статьи, разделы — это записи в базе. Восстановить их из HTML можно только вручную и только частично: по странице на товар видно название, цену и описание, но не свойства, не остатки и не связи.</p>
+    <p>Что реально помогает:</p>
+    <ul>
+      <li>выгрузки в Excel или CSV, которые кто-то делал для прайса;</li>
+      <li>товарные фиды для маркетплейсов или рекламных систем;</li>
+      <li>копия базы у подрядчика или в архиве хостинга;</li>
+      <li>каталоги поставщиков с теми же артикулами.</li>
+    </ul>
+    <p>Если ничего нет, каталог собирают заново: обычно это недели, и лучше это признать сразу, чем обещать «восстановим за два дня».</p>
+
+    <h2 id="order">6. Порядок работ</h2>
+    <table>
+      <thead><tr><th>Шаг</th><th>Что делаем</th><th>Зачем именно так</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Ищем бэкап и проверяем его целостность</td><td>полное восстановление дешевле любого другого пути</td></tr>
+        <tr><td>2</td><td>Разворачиваем на временном адресе</td><td>не трогаем боевой домен до проверки</td></tr>
+        <tr><td>3</td><td>Собираем статическую копию из архива</td><td>страховка, если бэкап окажется неполным</td></tr>
+        <tr><td>4</td><td>Восстанавливаем медиа и шаблон</td><td>внешний вид и доверие посетителей</td></tr>
+        <tr><td>5</td><td>Переключаем домен, проверяем HTTPS</td><td>только когда сайт открывается полностью</td></tr>
+        <tr><td>6</td><td>Отправляем карту сайта и переобход</td><td>возврат страниц в индекс</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="checklist">7. Чек-лист</h2>
+    <ul>
+      <li>☐ Найден самый свежий полный бэкап, проверена распаковка</li>
+      <li>☐ Версия PHP и модули совпадают с прежними</li>
+      <li>☐ Собран список страниц из CDX, скачана статическая копия</li>
+      <li>☐ Ссылки в копии относительные, кодировки UTF-8</li>
+      <li>☐ Шаблон и стили вытащены, вёрстка читается</li>
+      <li>☐ Медиа: найдены источники, составлен список недостающего</li>
+      <li>☐ Инфоблоки: определён источник данных (бэкап, выгрузка, каталог)</li>
+      <li>☐ Домен переключён, HTTPS работает</li>
+      <li>☐ Карта сайта отправлена, переобход запрошен</li>
+    </ul>
+
+    <h2 id="faq">Частые вопросы</h2>
+    <h3>Можно ли восстановить интернет-магазин на Bitrix только из архива?</h3>
+    <p>Нет. Архив содержит отрендеренные страницы, но не базу: товары, цены, остатки и заказы останутся недоступны. Получится статический каталог без оформления заказов.</p>
+
+    <h3>Где Bitrix хранит бэкапы?</h3>
+    <p>В разделе резервного копирования в админке; файлы обычно лежат в каталоге <code>/bitrix/backup/</code>. Восстановление штатно выполняется через <code>restore.php</code> в корне сайта.</p>
+
+    <h3>Что делать, если бэкап старый?</h3>
+    <p>Развернуть его как основу и дописать контент из архива: страницы за период после бэкапа берутся из снимков. Так получается гибрид: рабочая база плюс свежий текстовый слой.</p>
+
+    <h3>Вернутся ли изображения товаров?</h3>
+    <p>Обычно нет: они в <code>/upload/</code>, и обход туда доходит редко. Источники возврата — бэкап, каталоги поставщиков, повторная съёмка.</p>
+
+    <h3>Сколько времени занимает восстановление?</h3>
+    <p>С бэкапом — часы. Без бэкапа — от нескольких дней на статическую копию и недель на каталог, если данные собираются заново.</p>
+
+    <h2>Смежные разборы</h2>
+    <ul>
+      <li><a href="/guide/vosstanovlenie-sajta-wordpress/">Восстановление сайта на WordPress</a> — та же логика для другой CMS</li>
+      <li><a href="/guide/skachat-sajt-iz-wayback-machine/">Как скачать сайт из Wayback Machine</a> — подготовка списка и загрузка</li>
+      <li><a href="/guide/vosstanovit-sajt-iz-veb-arhiva/">Как восстановить сайт из веб-архива</a> — полный порядок сборки копии</li>
+      <li><a href="/guide/arhiv-ili-rezervnaya-kopiya/">Веб-архив или резервная копия</a> — почему бэкап решает то, что архив не может</li>
+    </ul>
+
+    <div class="article-cta">
+      <h2>Собрать статическую копию каталога</h2>
+      <p>Если бэкапа нет, Site Restorer вытащит из архива все сохранённые страницы и покажет, каких не хватает.</p>
+      <a class="btn btn-primary" href="/#download">Скачать для Windows</a>
+    </div>
+
+    <p class="article-note">Материал описывает публичные возможности Internet Archive и практику восстановления сайтов. Обновлено 10 ноября 2026.</p>
+  </article>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-bottom" style="margin-top:0;border-top:0;padding-top:0">
+      <span>© <span data-year>2026</span> Site Restorer. MIT.</span>
+      <span class="footer-note">Статистика посещений — Яндекс.Метрика; отключается в уведомлении или в браузере.</span>
+      <span><a href="/">Главная</a> · <a href="/guide/">Разборы</a> · <a href="/en/" hreflang="en">English</a> · <a href="https://boosty.to/explosion/donate" rel="noopener">Поддержать проект</a> · <a href="/privacy/">Политика конфиденциальности</a> · <a href="#" data-consent-open>Настройки cookie</a></span>
+    </div>
+  </div>
+</footer>
+<script src="../../assets/app.js?v=2" defer></script>
+<script src="../../assets/consent.js?v=6" defer></script>
+</body>
+</html>

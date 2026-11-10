@@ -1,58 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://lastcopy.ru/</loc>
     <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/"/>
-    <xhtml:link rel="alternate" hreflang="en" href="https://lastcopy.ru/en/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/"/>
     <lastmod>2026-11-10</lastmod>
-    <changefreq>monthly</changefreq>
+    <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
     <loc>https://lastcopy.ru/en/</loc>
-    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/"/>
     <xhtml:link rel="alternate" hreflang="en" href="https://lastcopy.ru/en/"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/en/"/>
     <lastmod>2026-11-10</lastmod>
-    <changefreq>monthly</changefreq>
+    <changefreq>weekly</changefreq>
     <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/</loc>
-    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/"/>
-    <xhtml:link rel="alternate" hreflang="en" href="https://lastcopy.ru/en/guide/how-to-rebuild-a-website-from-the-wayback-machine/"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/"/>
-    <lastmod>2026-11-10</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/</loc>
-    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/"/>
-    <lastmod>2026-11-10</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://lastcopy.ru/privacy/</loc>
-    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/privacy/"/>
-    <xhtml:link rel="alternate" hreflang="en" href="https://lastcopy.ru/en/privacy/"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/privacy/"/>
-    <lastmod>2026-11-10</lastmod>
-    <changefreq>yearly</changefreq>
-    <priority>0.3</priority>
-  </url>
-  <url>
-    <loc>https://lastcopy.ru/en/privacy/</loc>
-    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/privacy/"/>
-    <xhtml:link rel="alternate" hreflang="en" href="https://lastcopy.ru/en/privacy/"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/privacy/"/>
-    <lastmod>2026-11-10</lastmod>
-    <changefreq>yearly</changefreq>
-    <priority>0.3</priority>
   </url>
   <url>
     <loc>https://lastcopy.ru/guide/</loc>
@@ -60,7 +22,24 @@
     <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/"/>
     <lastmod>2026-11-10</lastmod>
     <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/guide/chto-delat-esli-sajt-udalili/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/chto-delat-esli-sajt-udalili/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/chto-delat-esli-sajt-udalili/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lastcopy.ru/en/guide/hosting-lost-your-data-first-hours/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
   </url>
   <url>
     <loc>https://lastcopy.ru/guide/skachat-sajt-iz-wayback-machine/</loc>
@@ -71,9 +50,10 @@
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://lastcopy.ru/guide/chto-delat-esli-sajt-udalili/</loc>
-    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/chto-delat-esli-sajt-udalili/"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/chto-delat-esli-sajt-udalili/"/>
+    <loc>https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lastcopy.ru/en/guide/how-to-rebuild-a-website-from-the-wayback-machine/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/"/>
     <lastmod>2026-11-10</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
@@ -86,5 +66,110 @@
     <lastmod>2026-11-10</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/guide/sajt-ne-otkryvaetsya-diagnostika/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/sajt-ne-otkryvaetsya-diagnostika/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/sajt-ne-otkryvaetsya-diagnostika/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/guide/hosting-zakrylsya-kak-zabrat-domen/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/hosting-zakrylsya-kak-zabrat-domen/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/hosting-zakrylsya-kak-zabrat-domen/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/guide/cdx-api-vse-stranicy-sajta/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/cdx-api-vse-stranicy-sajta/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/cdx-api-vse-stranicy-sajta/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/guide/pochemu-kartinki-ne-vosstanavlivayutsya/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/pochemu-kartinki-ne-vosstanavlivayutsya/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/pochemu-kartinki-ne-vosstanavlivayutsya/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/guide/vosstanovlenie-sajta-bitrix/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/vosstanovlenie-sajta-bitrix/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/vosstanovlenie-sajta-bitrix/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/guide/vosstanovlenie-sajta-wordpress/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/vosstanovlenie-sajta-wordpress/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/vosstanovlenie-sajta-wordpress/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/guide/kak-proverit-chto-arhiv-sohranil-sajt/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/kak-proverit-chto-arhiv-sohranil-sajt/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/kak-proverit-chto-arhiv-sohranil-sajt/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/guide/arhiv-ili-rezervnaya-kopiya/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/arhiv-ili-rezervnaya-kopiya/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/arhiv-ili-rezervnaya-kopiya/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/guide/site-restorer-vs-httrack/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/site-restorer-vs-httrack/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/site-restorer-vs-httrack/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/guide/chem-otlichaetsya-ot-wayback-machine-downloader/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/chem-otlichaetsya-ot-wayback-machine-downloader/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/chem-otlichaetsya-ot-wayback-machine-downloader/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/en/guide/hosting-lost-your-data-first-hours/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lastcopy.ru/en/guide/hosting-lost-your-data-first-hours/"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/en/guide/hosting-lost-your-data-first-hours/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/privacy/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/privacy/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/privacy/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/en/privacy/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lastcopy.ru/en/privacy/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/en/privacy/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
   </url>
 </urlset>

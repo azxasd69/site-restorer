@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Почему картинки не восстанавливаются из архива</title>
+<meta name="description" content="Архив сохранил страницы, но не картинки: как работает обход, почему теряются изображения и файлы, что можно вернуть и как проверить наличие до начала работ.">
+<meta name="theme-color" content="#f3f4f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15181c" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+
+<link rel="canonical" href="https://lastcopy.ru/guide/pochemu-kartinki-ne-vosstanavlivayutsya/">
+<link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/pochemu-kartinki-ne-vosstanavlivayutsya/">
+<link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/pochemu-kartinki-ne-vosstanavlivayutsya/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Site Restorer">
+<meta property="og:title" content="Почему картинки не восстанавливаются из архива">
+<meta property="og:description" content="Архив сохранил страницы, но не картинки: как работает обход, почему теряются изображения и файлы, что можно вернуть и как проверить наличие до начала работ.">
+<meta property="og:url" content="https://lastcopy.ru/guide/pochemu-kartinki-ne-vosstanavlivayutsya/">
+<meta property="og:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+<meta property="og:locale" content="ru_RU">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+
+<link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/style.css?v=3">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "@id": "https://lastcopy.ru/guide/pochemu-kartinki-ne-vosstanavlivayutsya/#article",
+      "headline": "Почему картинки и файлы не восстанавливаются из архива",
+      "description": "Архив сохранил страницы, но не картинки: как работает обход, почему теряются изображения и файлы, что можно вернуть и как проверить наличие до начала работ.",
+      "inLanguage": "ru",
+      "datePublished": "2026-11-10",
+      "dateModified": "2026-11-10",
+      "author": {
+        "@type": "Organization",
+        "name": "Site Restorer",
+        "url": "https://lastcopy.ru/"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "Site Restorer",
+        "url": "https://lastcopy.ru/"
+      },
+      "mainEntityOfPage": "https://lastcopy.ru/guide/pochemu-kartinki-ne-vosstanavlivayutsya/"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Главная",
+          "item": "https://lastcopy.ru/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Разборы",
+          "item": "https://lastcopy.ru/guide/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "Почему нет картинок",
+          "item": "https://lastcopy.ru/guide/pochemu-kartinki-ne-vosstanavlivayutsya/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Можно ли восстановить картинки, если их нет в архиве?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Только из другого источника: бэкап, копия у подрядчика, каталоги поставщиков, письма. Архив отдаёт лишь то, что успел сохранить краулер."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Почему стили восстановились, а картинки нет?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Стили нужны для отображения страницы, их краулер забирает почти всегда. Изображения часто грузятся отложенно или с другого домена, поэтому в обход не попадают."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Есть ли смысл восстанавливать сайт без картинок?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Да, если важны текст, структура и адреса страниц: так сохраняется поисковый трафик и содержимое. Медиа добавляют позже, по мере находок."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Влияет ли robots.txt на сохранение в архив?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Да. Каталоги, закрытые от обхода, попадают в архив редко или не попадают вовсе — это одна из частых причин пропажи медиа."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Как проверить, сколько картинок сохранилось у моего сайта?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Один запрос к CDX с фильтром по типу image/. Если строк мало относительно числа страниц, медиа потеряны почти полностью."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="/" aria-label="Site Restorer — на главную">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><rect x="3" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="16.5" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="3" y="16.5" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="17.2" y="17.2" width="9.6" height="9.6" rx="1" fill="none" stroke="#9FB0C2" stroke-width="1.5" stroke-dasharray="2.2 2"/></svg>
+      </span>
+      <span class="brand-name">Site Restorer</span>
+    </a>
+    <div class="header-actions">
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <nav class="breadcrumbs" aria-label="Хлебные крошки">
+    <a href="/">Главная</a><span aria-hidden="true">/</span><a href="/guide/">Разборы</a><span aria-hidden="true">/</span>Почему нет картинок
+  </nav>
+
+  <article class="article">
+    <h1>Почему картинки и файлы не восстанавливаются из архива</h1>
+    <div class="article-meta">
+      <span>Обновлено 10 ноября 2026</span>
+      <span>Чтение: 7 минут</span>
+      <span>Разбор: обход, ресурсы</span>
+    </div>
+
+    <div class="tldr">
+      <p>Коротко</p>
+      <ol>
+        <li><strong>Архив хранит ответы сервера, а не сайт.</strong> Краулер забирает страницу и то, что на ней реально запрашивается.</li>
+        <li><strong>Картинки часто не сохраняются:</strong> их грузят отложенно, отдают с CDN, закрывают в <code>robots.txt</code> или просто не успевают.</li>
+        <li><strong>Стили и скрипты сохраняются чаще,</strong> чем изображения: без них страница не отрендерится.</li>
+        <li><strong>Проверять надо до работ:</strong> один запрос в CDX по типу <code>image/</code> показывает, сколько медиа вообще есть.</li>
+        <li><strong>Возврат картинок</strong> — это бэкап, кэш, письма, каталоги поставщиков или новая съёмка; архив тут почти не помогает.</li>
+      </ol>
+    </div>
+
+<p>Самое частое разочарование после восстановления: страницы есть, текст на месте, а фотографии товаров — пустые рамки. Это не поломка инструмента и не ошибка настройки. Так устроен веб-архив, и лучше узнать об этом до начала работ, чем после.</p>
+
+    <div class="toc">
+      <p>Содержание</p>
+      <ol>
+        <li><a href="#how">1. Как краулер обходит сайт</a></li>
+        <li><a href="#why">2. Почему изображения теряются</a></li>
+        <li><a href="#survives">3. Что обычно уцелевает</a></li>
+        <li><a href="#check">4. Проверить до начала работ</a></li>
+        <li><a href="#recover">5. Откуда вернуть изображения</a></li>
+        <li><a href="#future">6. Чтобы не повторилось</a></li>
+        <li><a href="#faq">Частые вопросы</a></li>
+      </ol>
+    </div>
+
+    <h2 id="how">1. Как краулер обходит сайт</h2>
+    <p>Краулер похож на браузер без глаз: он запрашивает страницу, разбирает разметку и идёт по ссылкам. Всё, что загружается позже — при прокрутке, по клику, скриптом — обычно остаётся вне обхода.</p>
+    <ol>
+      <li>Запрос страницы — сохраняется HTML.</li>
+      <li>Разбор ссылок на стили, скрипты, изображения.</li>
+      <li>Загрузка ресурсов — по возможности и по приоритету.</li>
+      <li>Переход по внутренним ссылкам на другие страницы.</li>
+    </ol>
+    <p>Четвёртый шаг повторяется, пока хватает бюджета обхода. Бюджет ограничен: один и тот же сайт нельзя обходить бесконечно, поэтому крупные каталоги сохраняются частично.</p>
+
+    <h2 id="why">2. Почему изображения теряются</h2>
+    <table>
+      <thead><tr><th>Причина</th><th>Что происходит</th><th>Как распознать</th></tr></thead>
+      <tbody>
+        <tr><td>Отложенная загрузка</td><td>картинка подставляется скриптом при прокрутке</td><td>в HTML есть <code>data-src</code>, а <code>src</code> пустой</td></tr>
+        <tr><td>Своя CDN</td><td>файлы живут на другом домене</td><td>адреса вида <code>cdn.example.com</code> или поддомен хранилища</td></tr>
+        <tr><td>Закрыто в <code>robots.txt</code></td><td>краулер не имеет права забирать каталог</td><td>правил для <code>/upload/</code> или <code>/images/</code></td></tr>
+        <tr><td>Бюджет обхода</td><td>до медиа просто не дошла очередь</td><td>страницы есть, файлов рядом нет</td></tr>
+        <tr><td>Динамическая отдача</td><td>адрес картинки меняется при каждом запросе</td><td>параметры вида <code>?w=800&hash=…</code></td></tr>
+        <tr><td>Большие файлы</td><td>видео и архивы почти не сохраняются</td><td>в CDX нет строк с этим типом</td></tr>
+      </tbody>
+    </table>
+    <p>Практический вывод: чем «тяжелее» сайт и чем больше в нём динамики, тем меньше шансов на медиа. Простой статический сайт с обычными <code>img src</code> восстанавливается почти полностью.</p>
+
+    <h2 id="survives">3. Что обычно уцелевает</h2>
+    <ul>
+      <li><strong>HTML-страницы</strong> — основа всего; их сохраняют первыми.</li>
+      <li><strong>CSS и JS</strong> — часто целиком: без них страница выглядит сломанной, а архив старается отдавать рендерящиеся снимки.</li>
+      <li><strong>Иконки, логотипы, фоны</strong> — небольшие файлы из шаблона.</li>
+      <li><strong>Шрифты</strong> — иногда; чаще подставляются системные.</li>
+      <li><strong>Крупные изображения и PDF</strong> — редко, и почти никогда в полном объёме.</li>
+    </ul>
+    <p>Поэтому восстановленная копия обычно «читается», но выглядит беднее оригинала: текст и вёрстка на месте, медиа — частично.</p>
+
+    <div class="cta-inline">
+      <h3>Сначала посмотреть, что уцелело</h3>
+      <p>Site Restorer показывает отчёт по типам файлов: сколько страниц, картинок и стилей вернулось из архива.</p>
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+
+    <h2 id="check">4. Проверить до начала работ</h2>
+    <p>Один запрос показывает, сколько изображений вообще сохранено:</p>
+    <pre class="code-body" style="border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:14px 16px;overflow-x:auto"><code>https://web.archive.org/cdx/search/cdx?url=example.com&matchType=domain&output=csv&fl=original&filter=mimetype:image/.*&collapse=urlkey</code></pre>
+    <p>Сравните число строк с тем, сколько изображений на сайте по вашему ощущению. Если на тысячу страниц нашлось двадцать картинок — медиа потеряны почти полностью, и планировать восстановление из архива бессмысленно: нужен другой источник.</p>
+    <p>Проверка одной конкретной картинки — тот же запрос с точным адресом файла. Пустой ответ означает, что файла в архиве нет ни в одном снимке.</p>
+
+    <h2 id="recover">5. Откуда вернуть изображения</h2>
+    <table>
+      <thead><tr><th>Источник</th><th>Шанс</th><th>Что даёт</th></tr></thead>
+      <tbody>
+        <tr><td>Бэкап хостинга или свой</td><td>высокий</td><td>всё, на дату копии</td></tr>
+        <tr><td>Копия у разработчика</td><td>средний</td><td>шаблон и часто весь <code>upload</code></td></tr>
+        <tr><td>Каталоги поставщиков</td><td>средний</td><td>фото товаров в исходном качестве</td></tr>
+        <tr><td>Письма и презентации</td><td>низкий</td><td>отдельные файлы</td></tr>
+        <tr><td>Кэш поисковых систем</td><td>низкий</td><td>уменьшенные копии страниц</td></tr>
+        <tr><td>Повторная съёмка</td><td>гарантированный</td><td>новые фото, но не оригиналы</td></tr>
+      </tbody>
+    </table>
+    <p>Работающий приём для каталогов: соберите из архива список адресов картинок и попробуйте найти те же файлы у поставщиков по имени файла или артикулу. Совпадения бывают чаще, чем кажется.</p>
+
+    <h2 id="future">6. Чтобы не повторилось</h2>
+    <ul>
+      <li><strong>Бэкап с медиа, а не только с базой.</strong> Проверяйте, что в архиве есть каталог загрузок.</li>
+      <li><strong>Храните оригиналы</strong> вне сайта: отдельный диск или облако, структура папок по датам.</li>
+      <li><strong>Не отдавайте картинки только через CDN</strong> без копии на основном сервере.</li>
+      <li><strong>Не закрывайте медиа в <code>robots.txt</code></strong>, если хотите, чтобы архив их сохранял.</li>
+      <li><strong>Проверяйте бэкап раз в квартал:</strong> распаковка и открытие пары файлов — пятнадцать минут.</li>
+    </ul>
+
+    <h2 id="faq">Частые вопросы</h2>
+    <h3>Можно ли восстановить картинки, если их нет в архиве?</h3>
+    <p>Только из другого источника: бэкап, копия у подрядчика, каталоги поставщиков, письма. Архив отдаёт лишь то, что успел сохранить краулер.</p>
+
+    <h3>Почему стили восстановились, а картинки нет?</h3>
+    <p>Стили нужны для отображения страницы, их краулер забирает почти всегда. Изображения часто грузятся отложенно или с другого домена, поэтому в обход не попадают.</p>
+
+    <h3>Есть ли смысл восстанавливать сайт без картинок?</h3>
+    <p>Да, если важны текст, структура и адреса страниц: так сохраняется поисковый трафик и содержимое. Медиа добавляют позже, по мере находок.</p>
+
+    <h3>Влияет ли <code>robots.txt</code> на сохранение в архив?</h3>
+    <p>Да. Каталоги, закрытые от обхода, попадают в архив редко или не попадают вовсе — это одна из частых причин пропажи медиа.</p>
+
+    <h3>Как проверить, сколько картинок сохранилось у моего сайта?</h3>
+    <p>Один запрос к CDX с фильтром по типу <code>image/</code>. Если строк мало относительно числа страниц, медиа потеряны почти полностью.</p>
+
+    <h2>Смежные разборы</h2>
+    <ul>
+      <li><a href="/guide/cdx-api-vse-stranicy-sajta/">CDX API: как получить все страницы</a> — как читать выгрузку по типам файлов</li>
+      <li><a href="/guide/skachat-sajt-iz-wayback-machine/">Как скачать сайт из Wayback Machine</a> — что именно попадает в загрузку</li>
+      <li><a href="/guide/arhiv-ili-rezervnaya-kopiya/">Веб-архив или резервная копия</a> — почему бэкап закрывает то, что архив не может</li>
+      <li><a href="/guide/vosstanovlenie-sajta-wordpress/">Восстановление сайта на WordPress</a> — где искать медиатеку</li>
+    </ul>
+
+    <div class="article-cta">
+      <h2>Сначала посмотреть, что уцелело</h2>
+      <p>Site Restorer показывает отчёт по типам файлов: сколько страниц, картинок и стилей вернулось из архива.</p>
+      <a class="btn btn-primary" href="/#download">Скачать для Windows</a>
+    </div>
+
+    <p class="article-note">Материал описывает публичные возможности Internet Archive и практику восстановления сайтов. Обновлено 10 ноября 2026.</p>
+  </article>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-bottom" style="margin-top:0;border-top:0;padding-top:0">
+      <span>© <span data-year>2026</span> Site Restorer. MIT.</span>
+      <span class="footer-note">Статистика посещений — Яндекс.Метрика; отключается в уведомлении или в браузере.</span>
+      <span><a href="/">Главная</a> · <a href="/guide/">Разборы</a> · <a href="/en/" hreflang="en">English</a> · <a href="https://boosty.to/explosion/donate" rel="noopener">Поддержать проект</a> · <a href="/privacy/">Политика конфиденциальности</a> · <a href="#" data-consent-open>Настройки cookie</a></span>
+    </div>
+  </div>
+</footer>
+<script src="../../assets/app.js?v=2" defer></script>
+<script src="../../assets/consent.js?v=6" defer></script>
+</body>
+</html>

@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CDX API: как получить все страницы сайта</title>
+<meta name="description" content="Как выгрузить все сохранённые адреса сайта из веб-архива через CDX API: параметры запроса, готовые примеры, разбор ответа, пагинация и выгрузка в CSV.">
+<meta name="theme-color" content="#f3f4f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15181c" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+
+<link rel="canonical" href="https://lastcopy.ru/guide/cdx-api-vse-stranicy-sajta/">
+<link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/cdx-api-vse-stranicy-sajta/">
+<link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/cdx-api-vse-stranicy-sajta/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Site Restorer">
+<meta property="og:title" content="CDX API: как получить все страницы сайта">
+<meta property="og:description" content="Как выгрузить все сохранённые адреса сайта из веб-архива через CDX API: параметры запроса, готовые примеры, разбор ответа, пагинация и выгрузка в CSV.">
+<meta property="og:url" content="https://lastcopy.ru/guide/cdx-api-vse-stranicy-sajta/">
+<meta property="og:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+<meta property="og:locale" content="ru_RU">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+
+<link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/style.css?v=3">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "@id": "https://lastcopy.ru/guide/cdx-api-vse-stranicy-sajta/#article",
+      "headline": "CDX API: как получить все страницы сайта из архива",
+      "description": "Как выгрузить все сохранённые адреса сайта из веб-архива через CDX API: параметры запроса, готовые примеры, разбор ответа, пагинация и выгрузка в CSV.",
+      "inLanguage": "ru",
+      "datePublished": "2026-11-10",
+      "dateModified": "2026-11-10",
+      "author": {
+        "@type": "Organization",
+        "name": "Site Restorer",
+        "url": "https://lastcopy.ru/"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "Site Restorer",
+        "url": "https://lastcopy.ru/"
+      },
+      "mainEntityOfPage": "https://lastcopy.ru/guide/cdx-api-vse-stranicy-sajta/"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Главная",
+          "item": "https://lastcopy.ru/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Разборы",
+          "item": "https://lastcopy.ru/guide/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "CDX API: все страницы",
+          "item": "https://lastcopy.ru/guide/cdx-api-vse-stranicy-sajta/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Можно ли получить список без программирования?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Да: те же параметры открываются в браузере, ответ показывается текстом или скачивается как CSV. С таблицей дальше можно работать в Excel, но при тысячах строк удобнее скрипт."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Почему в списке есть адреса с параметрами и мусором?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Краулер сохраняет всё, что встретил, включая ссылки с UTM-метками и пагинацию. Мусор отсекается фильтрами по mimetype, коду ответа и регулярным выражениям по адресу."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "CDX отдаёт все снимки или один?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Все, если не указан collapse. С collapse=urlkey остаётся одна строка на адрес, и не обязательно самая свежая."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Что делать, если ответ обрывается?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Разбить выборку: по годам, по разделам или постранично. Для длинных выгрузок предусмотрены showResumeKey и resumeKey — продолжение с места обрыва."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Список из CDX — это точный список страниц сайта?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Нет. Это список того, что сохранил архив. Реальный сайт мог содержать больше страниц, особенно закрытых от обхода или редко посещаемых."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="/" aria-label="Site Restorer — на главную">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><rect x="3" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="16.5" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="3" y="16.5" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="17.2" y="17.2" width="9.6" height="9.6" rx="1" fill="none" stroke="#9FB0C2" stroke-width="1.5" stroke-dasharray="2.2 2"/></svg>
+      </span>
+      <span class="brand-name">Site Restorer</span>
+    </a>
+    <div class="header-actions">
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <nav class="breadcrumbs" aria-label="Хлебные крошки">
+    <a href="/">Главная</a><span aria-hidden="true">/</span><a href="/guide/">Разборы</a><span aria-hidden="true">/</span>CDX API: все страницы
+  </nav>
+
+  <article class="article">
+    <h1>CDX API: как получить все страницы сайта из архива</h1>
+    <div class="article-meta">
+      <span>Обновлено 10 ноября 2026</span>
+      <span>Чтение: 9 минут</span>
+      <span>Для технарей: HTTP, CSV</span>
+    </div>
+
+    <div class="tldr">
+      <p>Коротко</p>
+      <ol>
+        <li><strong>CDX</strong> — служебный интерфейс веб-архива: отдаёт список сохранённых адресов с датами, типами и кодами ответа.</li>
+        <li><strong>Список — это план загрузки.</strong> Пока его нет, вы не знаете ни объёма работы, ни того, чего в архиве не хватает.</li>
+        <li><strong><code>collapse=urlkey</code></strong> убирает дубли: одна строка на адрес вместо всех снимков.</li>
+        <li><strong><code>filter=statuscode:200</code></strong> отбрасывает редиректы и ошибки — обычно именно это и нужно.</li>
+        <li><strong>Большие домены</strong> выгружаются постранично; разбор добавляйте после проверки, а не на веру.</li>
+      </ol>
+    </div>
+
+<p>Прежде чем качать сайт из архива, нужно узнать, что там вообще есть. CDX-индекс отвечает на этот вопрос одной таблицей: адрес, дата снимка, тип файла, код ответа. Дальше эта же таблица становится списком загрузки и отчётом о потерях.</p>
+
+    <div class="toc">
+      <p>Содержание</p>
+      <ol>
+        <li><a href="#what">1. Что такое CDX и зачем он нужен</a></li>
+        <li><a href="#params">2. Параметры запроса</a></li>
+        <li><a href="#examples">3. Готовые запросы под задачу</a></li>
+        <li><a href="#read">4. Как читать ответ</a></li>
+        <li><a href="#big">5. Большие домены и пагинация</a></li>
+        <li><a href="#export">6. Сохранить и использовать</a></li>
+        <li><a href="#mistakes">7. Типичные ошибки</a></li>
+        <li><a href="#faq">Частые вопросы</a></li>
+      </ol>
+    </div>
+
+    <h2 id="what">1. Что такое CDX и зачем он нужен</h2>
+    <p>Internet Archive хранит ответы сервера. CDX — способ спросить: «какие адреса этого домена вы сохранили и когда». Ответ приходит плоской таблицей, которую можно считать скриптом.</p>
+    <p>Три задачи, которые решает выгрузка:</p>
+    <ul>
+      <li>оценить объём: сто страниц или десять тысяч — от этого зависит тактика;</li>
+      <li>увидеть структуру: разделы, категории, даты публикаций;</li>
+      <li>найти потери: адреса, где архив отдаёт редирект или ошибку, придётся восстанавливать иначе.</li>
+    </ul>
+
+    <h2 id="params">2. Параметры запроса</h2>
+    <p>Базовый адрес сервиса:</p>
+    <pre class="code-body" style="border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:14px 16px;overflow-x:auto"><code>https://web.archive.org/cdx/search/cdx?url=example.com</code></pre>
+    <table>
+      <thead><tr><th>Параметр</th><th>Что делает</th><th>Когда нужен</th></tr></thead>
+      <tbody>
+        <tr><td><code>url</code></td><td>домен или адрес, с которого начинается выборка</td><td>всегда</td></tr>
+        <tr><td><code>matchType</code></td><td><code>exact</code>, <code>prefix</code>, <code>host</code>, <code>domain</code></td><td><code>domain</code> — все поддомены</td></tr>
+        <tr><td><code>output</code></td><td><code>json</code>, <code>csv</code>, <code>xml</code>, текст</td><td><code>json</code> для скриптов, <code>csv</code> для таблиц</td></tr>
+        <tr><td><code>fl</code></td><td>какие поля вернуть: <code>timestamp,original,mimetype,statuscode</code></td><td>меньше данных — быстрее ответ</td></tr>
+        <tr><td><code>filter</code></td><td>фильтр по полю: <code>statuscode:200</code>, <code>!mimetype:image/jpeg</code></td><td>отсечь мусор сразу</td></tr>
+        <tr><td><code>collapse</code></td><td>свернуть по полю, чаще <code>urlkey</code></td><td>одна строка на адрес</td></tr>
+        <tr><td><code>from</code>, <code>to</code></td><td>границы периода в формате <code>20240101</code></td><td>нужен конкретный год</td></tr>
+        <tr><td><code>limit</code></td><td>ограничение числа строк</td><td>пробный запрос</td></tr>
+        <tr><td><code>page</code>, <code>pageSize</code></td><td>постраничная выдача</td><td>крупные домены</td></tr>
+        <tr><td><code>showResumeKey</code>, <code>resumeKey</code></td><td>продолжение выдачи с места обрыва</td><td>длинные выгрузки</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="examples">3. Готовые запросы под задачу</h2>
+    <p>Все сохранённые HTML-страницы, без дублей, только успешные:</p>
+    <pre class="code-body" style="border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:14px 16px;overflow-x:auto"><code>https://web.archive.org/cdx/search/cdx?url=example.com&matchType=domain&output=json&fl=timestamp,original,mimetype,statuscode&filter=statuscode:200&filter=mimetype:text/html&collapse=urlkey</code></pre>
+    <p>Только изображения — чтобы понять, сколько картинок вообще уцелело:</p>
+    <pre class="code-body" style="border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:14px 16px;overflow-x:auto"><code>https://web.archive.org/cdx/search/cdx?url=example.com&matchType=domain&output=csv&fl=timestamp,original,mimetype&filter=mimetype:image/.*&collapse=urlkey</code></pre>
+    <p>Один раздел за конкретный год:</p>
+    <pre class="code-body" style="border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:14px 16px;overflow-x:auto"><code>https://web.archive.org/cdx/search/cdx?url=example.com/blog/&matchType=prefix&from=2023&to=2023&output=json&collapse=urlkey&fl=timestamp,original</code></pre>
+    <p>Проверка одного адреса — сохраняли ли его вообще:</p>
+    <pre class="code-body" style="border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:14px 16px;overflow-x:auto"><code>https://web.archive.org/cdx/search/cdx?url=example.com/about/&output=json&fl=timestamp,statuscode&limit=5</code></pre>
+
+    <div class="cta-inline">
+      <h3>Не писать скрипт ради списка</h3>
+      <p>Site Restorer сам запрашивает CDX, скачивает по списку и показывает, что вернулось, а что потеряно.</p>
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+
+    <h2 id="read">4. Как читать ответ</h2>
+    <p>С <code>output=json</code> приходит массив массивов. Первая строка — имена полей, дальше данные:</p>
+    <pre class="code-body" style="border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:14px 16px;overflow-x:auto"><code>[
+ ["timestamp","original","mimetype","statuscode"],
+ ["20240101120000","https://example.com/","text/html","200"],
+ ["20240101120005","https://example.com/about/","text/html","200"]
+]</code></pre>
+    <p>Что важно в полях:</p>
+    <ul>
+      <li><strong>timestamp</strong> — метка снимка; она же подставляется в адрес загрузки в режиме <code>id_</code>;</li>
+      <li><strong>original</strong> — исходный адрес, по нему строится путь файла;</li>
+      <li><strong>mimetype</strong> — тип; по нему решается, это страница, картинка или архив;</li>
+      <li><strong>statuscode</strong> — код, который отдал сервер; 200 — успех, 301/302 — редирект, 404 — страницы не было.</li>
+    </ul>
+    <p>Один адрес с <code>collapse=urlkey</code> даёт строку не обязательно с самой свежей датой. Если нужен последний снимок, снимайте <code>collapse</code> и сортируйте сами.</p>
+
+    <h2 id="big">5. Большие домены и пагинация</h2>
+    <p>Когда адресов тысячи, один ответ либо обрывается, либо идёт слишком долго. Тогда выгрузку разбивают:</p>
+    <ol>
+      <li>по периодам — <code>from</code> и <code>to</code> по годам или месяцам;</li>
+      <li>по разделам — <code>matchType=prefix</code> и адрес каталога;</li>
+      <li>постранично — <code>page</code> и <code>pageSize</code>;</li>
+      <li>с продолжением — <code>showResumeKey</code>, затем передача <code>resumeKey</code> в следующий запрос.</li>
+    </ol>
+    <p>Ответы архива не стоит забирать в цикле без пауз: сервис общий, и грубая выгрузка упирается в ограничения по частоте запросов. Признак — коды 429 и 503 вместо данных. Пауза и повтор решают это, а параллельные запросы в двадцать потоков — усугубляют.</p>
+
+    <h2 id="export">6. Сохранить и использовать</h2>
+    <p>Практичный минимум для выгрузки в CSV:</p>
+    <pre class="code-body" style="border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:14px 16px;overflow-x:auto"><code>curl.exe -o cdx.csv "https://web.archive.org/cdx/search/cdx?url=example.com&matchType=domain&output=csv&fl=timestamp,original,mimetype,statuscode&filter=statuscode:200&collapse=urlkey"</code></pre>
+    <p>Дальше по списку считается главное:</p>
+    <table>
+      <thead><tr><th>Показатель</th><th>Как считать</th><th>О чём говорит</th></tr></thead>
+      <tbody>
+        <tr><td>Страниц</td><td>строк с <code>text/html</code></td><td>объём работы</td></tr>
+        <tr><td>Разделов</td><td>уникальные первые два сегмента пути</td><td>структура сайта</td></tr>
+        <tr><td>Картинок</td><td>строк с <code>image/</code></td><td>что вернётся из медиа</td></tr>
+        <tr><td>Период</td><td>минимум и максимум <code>timestamp</code></td><td>какая версия сайта у нас есть</td></tr>
+      </tbody>
+    </table>
+    <p>Этот же файл становится списком загрузки: адрес и метка из строки подставляются в запрос с <code>id_</code>.</p>
+
+    <h2 id="mistakes">7. Типичные ошибки</h2>
+    <ul>
+      <li><strong>Забыли <code>collapse</code>.</strong> Десять тысяч строк на тысячу адресов: качать будете то же самое десять раз.</li>
+      <li><strong>Не отфильтровали коды.</strong> В список попадут редиректы и ошибки, и на их месте окажутся пустые файлы.</li>
+      <li><strong>Взяли только <code>text/html</code>.</strong> Стили и скрипты не скачаются, копия откроется без оформления.</li>
+      <li><strong>Игнорируют поддомены.</strong> С <code>matchType=host</code> часть сайта не попадёт в список.</li>
+      <li><strong>Думают, что список исчерпывающий.</strong> CDX показывает то, что сохранил краулер; адресов, которых он не видел, там нет по определению.</li>
+    </ul>
+
+    <h2 id="faq">Частые вопросы</h2>
+    <h3>Можно ли получить список без программирования?</h3>
+    <p>Да: те же параметры открываются в браузере, ответ показывается текстом или скачивается как CSV. С таблицей дальше можно работать в Excel, но при тысячах строк удобнее скрипт.</p>
+
+    <h3>Почему в списке есть адреса с параметрами и мусором?</h3>
+    <p>Краулер сохраняет всё, что встретил, включая ссылки с UTM-метками и пагинацию. Мусор отсекается фильтрами по <code>mimetype</code>, коду ответа и регулярным выражениям по адресу.</p>
+
+    <h3>CDX отдаёт все снимки или один?</h3>
+    <p>Все, если не указан <code>collapse</code>. С <code>collapse=urlkey</code> остаётся одна строка на адрес, и не обязательно самая свежая.</p>
+
+    <h3>Что делать, если ответ обрывается?</h3>
+    <p>Разбить выборку: по годам, по разделам или постранично. Для длинных выгрузок предусмотрены <code>showResumeKey</code> и <code>resumeKey</code> — продолжение с места обрыва.</p>
+
+    <h3>Список из CDX — это точный список страниц сайта?</h3>
+    <p>Нет. Это список того, что сохранил архив. Реальный сайт мог содержать больше страниц, особенно закрытых от обхода или редко посещаемых.</p>
+
+    <h2>Смежные разборы</h2>
+    <ul>
+      <li><a href="/guide/kak-proverit-chto-arhiv-sohranil-sajt/">Как проверить, что архив сохранил сайт</a> — та же проверка, но без командной строки</li>
+      <li><a href="/guide/skachat-sajt-iz-wayback-machine/">Как скачать сайт из Wayback Machine</a> — что делать со списком дальше</li>
+      <li><a href="/guide/pochemu-kartinki-ne-vosstanavlivayutsya/">Почему картинки не восстанавливаются</a> — как читать строки с типом image/</li>
+      <li><a href="/guide/vosstanovit-sajt-iz-veb-arhiva/">Как восстановить сайт из веб-архива</a> — полный порядок сборки копии</li>
+    </ul>
+
+    <div class="article-cta">
+      <h2>Не писать скрипт ради списка</h2>
+      <p>Site Restorer сам запрашивает CDX, скачивает по списку и показывает, что вернулось, а что потеряно.</p>
+      <a class="btn btn-primary" href="/#download">Скачать для Windows</a>
+    </div>
+
+    <p class="article-note">Материал описывает публичные возможности Internet Archive и практику восстановления сайтов. Обновлено 10 ноября 2026.</p>
+  </article>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-bottom" style="margin-top:0;border-top:0;padding-top:0">
+      <span>© <span data-year>2026</span> Site Restorer. MIT.</span>
+      <span class="footer-note">Статистика посещений — Яндекс.Метрика; отключается в уведомлении или в браузере.</span>
+      <span><a href="/">Главная</a> · <a href="/guide/">Разборы</a> · <a href="/en/" hreflang="en">English</a> · <a href="https://boosty.to/explosion/donate" rel="noopener">Поддержать проект</a> · <a href="/privacy/">Политика конфиденциальности</a> · <a href="#" data-consent-open>Настройки cookie</a></span>
+    </div>
+  </div>
+</footer>
+<script src="../../assets/app.js?v=2" defer></script>
+<script src="../../assets/consent.js?v=6" defer></script>
+</body>
+</html>

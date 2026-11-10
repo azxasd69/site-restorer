@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Восстановление сайта на WordPress из архива</title>
+<meta name="description" content="Что вернуть из веб-архива при потере сайта на WordPress: тему, стили, часть медиатеки, и почему базу и записи придётся собирать из бэкапа.">
+<meta name="theme-color" content="#f3f4f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15181c" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+
+<link rel="canonical" href="https://lastcopy.ru/guide/vosstanovlenie-sajta-wordpress/">
+<link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/vosstanovlenie-sajta-wordpress/">
+<link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/vosstanovlenie-sajta-wordpress/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Site Restorer">
+<meta property="og:title" content="Восстановление сайта на WordPress из архива">
+<meta property="og:description" content="Что вернуть из веб-архива при потере сайта на WordPress: тему, стили, часть медиатеки, и почему базу и записи придётся собирать из бэкапа.">
+<meta property="og:url" content="https://lastcopy.ru/guide/vosstanovlenie-sajta-wordpress/">
+<meta property="og:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+<meta property="og:locale" content="ru_RU">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+
+<link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/style.css?v=3">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "@id": "https://lastcopy.ru/guide/vosstanovlenie-sajta-wordpress/#article",
+      "headline": "Восстановление сайта на WordPress из архива",
+      "description": "Что вернуть из веб-архива при потере сайта на WordPress: тему, стили, часть медиатеки, и почему базу и записи придётся собирать из бэкапа.",
+      "inLanguage": "ru",
+      "datePublished": "2026-11-10",
+      "dateModified": "2026-11-10",
+      "author": {
+        "@type": "Organization",
+        "name": "Site Restorer",
+        "url": "https://lastcopy.ru/"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "Site Restorer",
+        "url": "https://lastcopy.ru/"
+      },
+      "mainEntityOfPage": "https://lastcopy.ru/guide/vosstanovlenie-sajta-wordpress/"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Главная",
+          "item": "https://lastcopy.ru/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Разборы",
+          "item": "https://lastcopy.ru/guide/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "WordPress из архива",
+          "item": "https://lastcopy.ru/guide/vosstanovlenie-sajta-wordpress/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Можно ли восстановить WordPress из одного архива?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Только как статический сайт: страницы будут открываться, но админки, плагинов и базы не будет. Управляемый сайт требует дампа базы."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Где в архиве искать файлы темы?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "По путям /wp-content/themes/&lt;имя&gt;/ в HTML. Стили и изображения темы часто сохраняются, PHP-шаблоны — нет, их восстанавливают из бэкапа или ставят тему заново."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Почему в медиатеке пусто?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "wp-content/uploads обходится редко: файлы грузятся отложенно, отдаются с CDN или не попадают в бюджет обхода. Проверить объём можно запросом в CDX по типу image/."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Что важнее сохранить в первую очередь?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Дамп базы. Записи, настройки и меню — это база; файлы темы и медиа можно добрать позже, а без базы сайт не станет управляемым."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Вернутся ли формы и комментарии?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Комментарии хранятся в базе, поэтому только с дампом. Формы — это плагин; по HTML видно, какой именно, но восстановить его можно только установкой заново."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="/" aria-label="Site Restorer — на главную">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><rect x="3" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="16.5" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="3" y="16.5" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="17.2" y="17.2" width="9.6" height="9.6" rx="1" fill="none" stroke="#9FB0C2" stroke-width="1.5" stroke-dasharray="2.2 2"/></svg>
+      </span>
+      <span class="brand-name">Site Restorer</span>
+    </a>
+    <div class="header-actions">
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <nav class="breadcrumbs" aria-label="Хлебные крошки">
+    <a href="/">Главная</a><span aria-hidden="true">/</span><a href="/guide/">Разборы</a><span aria-hidden="true">/</span>WordPress из архива
+  </nav>
+
+  <article class="article">
+    <h1>Восстановление сайта на WordPress из архива</h1>
+    <div class="article-meta">
+      <span>Обновлено 10 ноября 2026</span>
+      <span>Чтение: 8 минут</span>
+      <span>CMS: WordPress</span>
+    </div>
+
+    <div class="tldr">
+      <p>Коротко</p>
+      <ol>
+        <li><strong>WordPress = файлы + база.</strong> Архив отдаёт страницы и часть файлов темы, базы там нет.</li>
+        <li><strong>Медиатека — главная потеря:</strong> <code>wp-content/uploads</code> обходится редко.</li>
+        <li><strong>Тема восстанавливается частично:</strong> вёрстку видно, PHP-шаблоны — нет.</li>
+        <li><strong>Плагины не восстановить</strong> по HTML: видно только их следы на странице.</li>
+        <li><strong>Порядок: база → <code>wp-content</code> → тема → медиа → домен.</strong></li>
+      </ol>
+    </div>
+
+<p>Сайт на WordPress состоит из двух половин: файлов в <code>wp-content</code> и записей в базе. Из веб-архива приходит то, что видит посетитель, — и этого достаточно, чтобы сохранить контент и трафик, но недостаточно, чтобы вернуть редактор, плагины и медиатеку.</p>
+
+    <div class="toc">
+      <p>Содержание</p>
+      <ol>
+        <li><a href="#parts">1. Из чего состоит сайт на WordPress</a></li>
+        <li><a href="#backup">2. Путь с бэкапом</a></li>
+        <li><a href="#static">3. Путь без бэкапа: статическая копия</a></li>
+        <li><a href="#theme">4. Тема и стили</a></li>
+        <li><a href="#media">5. Медиатека</a></li>
+        <li><a href="#order">6. Порядок и проверки</a></li>
+        <li><a href="#checklist">7. Чек-лист</a></li>
+        <li><a href="#faq">Частые вопросы</a></li>
+      </ol>
+    </div>
+
+    <h2 id="parts">1. Из чего состоит сайт на WordPress</h2>
+    <table>
+      <thead><tr><th>Часть</th><th>Где живёт</th><th>Есть ли в архиве</th></tr></thead>
+      <tbody>
+        <tr><td>Записи и страницы</td><td>база данных</td><td>нет, только текст на страницах</td></tr>
+        <tr><td>Настройки, меню, виджеты</td><td>база данных</td><td>нет</td></tr>
+        <tr><td>Тема</td><td><code>wp-content/themes/&lt;имя&gt;</code></td><td>частично: CSS и картинки</td></tr>
+        <tr><td>Плагины</td><td><code>wp-content/plugins</code></td><td>нет, только результат в разметке</td></tr>
+        <tr><td>Медиатека</td><td><code>wp-content/uploads</code></td><td>частично, зависит от обхода</td></tr>
+        <tr><td>Ядро</td><td><code>wp-admin</code>, <code>wp-includes</code></td><td>нет смысла: скачивается заново</td></tr>
+      </tbody>
+    </table>
+    <p>Вывод простой: без базы сайт не станет управляемым. Без файлов темы он не будет выглядеть как раньше. Архив даёт третье — читаемый контент по прежним адресам.</p>
+
+    <h2 id="backup">2. Путь с бэкапом</h2>
+    <p>Если есть дамп базы и архив <code>wp-content</code>, восстановление занимает часы:</p>
+    <ol>
+      <li>Чистая установка WordPress той же или ближайшей мажорной версии.</li>
+      <li>Импорт дампа базы.</li>
+      <li>Замена <code>wp-content</code> на копию из бэкапа.</li>
+      <li>Проверка префикса таблиц в <code>wp-config.php</code>.</li>
+      <li>Обновление адресов в базе, если домен сменился.</li>
+      <li>Проверка постоянных ссылок: если они не открываются, пересохраните настройки.</li>
+    </ol>
+    <p>Частая ловушка: дамп старый, а файлы новые (или наоборот). Тогда часть картинок не находится: записи ссылаются на файлы, которых нет, и наоборот. Перед публикацией пройдитесь по медиатеке и проверьте десяток последних записей.</p>
+
+    <h2 id="static">3. Путь без бэкапа: статическая копия</h2>
+    <p>Без базы WordPress не поднять, но контент вернуть можно:</p>
+    <ol>
+      <li>CDX-выгрузка всех адресов с фильтром по <code>text/html</code>.</li>
+      <li>Загрузка страниц в режиме <code>id_</code>, чтобы ссылки вели на оригинальный домен.</li>
+      <li>Переписывание ссылок на относительные, приведение кодировок.</li>
+      <li>Публикация по тем же адресам.</li>
+    </ol>
+    <p>Такой сайт не редактируется через админку, но читается, индексируется и держит трафик. Для блога или сайта услуг этого часто достаточно, чтобы не потерять аудиторию, пока готовится нормальная версия.</p>
+
+    <div class="cta-inline">
+      <h3>Собрать копию блога из архива</h3>
+      <p>Site Restorer скачает сохранённые страницы и ресурсы и покажет отчёт: что вернулось и чего не хватает.</p>
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+
+    <h2 id="theme">4. Тема и стили</h2>
+    <p>В HTML видны подключённые файлы темы: ищите пути вида <code>/wp-content/themes/&lt;имя&gt;/style.css</code> и версию в параметрах.</p>
+    <ul>
+      <li>Скачайте <code>style.css</code>, шрифты и изображения темы по этим адресам.</li>
+      <li>Проверьте, платная тема или бесплатная: бесплатную можно поставить заново из каталога, платную — только из своей копии.</li>
+      <li>Дочерняя тема: правки обычно в ней, а не в родительской. Ищите <code>-child</code> в имени каталога.</li>
+      <li>Кастомайзер хранит настройки в базе — их из архива не вернуть, внешний вид придётся подбирать по снимкам.</li>
+    </ul>
+
+    <h2 id="media">5. Медиатека</h2>
+    <p><code>uploads</code> — самая пострадавшая часть. Причины те же, что и везде: отложенная загрузка, CDN, бюджет обхода.</p>
+    <table>
+      <thead><tr><th>Источник</th><th>Что даёт</th><th>Реалистичность</th></tr></thead>
+      <tbody>
+        <tr><td>Бэкап <code>wp-content</code></td><td>всё, включая миниатюры</td><td>лучший вариант</td></tr>
+        <tr><td>Архив</td><td>часть файлов по прямым адресам</td><td>обычно меньшая половина</td></tr>
+        <tr><td>Письма с вложениями</td><td>отдельные изображения</td><td>низкая</td></tr>
+        <tr><td>Повторная загрузка из первоисточника</td><td>оригиналы</td><td>зависит от типа контента</td></tr>
+      </tbody>
+    </table>
+    <p>Оценка до работ — один запрос в CDX с фильтром <code>mimetype:image/.*</code>. Если строк мало, планируйте пересборку медиа, а не восстановление.</p>
+
+    <h2 id="order">6. Порядок и проверки</h2>
+    <table>
+      <thead><tr><th>Шаг</th><th>Признак готовности</th></tr></thead>
+      <tbody>
+        <tr><td>База импортирована</td><td>записи и страницы открываются в админке</td></tr>
+        <tr><td>Файлы темы на месте</td><td>внешний вид совпадает со снимком</td></tr>
+        <tr><td>Плагины восстановлены</td><td>формы, галереи, кэш работают</td></tr>
+        <tr><td>Медиа проверена</td><td>в записях нет битых изображений</td></tr>
+        <tr><td>Постоянные ссылки</td><td>адреса вида <code>/2024/05/slug/</code> открываются</td></tr>
+        <tr><td>Домен и HTTPS</td><td>сертификат выписан, редиректы с http работают</td></tr>
+        <tr><td>Карта сайта и переобход</td><td>страницы возвращаются в индекс</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="checklist">7. Чек-лист</h2>
+    <ul>
+      <li>☐ Найден дамп базы, проверен импорт на локальной копии</li>
+      <li>☐ Сохранён <code>wp-content</code> целиком, включая <code>uploads</code></li>
+      <li>☐ Известно имя и тип темы (своя, каталог, платная, дочерняя)</li>
+      <li>☐ Выгружен список страниц из CDX, собрана статическая копия</li>
+      <li>☐ Проверены адреса постоянных ссылок</li>
+      <li>☐ Медиа: оценён объём потерь, найден источник возврата</li>
+      <li>☐ Префикс таблиц и <code>wp-config.php</code> проверены</li>
+      <li>☐ HTTPS и редиректы настроены</li>
+      <li>☐ Карта сайта отправлена, переобход запрошен</li>
+    </ul>
+
+    <h2 id="faq">Частые вопросы</h2>
+    <h3>Можно ли восстановить WordPress из одного архива?</h3>
+    <p>Только как статический сайт: страницы будут открываться, но админки, плагинов и базы не будет. Управляемый сайт требует дампа базы.</p>
+
+    <h3>Где в архиве искать файлы темы?</h3>
+    <p>По путям <code>/wp-content/themes/&lt;имя&gt;/</code> в HTML. Стили и изображения темы часто сохраняются, PHP-шаблоны — нет, их восстанавливают из бэкапа или ставят тему заново.</p>
+
+    <h3>Почему в медиатеке пусто?</h3>
+    <p><code>wp-content/uploads</code> обходится редко: файлы грузятся отложенно, отдаются с CDN или не попадают в бюджет обхода. Проверить объём можно запросом в CDX по типу <code>image/</code>.</p>
+
+    <h3>Что важнее сохранить в первую очередь?</h3>
+    <p>Дамп базы. Записи, настройки и меню — это база; файлы темы и медиа можно добрать позже, а без базы сайт не станет управляемым.</p>
+
+    <h3>Вернутся ли формы и комментарии?</h3>
+    <p>Комментарии хранятся в базе, поэтому только с дампом. Формы — это плагин; по HTML видно, какой именно, но восстановить его можно только установкой заново.</p>
+
+    <h2>Смежные разборы</h2>
+    <ul>
+      <li><a href="/guide/vosstanovlenie-sajta-bitrix/">Восстановление сайта на Bitrix</a> — та же логика для другой CMS</li>
+      <li><a href="/guide/pochemu-kartinki-ne-vosstanavlivayutsya/">Почему картинки не восстанавливаются</a> — почему медиатека страдает первой</li>
+      <li><a href="/guide/skachat-sajt-iz-wayback-machine/">Как скачать сайт из Wayback Machine</a> — подготовка списка страниц</li>
+      <li><a href="/guide/kak-proverit-chto-arhiv-sohranil-sajt/">Как проверить, что архив сохранил сайт</a> — оценка до начала работ</li>
+    </ul>
+
+    <div class="article-cta">
+      <h2>Собрать копию блога из архива</h2>
+      <p>Site Restorer скачает сохранённые страницы и ресурсы и покажет отчёт: что вернулось и чего не хватает.</p>
+      <a class="btn btn-primary" href="/#download">Скачать для Windows</a>
+    </div>
+
+    <p class="article-note">Материал описывает публичные возможности Internet Archive и практику восстановления сайтов. Обновлено 10 ноября 2026.</p>
+  </article>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-bottom" style="margin-top:0;border-top:0;padding-top:0">
+      <span>© <span data-year>2026</span> Site Restorer. MIT.</span>
+      <span class="footer-note">Статистика посещений — Яндекс.Метрика; отключается в уведомлении или в браузере.</span>
+      <span><a href="/">Главная</a> · <a href="/guide/">Разборы</a> · <a href="/en/" hreflang="en">English</a> · <a href="https://boosty.to/explosion/donate" rel="noopener">Поддержать проект</a> · <a href="/privacy/">Политика конфиденциальности</a> · <a href="#" data-consent-open>Настройки cookie</a></span>
+    </div>
+  </div>
+</footer>
+<script src="../../assets/app.js?v=2" defer></script>
+<script src="../../assets/consent.js?v=6" defer></script>
+</body>
+</html>

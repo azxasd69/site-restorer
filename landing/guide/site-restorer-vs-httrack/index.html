@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Site Restorer и HTTrack: что выбрать</title>
+<meta name="description" content="Сравнение Site Restorer и HTTrack для восстановления сайта: чем отличаются, где HTTrack ломается на веб-архиве и когда лучше взять его.">
+<meta name="theme-color" content="#f3f4f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15181c" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+
+<link rel="canonical" href="https://lastcopy.ru/guide/site-restorer-vs-httrack/">
+<link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/site-restorer-vs-httrack/">
+<link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/site-restorer-vs-httrack/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Site Restorer">
+<meta property="og:title" content="Site Restorer и HTTrack: что выбрать">
+<meta property="og:description" content="Сравнение Site Restorer и HTTrack для восстановления сайта: чем отличаются, где HTTrack ломается на веб-архиве и когда лучше взять его.">
+<meta property="og:url" content="https://lastcopy.ru/guide/site-restorer-vs-httrack/">
+<meta property="og:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+<meta property="og:locale" content="ru_RU">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+
+<link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/style.css?v=3">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "@id": "https://lastcopy.ru/guide/site-restorer-vs-httrack/#article",
+      "headline": "Site Restorer и HTTrack: что выбрать для архива",
+      "description": "Сравнение Site Restorer и HTTrack для восстановления сайта: чем отличаются, где HTTrack ломается на веб-архиве и когда лучше взять его.",
+      "inLanguage": "ru",
+      "datePublished": "2026-11-10",
+      "dateModified": "2026-11-10",
+      "author": {
+        "@type": "Organization",
+        "name": "Site Restorer",
+        "url": "https://lastcopy.ru/"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "Site Restorer",
+        "url": "https://lastcopy.ru/"
+      },
+      "mainEntityOfPage": "https://lastcopy.ru/guide/site-restorer-vs-httrack/"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Главная",
+          "item": "https://lastcopy.ru/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Разборы",
+          "item": "https://lastcopy.ru/guide/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "Site Restorer и HTTrack",
+          "item": "https://lastcopy.ru/guide/site-restorer-vs-httrack/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Можно ли скачать сайт из архива через HTTrack?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Технически да, но копия получится с переписанными на web.archive.org ссылками, панелью архива и мусором из редиректов. Придётся вручную править разметку."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Что быстрее: HTTrack или Site Restorer?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Для живого сайта — HTTrack, он не требует подготовки списка. Для архива — Site Restorer: обход по ссылкам упирается в ограничения и качает лишнее."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Вернёт ли HTTrack базу данных?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Нет, и Site Restorer тоже. Копировальщик сохраняет то, что отдаёт сервер: страницы и файлы. База восстанавливается только из бэкапа."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Нужен ли HTTrack, если архив уже собран?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Обычно нет. Иногда им дозабирают ресурсы по локальному адресу, но при нормальной сборке такой шаг избыточен."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Оба инструмента бесплатны?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "HTTrack распространяется по GPL, Site Restorer — по MIT. Оба можно использовать без оплаты, в том числе в работе."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="/" aria-label="Site Restorer — на главную">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><rect x="3" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="16.5" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="3" y="16.5" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="17.2" y="17.2" width="9.6" height="9.6" rx="1" fill="none" stroke="#9FB0C2" stroke-width="1.5" stroke-dasharray="2.2 2"/></svg>
+      </span>
+      <span class="brand-name">Site Restorer</span>
+    </a>
+    <div class="header-actions">
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <nav class="breadcrumbs" aria-label="Хлебные крошки">
+    <a href="/">Главная</a><span aria-hidden="true">/</span><a href="/guide/">Разборы</a><span aria-hidden="true">/</span>Site Restorer и HTTrack
+  </nav>
+
+  <article class="article">
+    <h1>Site Restorer и HTTrack: что выбрать для архива</h1>
+    <div class="article-meta">
+      <span>Обновлено 10 ноября 2026</span>
+      <span>Чтение: 7 минут</span>
+      <span>Сравнение: два подхода</span>
+    </div>
+
+    <div class="tldr">
+      <p>Коротко</p>
+      <ol>
+        <li><strong>HTTrack</strong> копирует живой сайт по ссылкам. Это его сильная сторона и его ограничение.</li>
+        <li><strong>С архивом</strong> ссылки ведут на <code>web.archive.org</code>, а не на файлы: простая рекурсия даёт мусор.</li>
+        <li><strong>Site Restorer</strong> работает от списка адресов и режима <code>id_</code>, а не от обхода ссылок.</li>
+        <li><strong>HTTrack удобнее</strong>, когда сайт жив и нужно сделать его копию целиком.</li>
+        <li><strong>Оба не вернут базу данных.</strong> Это копировальщики, а не восстановление из бэкапа.</li>
+      </ol>
+    </div>
+
+<p>HTTrack — классика: лет двадцать им копируют сайты целиком. Его часто берут и для веб-архива, а потом удивляются, что копия открывается через интернет, тянет ресурсы с <code>web.archive.org</code> и весит втрое больше нужного. Разберём, почему так, и когда какой инструмент уместен.</p>
+
+    <div class="toc">
+      <p>Содержание</p>
+      <ol>
+        <li><a href="#httrack">1. Как работает HTTrack</a></li>
+        <li><a href="#problem">2. Где HTTrack ломается на архиве</a></li>
+        <li><a href="#sr">3. Как работает Site Restorer</a></li>
+        <li><a href="#table">4. Сравнение по делу</a></li>
+        <li><a href="#choose">5. Что выбрать под задачу</a></li>
+        <li><a href="#limits">6. Честные ограничения Site Restorer</a></li>
+        <li><a href="#faq">Частые вопросы</a></li>
+      </ol>
+    </div>
+
+    <h2 id="httrack">1. Как работает HTTrack</h2>
+    <p>HTTrack — свободный копировальщик сайтов с графическим интерфейсом и командной строкой. Логика простая: взять стартовый адрес, разобрать страницу, найти ссылки, скачать их, повторить.</p>
+    <ul>
+      <li><strong>Сильная сторона:</strong> не нужен список адресов — он сам находит всё, что связано ссылками.</li>
+      <li><strong>Умеет:</strong> фильтры по типам файлов, ограничение глубины, докачивание прерванной копии.</li>
+      <li><strong>Работает</strong> с живым сайтом, отдающим обычные ответы.</li>
+    </ul>
+    <p>Для задачи «сохранить работающий сайт» или «забрать сайт перед переездом» это по-прежнему хороший выбор.</p>
+
+    <h2 id="problem">2. Где HTTrack ломается на архиве</h2>
+    <p>Веб-архив отдаёт страницы по своим адресам, и внутри них ссылки тоже переписаны на <code>web.archive.org</code>. Для HTTrack это обычные ссылки — он честно идёт по ним и скачивает то, что получится.</p>
+    <table>
+      <thead><tr><th>Что происходит</th><th>Последствие</th></tr></thead>
+      <tbody>
+        <tr><td>В копию попадает панель архива</td><td>в HTML остаются служебные блоки и скрипты</td></tr>
+        <tr><td>Ссылки ведут на <code>web.archive.org</code></td><td>копия не работает без интернета</td></tr>
+        <tr><td>Каждая ссылка — ещё один запрос к архиву</td><td>быстро упирается в ограничения по частоте</td></tr>
+        <tr><td>Редиректы архива считаются страницами</td><td>в копии появляются дубли и пустышки</td></tr>
+        <tr><td>Даты снимков разные</td><td>страницы из разных лет в одной копии</td></tr>
+      </tbody>
+    </table>
+    <p>Формально HTTrack сделает работу: файлы будут на диске. Практически её придётся долго чинить — переписывать ссылки, вырезать панель, сводить даты.</p>
+
+    <h2 id="sr">3. Как работает Site Restorer</h2>
+    <p>Подход обратный: сначала список, потом загрузка.</p>
+    <ol>
+      <li>Запрос к CDX-индексу — получаем все сохранённые адреса с датами.</li>
+      <li>Загрузка каждого адреса в режиме <code>id_</code> — приходит исходный файл, а не страница с панелью.</li>
+      <li>Сборка локальной копии: пути, относительные ссылки, кодировки.</li>
+      <li>Отчёт: что вернулось, чего нет.</li>
+    </ol>
+    <p>Ключевое отличие — источник ссылок. Site Restorer не «обходит сайт», он исполняет список, поэтому не зависит от того, куда ведут ссылки в разметке, и не затягивает панель архива.</p>
+
+    <div class="cta-inline">
+      <h3>Скачать Site Restorer</h3>
+      <p>Список адресов, загрузка в режиме id_, сборка копии и отчёт о полноте. Один exe, MIT.</p>
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+
+    <h2 id="table">4. Сравнение по делу</h2>
+    <table>
+      <thead><tr><th>Критерий</th><th>HTTrack</th><th>Site Restorer</th></tr></thead>
+      <tbody>
+        <tr><td>Источник адресов</td><td>обход ссылок</td><td>CDX-список</td></tr>
+        <tr><td>Режим архива</td><td>не знает про <code>id_</code></td><td>использует <code>id_</code></td></tr>
+        <tr><td>Работа офлайн после сборки</td><td>нужно переписывать ссылки вручную</td><td>ссылки переписываются при сборке</td></tr>
+        <tr><td>Ограничения архива</td><td>не учитывает</td><td>паузы и повторы на 429/503</td></tr>
+        <tr><td>Докачка после сбоя</td><td>есть</td><td>есть</td></tr>
+        <tr><td>Отчёт о полноте</td><td>нет</td><td>есть: что вернулось и чего нет</td></tr>
+        <tr><td>Интерфейс</td><td>GUI и командная строка</td><td>GUI и CLI</td></tr>
+        <tr><td>Лицензия</td><td>GPL</td><td>MIT</td></tr>
+        <tr><td>Живой сайт</td><td>отлично</td><td>не для этого</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="choose">5. Что выбрать под задачу</h2>
+    <table>
+      <thead><tr><th>Задача</th><th>Инструмент</th></tr></thead>
+      <tbody>
+        <tr><td>Сайт жив, нужна копия целиком</td><td>HTTrack</td></tr>
+        <tr><td>Сайт жив, нужен бэкап перед переездом</td><td>HTTrack или бэкап хостинга</td></tr>
+        <tr><td>Сайт пропал, есть только веб-архив</td><td>Site Restorer</td></tr>
+        <tr><td>Нужно понять, что сохранилось в архиве</td><td>Site Restorer (отчёт) или CDX-запрос</td></tr>
+        <tr><td>Нужна работающая админка и база</td><td>ни то, ни другое — только бэкап</td></tr>
+      </tbody>
+    </table>
+    <p>Иногда имеет смысл совместить: собрать копию из архива, а затем прогнать её HTTrack по локальному адресу, чтобы дозабрать то, что осталось на диске. Но это уже тонкая настройка, и обычно она не нужна.</p>
+
+    <h2 id="limits">6. Честные ограничения Site Restorer</h2>
+    <ul>
+      <li><strong>Не возвращает базу данных.</strong> Ни один копировальщик не может: базы в архиве нет.</li>
+      <li><strong>Не восстановит динамику:</strong> корзину, вход, поиск, результаты форм.</li>
+      <li><strong>Зависит от полноты архива:</strong> если краулер не сохранил страницу, её не будет.</li>
+      <li><strong>Не заменяет бэкап:</strong> при наличии рабочей копии сайта её и нужно разворачивать.</li>
+    </ul>
+    <p>Эти ограничения стоит знать заранее — они следуют из природы веб-архива, а не из конкретной программы.</p>
+
+    <h2 id="faq">Частые вопросы</h2>
+    <h3>Можно ли скачать сайт из архива через HTTrack?</h3>
+    <p>Технически да, но копия получится с переписанными на <code>web.archive.org</code> ссылками, панелью архива и мусором из редиректов. Придётся вручную править разметку.</p>
+
+    <h3>Что быстрее: HTTrack или Site Restorer?</h3>
+    <p>Для живого сайта — HTTrack, он не требует подготовки списка. Для архива — Site Restorer: обход по ссылкам упирается в ограничения и качает лишнее.</p>
+
+    <h3>Вернёт ли HTTrack базу данных?</h3>
+    <p>Нет, и Site Restorer тоже. Копировальщик сохраняет то, что отдаёт сервер: страницы и файлы. База восстанавливается только из бэкапа.</p>
+
+    <h3>Нужен ли HTTrack, если архив уже собран?</h3>
+    <p>Обычно нет. Иногда им дозабирают ресурсы по локальному адресу, но при нормальной сборке такой шаг избыточен.</p>
+
+    <h3>Оба инструмента бесплатны?</h3>
+    <p>HTTrack распространяется по GPL, Site Restorer — по MIT. Оба можно использовать без оплаты, в том числе в работе.</p>
+
+    <h2>Смежные разборы</h2>
+    <ul>
+      <li><a href="/guide/chem-otlichaetsya-ot-wayback-machine-downloader/">Чем отличается от Wayback Downloader</a> — ещё одно сравнение, уже с консольной утилитой</li>
+      <li><a href="/guide/vosstanovit-sajt-iz-veb-arhiva/">Как восстановить сайт из веб-архива</a> — полный порядок работ</li>
+      <li><a href="/guide/arhiv-ili-rezervnaya-kopiya/">Веб-архив или резервная копия</a> — почему бэкап всё равно нужен</li>
+      <li><a href="/guide/skachat-sajt-iz-wayback-machine/">Как скачать сайт из Wayback Machine</a> — как устроены адреса архива</li>
+    </ul>
+
+    <div class="article-cta">
+      <h2>Скачать Site Restorer</h2>
+      <p>Список адресов, загрузка в режиме id_, сборка копии и отчёт о полноте. Один exe, MIT.</p>
+      <a class="btn btn-primary" href="/#download">Скачать для Windows</a>
+    </div>
+
+    <p class="article-note">Сравнение описывает публичные возможности инструментов на дату публикации. Обновлено 10 ноября 2026.</p>
+  </article>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-bottom" style="margin-top:0;border-top:0;padding-top:0">
+      <span>© <span data-year>2026</span> Site Restorer. MIT.</span>
+      <span class="footer-note">Статистика посещений — Яндекс.Метрика; отключается в уведомлении или в браузере.</span>
+      <span><a href="/">Главная</a> · <a href="/guide/">Разборы</a> · <a href="/en/" hreflang="en">English</a> · <a href="https://boosty.to/explosion/donate" rel="noopener">Поддержать проект</a> · <a href="/privacy/">Политика конфиденциальности</a> · <a href="#" data-consent-open>Настройки cookie</a></span>
+    </div>
+  </div>
+</footer>
+<script src="../../assets/app.js?v=2" defer></script>
+<script src="../../assets/consent.js?v=6" defer></script>
+</body>
+</html>

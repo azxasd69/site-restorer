@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Чем отличается от Wayback Downloader</title>
+<meta name="description" content="Сравнение Site Restorer и консольного загрузчика сайтов из Wayback Machine: что умеет каждый, чем отличаются подходы и когда хватит утилиты.">
+<meta name="theme-color" content="#f3f4f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15181c" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+
+<link rel="canonical" href="https://lastcopy.ru/guide/chem-otlichaetsya-ot-wayback-machine-downloader/">
+<link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/chem-otlichaetsya-ot-wayback-machine-downloader/">
+<link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/chem-otlichaetsya-ot-wayback-machine-downloader/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Site Restorer">
+<meta property="og:title" content="Чем отличается от Wayback Downloader">
+<meta property="og:description" content="Сравнение Site Restorer и консольного загрузчика сайтов из Wayback Machine: что умеет каждый, чем отличаются подходы и когда хватит утилиты.">
+<meta property="og:url" content="https://lastcopy.ru/guide/chem-otlichaetsya-ot-wayback-machine-downloader/">
+<meta property="og:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+<meta property="og:locale" content="ru_RU">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+
+<link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/style.css?v=3">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "@id": "https://lastcopy.ru/guide/chem-otlichaetsya-ot-wayback-machine-downloader/#article",
+      "headline": "Чем Site Restorer отличается от Wayback Downloader",
+      "description": "Сравнение Site Restorer и консольного загрузчика сайтов из Wayback Machine: что умеет каждый, чем отличаются подходы и когда хватит утилиты.",
+      "inLanguage": "ru",
+      "datePublished": "2026-11-10",
+      "dateModified": "2026-11-10",
+      "author": {
+        "@type": "Organization",
+        "name": "Site Restorer",
+        "url": "https://lastcopy.ru/"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "Site Restorer",
+        "url": "https://lastcopy.ru/"
+      },
+      "mainEntityOfPage": "https://lastcopy.ru/guide/chem-otlichaetsya-ot-wayback-machine-downloader/"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Главная",
+          "item": "https://lastcopy.ru/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Разборы",
+          "item": "https://lastcopy.ru/guide/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "Отличие от загрузчика",
+          "item": "https://lastcopy.ru/guide/chem-otlichaetsya-ot-wayback-machine-downloader/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Wayback Downloader бесплатный?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Большинство загрузчиков архива — открытые проекты без оплаты. Условия смотрите в лицензии конкретного инструмента."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Можно ли обойтись без установки Ruby или Python?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Да, если взять портативное приложение: Site Restorer не требует интерпретаторов и ставится одним файлом."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Чем принципиально отличается результат?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Набором файлов — почти ничем. Отличается то, что после: у приложения есть отчёт о полноте и собранная копия, у утилиты — каталог, который надо проверять самому."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Работает ли Site Restorer в командной строке?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Да, у него есть консольный режим для автоматизации и серверов без графики."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Что делать, если архив сохранил мало страниц?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Искать другие источники: бэкапы, копии у подрядчика, каталоги поставщиков. Инструмент тут уже не поможет."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="/" aria-label="Site Restorer — на главную">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><rect x="3" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="16.5" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="3" y="16.5" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="17.2" y="17.2" width="9.6" height="9.6" rx="1" fill="none" stroke="#9FB0C2" stroke-width="1.5" stroke-dasharray="2.2 2"/></svg>
+      </span>
+      <span class="brand-name">Site Restorer</span>
+    </a>
+    <div class="header-actions">
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <nav class="breadcrumbs" aria-label="Хлебные крошки">
+    <a href="/">Главная</a><span aria-hidden="true">/</span><a href="/guide/">Разборы</a><span aria-hidden="true">/</span>Отличие от загрузчика
+  </nav>
+
+  <article class="article">
+    <h1>Чем Site Restorer отличается от Wayback Downloader</h1>
+    <div class="article-meta">
+      <span>Обновлено 10 ноября 2026</span>
+      <span>Чтение: 6 минут</span>
+      <span>Сравнение: утилита и приложение</span>
+    </div>
+
+    <div class="tldr">
+      <p>Коротко</p>
+      <ol>
+        <li><strong>Оба качают сайт из архива.</strong> Разница — в интерфейсе, отчёте и том, что делать после загрузки.</li>
+        <li><strong>Консольный загрузчик</strong> хорош в скриптах и на серверах, где нет графики.</li>
+        <li><strong>Site Restorer</strong> добавляет сборку копии, отчёт о полноте и работу без терминала.</li>
+        <li><strong>Ни один</strong> не восстановит базу и динамику сайта.</li>
+        <li><strong>Выбор простой:</strong> разовая задача в терминале — утилита; регулярная работа и понятный результат — приложение.</li>
+      </ol>
+    </div>
+
+<p>Загрузчиков сайтов из веб-архива несколько, и большинство — консольные утилиты: дать домен, дождаться файлов, разобраться с результатом самому. Site Restorer решает ту же задачу, но доводит её до состояния «можно открыть и показать». Ниже — честное сравнение, без попытки выставить свой инструмент лучше во всём.</p>
+
+    <div class="toc">
+      <p>Содержание</p>
+      <ol>
+        <li><a href="#tool">1. Что делает типовой загрузчик</a></li>
+        <li><a href="#sr">2. Что добавляет Site Restorer</a></li>
+        <li><a href="#compare">3. Сравнение</a></li>
+        <li><a href="#when">4. Когда что брать</a></li>
+        <li><a href="#limits">5. Что не сделает ни один</a></li>
+        <li><a href="#faq">Частые вопросы</a></li>
+      </ol>
+    </div>
+
+    <h2 id="tool">1. Что делает типовой загрузчик</h2>
+    <p>Классический сценарий: утилита получает домен, запрашивает список снимков, скачивает страницы и складывает их в каталог. Часто умеет параллельные загрузки и переписывание ссылок.</p>
+    <table>
+      <thead><tr><th>Возможность</th><th>Обычно есть</th></tr></thead>
+      <tbody>
+        <tr><td>Загрузка страниц по домену</td><td>да</td></tr>
+        <tr><td>Выбор снимка по дате</td><td>часто</td></tr>
+        <tr><td>Параллельные загрузки</td><td>да</td></tr>
+        <tr><td>Переписывание ссылок</td><td>по настройке</td></tr>
+        <tr><td>Отчёт о потерях</td><td>редко</td></tr>
+        <tr><td>Сборка готовой копии</td><td>частично</td></tr>
+      </tbody>
+    </table>
+    <p>Этого достаточно, если вы понимаете, что делаете: знаете про <code>id_</code>, умеете проверить кодировки и не ждёте, что каталог сам превратится в сайт.</p>
+
+    <h2 id="sr">2. Что добавляет Site Restorer</h2>
+    <ul>
+      <li><strong>Список адресов из CDX</strong> как основа работы: видно объём до начала загрузки.</li>
+      <li><strong>Режим <code>id_</code> по умолчанию</strong> — без панели архива и переписанных ссылок.</li>
+      <li><strong>Сборка:</strong> пути, относительные ссылки, кодировки, локальная проверка.</li>
+      <li><strong>Отчёт о полноте:</strong> сколько страниц, картинок и стилей вернулось, что потеряно.</li>
+      <li><strong>Графический интерфейс</strong> плюс командная строка для автоматизации.</li>
+    </ul>
+    <p>Разница не в скорости скачивания, а в том, что происходит после. Утилита отдаёт папку, приложение — папку плюс заключение, которое можно показать заказчику.</p>
+
+    <h2 id="compare">3. Сравнение</h2>
+    <table>
+      <thead><tr><th>Критерий</th><th>Консольный загрузчик</th><th>Site Restorer</th></tr></thead>
+      <tbody>
+        <tr><td>Установка</td><td>нужен интерпретатор или пакетный менеджер</td><td>один exe, без установки</td></tr>
+        <tr><td>Интерфейс</td><td>командная строка</td><td>GUI и CLI</td></tr>
+        <tr><td>Список адресов</td><td>зависит от утилиты</td><td>CDX-выгрузка, видно до загрузки</td></tr>
+        <tr><td>Сборка копии</td><td>частично</td><td>встроена</td></tr>
+        <tr><td>Отчёт</td><td>обычно нет</td><td>есть</td></tr>
+        <tr><td>Автоматизация</td><td>удобно</td><td>есть CLI</td></tr>
+        <tr><td>Работа на сервере без графики</td><td>да</td><td>да, в режиме CLI</td></tr>
+        <tr><td>Лицензия</td><td>зависит от проекта</td><td>MIT</td></tr>
+      </tbody>
+    </table>
+    <p>Сравнение честное только с оговоркой: конкретных утилит несколько, и возможности у них различаются. Перед выбором смотрите документацию того инструмента, который берёте.</p>
+
+    <div class="cta-inline">
+      <h3>Скачать Site Restorer</h3>
+      <p>Список, загрузка, сборка и отчёт о полноте — в одном окне или одной командой.</p>
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+
+    <h2 id="when">4. Когда что брать</h2>
+    <table>
+      <thead><tr><th>Ситуация</th><th>Что удобнее</th></tr></thead>
+      <tbody>
+        <tr><td>Разово скачать сайт и разобраться самому</td><td>консольная утилита</td></tr>
+        <tr><td>Пакетная обработка десятков доменов в скрипте</td><td>CLI любого инструмента</td></tr>
+        <tr><td>Нужно показать результат заказчику</td><td>Site Restorer с отчётом</td></tr>
+        <tr><td>Нужна копия, которая открывается офлайн</td><td>Site Restorer со сборкой</td></tr>
+        <tr><td>Нет прав на установку пакетов</td><td>портативное приложение</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="limits">5. Что не сделает ни один</h2>
+    <ul>
+      <li><strong>База данных</strong> — её в архиве нет.</li>
+      <li><strong>Динамика</strong> — корзина, вход, поиск, формы.</li>
+      <li><strong>Медиа сверх сохранённого</strong> — только то, что забрал краулер.</li>
+      <li><strong>Страницы, закрытые от обхода</strong> — их в архиве не существует.</li>
+    </ul>
+    <p>Поэтому вопрос «какой загрузчик лучше» вторичен: если архив сохранил мало, лучший инструмент даст тот же результат, только быстрее.</p>
+
+    <h2 id="faq">Частые вопросы</h2>
+    <h3>Wayback Downloader бесплатный?</h3>
+    <p>Большинство загрузчиков архива — открытые проекты без оплаты. Условия смотрите в лицензии конкретного инструмента.</p>
+
+    <h3>Можно ли обойтись без установки Ruby или Python?</h3>
+    <p>Да, если взять портативное приложение: Site Restorer не требует интерпретаторов и ставится одним файлом.</p>
+
+    <h3>Чем принципиально отличается результат?</h3>
+    <p>Набором файлов — почти ничем. Отличается то, что после: у приложения есть отчёт о полноте и собранная копия, у утилиты — каталог, который надо проверять самому.</p>
+
+    <h3>Работает ли Site Restorer в командной строке?</h3>
+    <p>Да, у него есть консольный режим для автоматизации и серверов без графики.</p>
+
+    <h3>Что делать, если архив сохранил мало страниц?</h3>
+    <p>Искать другие источники: бэкапы, копии у подрядчика, каталоги поставщиков. Инструмент тут уже не поможет.</p>
+
+    <h2>Смежные разборы</h2>
+    <ul>
+      <li><a href="/guide/site-restorer-vs-httrack/">Site Restorer и HTTrack</a> — сравнение с копировальщиком живых сайтов</li>
+      <li><a href="/guide/skachat-sajt-iz-wayback-machine/">Как скачать сайт из Wayback Machine</a> — что делает любой загрузчик</li>
+      <li><a href="/guide/cdx-api-vse-stranicy-sajta/">CDX API: как получить все страницы</a> — откуда берётся список адресов</li>
+      <li><a href="/guide/kak-proverit-chto-arhiv-sohranil-sajt/">Как проверить, что архив сохранил сайт</a> — оценка до загрузки</li>
+    </ul>
+
+    <div class="article-cta">
+      <h2>Скачать Site Restorer</h2>
+      <p>Список, загрузка, сборка и отчёт о полноте — в одном окне или одной командой.</p>
+      <a class="btn btn-primary" href="/#download">Скачать для Windows</a>
+    </div>
+
+    <p class="article-note">Сравнение описывает публичные возможности инструментов на дату публикации. Обновлено 10 ноября 2026.</p>
+  </article>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-bottom" style="margin-top:0;border-top:0;padding-top:0">
+      <span>© <span data-year>2026</span> Site Restorer. MIT.</span>
+      <span class="footer-note">Статистика посещений — Яндекс.Метрика; отключается в уведомлении или в браузере.</span>
+      <span><a href="/">Главная</a> · <a href="/guide/">Разборы</a> · <a href="/en/" hreflang="en">English</a> · <a href="https://boosty.to/explosion/donate" rel="noopener">Поддержать проект</a> · <a href="/privacy/">Политика конфиденциальности</a> · <a href="#" data-consent-open>Настройки cookie</a></span>
+    </div>
+  </div>
+</footer>
+<script src="../../assets/app.js?v=2" defer></script>
+<script src="../../assets/consent.js?v=6" defer></script>
+</body>
+</html>

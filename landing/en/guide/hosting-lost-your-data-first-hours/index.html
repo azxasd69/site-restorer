@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hosting lost your data: the first hours</title>
+<meta name="description" content="A hosting outage or a wiped account: what to freeze, which backups to ask for, how to keep the domain and email, and what can be rebuilt from the web archive.">
+<meta name="theme-color" content="#f3f4f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15181c" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+
+<link rel="canonical" href="https://lastcopy.ru/en/guide/hosting-lost-your-data-first-hours/">
+<link rel="alternate" hreflang="en" href="https://lastcopy.ru/en/guide/hosting-lost-your-data-first-hours/">
+<link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/">
+<link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/en/guide/hosting-lost-your-data-first-hours/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Site Restorer">
+<meta property="og:title" content="Hosting lost your data: the first hours">
+<meta property="og:description" content="A hosting outage or a wiped account: what to freeze, which backups to ask for, how to keep the domain and email, and what can be rebuilt from the web archive.">
+<meta property="og:url" content="https://lastcopy.ru/en/guide/hosting-lost-your-data-first-hours/">
+<meta property="og:image" content="https://lastcopy.ru/assets/img/og-en.png">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://lastcopy.ru/assets/img/og-en.png">
+
+<link rel="icon" href="../../../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../../assets/style.css?v=3">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "@id": "https://lastcopy.ru/en/guide/hosting-lost-your-data-first-hours/#article",
+      "headline": "Hosting lost your data: what to do in the first hours",
+      "description": "A hosting outage or a wiped account: what to freeze, which backups to ask for, how to keep the domain and email, and what can be rebuilt from the web archive.",
+      "inLanguage": "en",
+      "datePublished": "2026-11-10",
+      "dateModified": "2026-11-10",
+      "author": {
+        "@type": "Organization",
+        "name": "Site Restorer",
+        "url": "https://lastcopy.ru/"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "Site Restorer",
+        "url": "https://lastcopy.ru/"
+      },
+      "mainEntityOfPage": "https://lastcopy.ru/en/guide/hosting-lost-your-data-first-hours/"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Home",
+          "item": "https://lastcopy.ru/en/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Guides",
+          "item": "https://lastcopy.ru/en/#guides"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "Hosting lost your data",
+          "item": "https://lastcopy.ru/en/guide/hosting-lost-your-data-first-hours/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Can a site be recovered if the host deleted the account?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Ask support first: most providers keep account backups for a limited period after deletion. If they refuse, the remaining sources are the web archive, search caches, developer copies and your own exports."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What should I do first?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Renew the domain if it is still yours, and do not change DNS until you have pulled whatever data is left. The domain is the only piece an archive cannot rebuild."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "The site was deleted long ago and the archive is empty. Now what?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Check search caches, saved pages in browsers, backup exports, newsletters, contractor copies and repositories. With no source at all, the content cannot be recovered — the site has to be built again."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Will I lose search traffic?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Some traffic is lost unavoidably. Keeping URLs, adding 301 redirects, submitting a sitemap and using IndexNow and re-crawl tools limits the damage."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Should I pay a service that promises recovery in a day?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Find out first whether the host and the archive have anything: that is free and takes an hour. Paid services usually deliver the same static copy you can assemble yourself."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="/en/" aria-label="Site Restorer — home">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><rect x="3" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="16.5" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="3" y="16.5" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="17.2" y="17.2" width="9.6" height="9.6" rx="1" fill="none" stroke="#9FB0C2" stroke-width="1.5" stroke-dasharray="2.2 2"/></svg>
+      </span>
+      <span class="brand-name">Site Restorer</span>
+    </a>
+    <div class="header-actions">
+      <a class="btn btn-primary btn-small" href="/en/#download">Download</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <nav class="breadcrumbs" aria-label="Breadcrumbs">
+    <a href="/en/">Home</a><span aria-hidden="true">/</span><a href="/en/#guides">Guides</a><span aria-hidden="true">/</span>Hosting lost your data
+  </nav>
+
+  <article class="article">
+    <h1>Hosting lost your data: what to do in the first hours</h1>
+    <div class="article-meta">
+      <span>Updated 10 November 2026</span>
+      <span>Read: 8 minutes</span>
+      <span>Practice: hosting, domain, archive</span>
+    </div>
+
+    <div class="tldr">
+      <p>In short</p>
+      <ol>
+        <li><strong>Freeze first, fix later.</strong> Every change you make now can destroy evidence or backups you have not seen yet.</li>
+        <li><strong>Write to the host in writing</strong> and ask for the account archive with the deletion date. That answer is your deadline.</li>
+        <li><strong>The domain is the only thing you cannot rebuild</strong> from an archive: renew it before anything else.</li>
+        <li><strong>Do not change DNS</strong> until you have pulled the files, database and mail that may still be there.</li>
+        <li><strong>The web archive is a fallback, not a restore:</strong> pages come back, the database does not.</li>
+      </ol>
+    </div>
+
+<p>A hosting failure is not one event but several with different odds. Until you know which one you are in, most actions make things worse: pointing the domain elsewhere wipes the records you still need, and installing a fresh CMS on the same address finishes off whatever was left of the search index.</p>
+
+    <div class="toc">
+      <p>Contents</p>
+      <ol>
+        <li><a href="#scenarios">1. Which of the five failures is this</a></li>
+        <li><a href="#first">2. The first thirty minutes</a></li>
+        <li><a href="#domain">3. The domain comes first</a></li>
+        <li><a href="#sources">4. Where the content might be</a></li>
+        <li><a href="#archive">5. When the archive is all that is left</a></li>
+        <li><a href="#traffic">6. Keeping the search traffic</a></li>
+        <li><a href="#checklist">7. Checklist</a></li>
+        <li><a href="#faq">FAQ</a></li>
+      </ol>
+    </div>
+
+    <h2 id="scenarios">1. Which of the five failures is this</h2>
+    <table>
+      <thead><tr><th>Scenario</th><th>How it looks</th><th>Chance of recovery</th></tr></thead>
+      <tbody>
+        <tr><td>Host closed the account</td><td>site down, panel inaccessible, notice by email</td><td>high while provider backups exist</td></tr>
+        <tr><td>Domain expired</td><td>parking page, placeholder or someone else's site</td><td>depends on the grace period; near zero afterwards</td></tr>
+        <tr><td>Site deleted from the panel</td><td>account alive, files and database gone</td><td>medium: backups may exist</td></tr>
+        <tr><td>Compromise</td><td>site loads, but with redirects or foreign content</td><td>high: the data is still there</td></tr>
+        <tr><td>Suspended after a complaint</td><td>suspension notice from host or registrar</td><td>medium: needs the reason resolved</td></tr>
+      </tbody>
+    </table>
+    <p>The difference matters: in the first and third cases the data usually still exists physically and everything comes down to how fast you ask. In the second, the question is no longer about content but about who owns the address.</p>
+
+    <h2 id="first">2. The first thirty minutes</h2>
+    <ul>
+      <li><strong>Do not touch DNS.</strong> While the domain still points at the old host, you can pull files, database and mail if access is restored.</li>
+      <li><strong>Do not install a new CMS</strong> on the same domain: it overwrites leftovers and breaks link recovery.</li>
+      <li><strong>Do not delete old emails.</strong> They hold the contract, logins and ticket numbers the support team will ask for.</li>
+      <li><strong>Do not pay the first "we restore sites in 24 hours" offer</strong> before you know what is available for free.</li>
+    </ul>
+    <p>One action belongs in the first thirty minutes: a written request to the hosting support. Ask specifically whether files and database still exist, until when, and whether you can receive the account archive. A written answer timestamps the fact that the data existed — useful if it later "disappears".</p>
+
+    <h2 id="domain">3. The domain comes first</h2>
+    <p>Content can be rebuilt from archives and copies. A domain cannot: once it is released, anyone can register it, and getting the address back means buying it from the new owner.</p>
+    <ol>
+      <li><strong>Check the expiry date and status</strong> in WHOIS. Statuses such as <code>redemptionPeriod</code>, <code>pendingDelete</code> or <code>clientHold</code> tell you how far along the process is.</li>
+      <li><strong>Renew immediately</strong> if the domain is still yours. Do not wait for "later".</li>
+      <li><strong>Restore access to the registrar and the admin mailbox.</strong> If that mailbox is lost, it is the first task — more urgent than the site.</li>
+      <li><strong>Do not transfer the domain</strong> to another registrar while the situation is unclear: transfers complicate disputes.</li>
+    </ol>
+    <p>If the domain is already gone, the only lawful routes are buying it back or moving to another address. The second is cheaper but requires redirects and a fresh index.</p>
+
+    <h2 id="sources">4. Where the content might be</h2>
+    <table>
+      <thead><tr><th>Source</th><th>What it gives</th><th>How to get it</th></tr></thead>
+      <tbody>
+        <tr><td>Hosting backup</td><td>files and database, full copy</td><td>support request</td></tr>
+        <tr><td>Your own backups</td><td>same, as of your date</td><td>local or cloud archives</td></tr>
+        <tr><td>Repository</td><td>theme, templates, sometimes content</td><td>git, if the site lives in code</td></tr>
+        <tr><td>Developer copy</td><td>usually everything as of handover</td><td>ask the contractor</td></tr>
+        <tr><td>Web archive</td><td>HTML pages, part of styles and images</td><td>download the archive copy</td></tr>
+        <tr><td>Search engine cache</td><td>individual recent pages</td><td>while the cache lasts</td></tr>
+        <tr><td>Newsletters and email</td><td>texts, if the site was a mailing list</td><td>sent mail archive</td></tr>
+      </tbody>
+    </table>
+    <p>Check them in parallel, not one by one: while you wait for the host, the search cache may expire, and the web archive will not gain anything new.</p>
+
+    <div class="cta-inline">
+      <h3>Rebuild the copy from the archive</h3>
+      <p>Site Restorer pulls the saved pages, assembles a local copy and reports what came back and what is lost for good.</p>
+      <a class="btn btn-primary btn-small" href="/en/#download">Download</a>
+    </div>
+
+    <h2 id="archive">5. When the archive is all that is left</h2>
+    <p>Then the goal changes. You are not restoring an application, you are rebuilding a readable copy at the same addresses:</p>
+    <ol>
+      <li>Check that the site was captured at all — the snapshot calendar answers that.</li>
+      <li>Export the address list from the CDX index: it shows the real scope.</li>
+      <li>Download each address in <code>id_</code> mode, so links point at the original domain.</li>
+      <li>Assemble the copy locally and open it with the network off.</li>
+      <li>Publish at the same URLs and ask search engines to re-crawl.</li>
+    </ol>
+    <p>Be explicit with yourself and with clients about limits: the archive holds what a crawler saw. Product images, downloads, pages behind a login and anything a database generated are usually missing, and forms will not work in a static copy.</p>
+
+    <h2 id="traffic">6. Keeping the search traffic</h2>
+    <ul>
+      <li><strong>Keep the same URLs.</strong> If the structure survives, pages return to the index quickly.</li>
+      <li><strong>Add 301 redirects</strong> from old paths if the structure must change.</li>
+      <li><strong>Tell search engines:</strong> sitemap, IndexNow, and the re-crawl tools in the webmaster console.</li>
+      <li><strong>Do not block indexing</strong> during the work; serve a temporary 503 with <code>Retry-After</code> instead.</li>
+      <li><strong>Keep the analytics properties alive.</strong> Historical data is the only way to compare before and after.</li>
+    </ul>
+
+    <h2 id="checklist">7. Checklist</h2>
+    <ul>
+      <li>☐ Written request to hosting: do files and database exist, until when</li>
+      <li>☐ WHOIS checked: expiry date, statuses, renewal done</li>
+      <li>☐ Admin mailbox access restored</li>
+      <li>☐ Own backups, repository and developer copy checked</li>
+      <li>☐ Web archive checked: snapshots and their dates</li>
+      <li>☐ DNS left untouched until data is pulled</li>
+      <li>☐ Local copy assembled and opened offline</li>
+      <li>☐ Decision made where the rebuilt site will live</li>
+      <li>☐ Redirects and re-crawl arranged</li>
+    </ul>
+
+    <h2 id="faq">FAQ</h2>
+    <h3>Can a site be recovered if the host deleted the account?</h3>
+    <p>Ask support first: most providers keep account backups for a limited period after deletion. If they refuse, the remaining sources are the web archive, search caches, developer copies and your own exports.</p>
+
+    <h3>What should I do first?</h3>
+    <p>Renew the domain if it is still yours, and do not change DNS until you have pulled whatever data is left. The domain is the only piece an archive cannot rebuild.</p>
+
+    <h3>The site was deleted long ago and the archive is empty. Now what?</h3>
+    <p>Check search caches, saved pages in browsers, backup exports, newsletters, contractor copies and repositories. With no source at all, the content cannot be recovered — the site has to be built again.</p>
+
+    <h3>Will I lose search traffic?</h3>
+    <p>Some traffic is lost unavoidably. Keeping URLs, adding 301 redirects, submitting a sitemap and using IndexNow and re-crawl tools limits the damage.</p>
+
+    <h3>Should I pay a service that promises recovery in a day?</h3>
+    <p>Find out first whether the host and the archive have anything: that is free and takes an hour. Paid services usually deliver the same static copy you can assemble yourself.</p>
+
+    <h2>Related guides</h2>
+    <ul>
+      <li><a href="/en/guide/how-to-rebuild-a-website-from-the-wayback-machine/">How to rebuild a website from the Wayback Machine</a> — the full download and assembly order</li>
+      <li><a href="/guide/chto-delat-esli-hosting-poteryal-dannye/">Хостинг потерял данные: первые часы</a> — the same guide in Russian</li>
+      <li><a href="/guide/arhiv-ili-rezervnaya-kopiya/">Веб-архив или резервная копия</a> — why an archive is not a backup</li>
+      <li><a href="/en/">Site Restorer</a> — the tool that assembles the copy</li>
+    </ul>
+
+    <div class="article-cta">
+      <h2>Rebuild the copy from the archive</h2>
+      <p>Site Restorer pulls the saved pages, assembles a local copy and reports what came back and what is lost for good.</p>
+      <a class="btn btn-primary" href="/en/#download">Download for Windows</a>
+    </div>
+
+    <p class="article-note">Based on the public capabilities of the Internet Archive and hands-on recovery work. Updated 10 November 2026.</p>
+  </article>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-bottom" style="margin-top:0;border-top:0;padding-top:0">
+      <span>© <span data-year>2026</span> Site Restorer. MIT.</span>
+      <span class="footer-note">Visit statistics — Yandex Metrica; can be turned off in the notice or in the browser.</span>
+      <span><a href="/en/">Home</a> · <a href="/en/#guides">Guides</a> · <a href="/" hreflang="ru" lang="ru">Русская версия</a> · <a href="https://boosty.to/explosion/donate" rel="noopener">Support the project</a> · <a href="/en/privacy/">Privacy policy</a> · <a href="#" data-consent-open>Cookie settings</a></span>
+    </div>
+  </div>
+</footer>
+<script src="../../../assets/app.js?v=2" defer></script>
+<script src="../../../assets/consent.js?v=6" defer></script>
+</body>
+</html>

@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Как проверить, что архив сохранил сайт</title>
+<meta name="description" content="Проверка до начала работ: есть ли снимки сайта, сколько страниц сохранено, какие типы файлов и что заведомо потеряно. Три сигнала и таблица оценки.">
+<meta name="theme-color" content="#f3f4f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15181c" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+
+<link rel="canonical" href="https://lastcopy.ru/guide/kak-proverit-chto-arhiv-sohranil-sajt/">
+<link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/kak-proverit-chto-arhiv-sohranil-sajt/">
+<link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/kak-proverit-chto-arhiv-sohranil-sajt/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Site Restorer">
+<meta property="og:title" content="Как проверить, что архив сохранил сайт">
+<meta property="og:description" content="Проверка до начала работ: есть ли снимки сайта, сколько страниц сохранено, какие типы файлов и что заведомо потеряно. Три сигнала и таблица оценки.">
+<meta property="og:url" content="https://lastcopy.ru/guide/kak-proverit-chto-arhiv-sohranil-sajt/">
+<meta property="og:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+<meta property="og:locale" content="ru_RU">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+
+<link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/style.css?v=3">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "@id": "https://lastcopy.ru/guide/kak-proverit-chto-arhiv-sohranil-sajt/#article",
+      "headline": "Как проверить, что архив сохранил ваш сайт",
+      "description": "Проверка до начала работ: есть ли снимки сайта, сколько страниц сохранено, какие типы файлов и что заведомо потеряно. Три сигнала и таблица оценки.",
+      "inLanguage": "ru",
+      "datePublished": "2026-11-10",
+      "dateModified": "2026-11-10",
+      "author": {
+        "@type": "Organization",
+        "name": "Site Restorer",
+        "url": "https://lastcopy.ru/"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "Site Restorer",
+        "url": "https://lastcopy.ru/"
+      },
+      "mainEntityOfPage": "https://lastcopy.ru/guide/kak-proverit-chto-arhiv-sohranil-sajt/"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Главная",
+          "item": "https://lastcopy.ru/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Разборы",
+          "item": "https://lastcopy.ru/guide/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "Проверка полноты архива",
+          "item": "https://lastcopy.ru/guide/kak-proverit-chto-arhiv-sohranil-sajt/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Сколько времени занимает проверка?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "От пяти до пятнадцати минут: календарь снимков и одна выгрузка CDX. Работы с файлами — уже следующий этап."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Архив показывает снимки, но страницы не открываются. Почему?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Бывает у снимков с редиректами и ошибками: в списке они есть, но по факту отдают заглушку. Поэтому в CDX и добавляют фильтр по коду ответа 200."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Как понять, что сайт сохранялся регулярно?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "По числу разных дат в поле timestamp. Если на тысячу адресов приходится две даты, сайт обошли дважды и поверхностно."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Стоит ли проверять каждый раздел отдельно?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Да, если сайт крупный: выгрузка по matchType=prefix для каждого раздела показывает, где обход был плотнее, а где его почти не было."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Что делать, если архив сохранил мало?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Искать другие источники: бэкапы хостинга, копии у подрядчика, выгрузки, письма, каталоги поставщиков. Архив — один из источников, а не единственный."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="/" aria-label="Site Restorer — на главную">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><rect x="3" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="16.5" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="3" y="16.5" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="17.2" y="17.2" width="9.6" height="9.6" rx="1" fill="none" stroke="#9FB0C2" stroke-width="1.5" stroke-dasharray="2.2 2"/></svg>
+      </span>
+      <span class="brand-name">Site Restorer</span>
+    </a>
+    <div class="header-actions">
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <nav class="breadcrumbs" aria-label="Хлебные крошки">
+    <a href="/">Главная</a><span aria-hidden="true">/</span><a href="/guide/">Разборы</a><span aria-hidden="true">/</span>Проверка полноты архива
+  </nav>
+
+  <article class="article">
+    <h1>Как проверить, что архив сохранил ваш сайт</h1>
+    <div class="article-meta">
+      <span>Обновлено 10 ноября 2026</span>
+      <span>Чтение: 6 минут</span>
+      <span>Оценка: снимки, объём, типы</span>
+    </div>
+
+    <div class="tldr">
+      <p>Коротко</p>
+      <ol>
+        <li><strong>Сначала проверка, потом работа.</strong> Пятнадцать минут проверки экономят дни сборки мусора.</li>
+        <li><strong>Сигнал первый:</strong> есть ли снимки вообще и за какие даты.</li>
+        <li><strong>Сигнал второй:</strong> сколько адресов сохранено — десяток или тысячи.</li>
+        <li><strong>Сигнал третий:</strong> какие типы файлов есть, кроме HTML.</li>
+        <li><strong>Пустой архив</strong> — не приговор, но повод искать другие источники, а не инструмент.</li>
+      </ol>
+    </div>
+
+<p>Самый дорогой сценарий — три дня сборки копии, после которой выясняется, что архив сохранил двенадцать страниц из двух тысяч. Проверка занимает минуты и делается до всех работ. Ниже три сигнала и простая таблица, по которой видно, стоит ли вообще начинать.</p>
+
+    <div class="toc">
+      <p>Содержание</p>
+      <ol>
+        <li><a href="#signal1">1. Сигнал первый: есть ли снимки</a></li>
+        <li><a href="#signal2">2. Сигнал второй: сколько адресов</a></li>
+        <li><a href="#signal3">3. Сигнал третий: какие типы файлов</a></li>
+        <li><a href="#compare">4. Сравнение с картой сайта</a></li>
+        <li><a href="#verdict">5. Как читать результат</a></li>
+        <li><a href="#faq">Частые вопросы</a></li>
+      </ol>
+    </div>
+
+    <h2 id="signal1">1. Сигнал первый: есть ли снимки</h2>
+    <p>Откройте <code>web.archive.org</code> и введите домен. Что смотреть:</p>
+    <ul>
+      <li><strong>Календарь.</strong> Есть ли даты, с какого по какое время шли снимки.</li>
+      <li><strong>Плотность.</strong> Один снимок в год — почти наверняка только главная страница.</li>
+      <li><strong>Последний снимок.</strong> Чем ближе к моменту аварии, тем актуальнее контент.</li>
+    </ul>
+    <p>Если снимков нет вовсе, дальше читать не нужно: восстанавливать из архива нечего. Это тот случай, когда честный ответ «невозможно» полезнее любых работ.</p>
+
+    <h2 id="signal2">2. Сигнал второй: сколько адресов</h2>
+    <p>Календарь показывает главную, а нужен объём. Его даёт выгрузка CDX с подсчётом строк:</p>
+    <pre class="code-body" style="border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:14px 16px;overflow-x:auto"><code>https://web.archive.org/cdx/search/cdx?url=example.com&matchType=domain&output=csv&fl=original&filter=statuscode:200&collapse=urlkey</code></pre>
+    <p>Полученный CSV откройте в таблице и посмотрите на число строк. Ориентиры такие:</p>
+    <table>
+      <thead><tr><th>Строк</th><th>Что это обычно</th><th>Стоит ли начинать</th></tr></thead>
+      <tbody>
+        <tr><td>1–20</td><td>главная и пара разделов</td><td>нет, если сайт был больше</td></tr>
+        <tr><td>20–300</td><td>небольшой сайт услуг или лендинг</td><td>да, копия будет читаемой</td></tr>
+        <tr><td>300–5000</td><td>блог, каталог, корпоративный сайт</td><td>да, но проверьте разделы</td></tr>
+        <tr><td>5000+</td><td>крупный каталог</td><td>да, с планом по разделам</td></tr>
+      </tbody>
+    </table>
+
+    <div class="cta-inline">
+      <h3>Проверить и сразу собрать</h3>
+      <p>Site Restorer сам считает, сколько адресов сохранено, и показывает отчёт по типам файлов до начала загрузки.</p>
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+
+    <h2 id="signal3">3. Сигнал третий: какие типы файлов</h2>
+    <p>HTML — это текст. Сайт делают стили, скрипты и изображения. Проверяются они тем же запросом, но без фильтра по типу: посмотрите на поле <code>mimetype</code>.</p>
+    <table>
+      <thead><tr><th>Что нашли</th><th>О чём говорит</th></tr></thead>
+      <tbody>
+        <tr><td><code>text/html</code> есть, <code>text/css</code> есть</td><td>вёрстка восстановится</td></tr>
+        <tr><td><code>text/html</code> есть, CSS нет</td><td>копия откроется без оформления</td></tr>
+        <tr><td><code>image/</code> десятки на тысячи страниц</td><td>медиа потеряны, планируйте замену</td></tr>
+        <tr><td><code>application/pdf</code> отсутствует</td><td>файлы для скачивания восстанавливать неоткуда</td></tr>
+        <tr><td>Только HTML и ничего больше</td><td>обход был поверхностным</td></tr>
+      </tbody>
+    </table>
+    <p>Практический вывод: копия «читается» — это нормальная цель. Копия «как оригинал» из архива не получается почти никогда.</p>
+
+    <h2 id="compare">4. Сравнение с картой сайта</h2>
+    <p>Если у вас сохранилась карта сайта или список адресов из старой админки, сравнение даёт точную картину потерь:</p>
+    <ol>
+      <li>Возьмите адреса из карты сайта — это то, что реально существовало.</li>
+      <li>Возьмите список из CDX — это то, что сохранено.</li>
+      <li>Вычтите одно из другого. Разница — страницы, которых в архиве нет.</li>
+    </ol>
+    <p>Даже грубое сравнение по разделам полезно: если из каталога сохранён один раздел из двадцати, статическая копия каталога бессмысленна, а восстановление контента придётся делать вручную.</p>
+
+    <h2 id="verdict">5. Как читать результат</h2>
+    <table>
+      <thead><tr><th>Картина</th><th>Вердикт</th><th>Что делать</th></tr></thead>
+      <tbody>
+        <tr><td>Снимков нет</td><td>восстановление невозможно</td><td>искать бэкапы, кэш, копии у подрядчика</td></tr>
+        <tr><td>Только главная</td><td>почти бесполезно</td><td>то же: архив не источник</td></tr>
+        <tr><td>Страницы есть, медиа нет</td><td>частичное восстановление</td><td>собирать копию, медиа искать отдельно</td></tr>
+        <tr><td>Страницы и стили есть</td><td>хороший результат</td><td>собирать копию и публиковать</td></tr>
+        <tr><td>Почти всё, кроме базы</td><td>лучший возможный вариант</td><td>копия + восстановление логики позже</td></tr>
+      </tbody>
+    </table>
+    <p>И важное: результат проверки стоит проговорить заказчику или себе до начала работ. Ожидание «вернём всё» обходится дороже, чем честное «вернём текст и вёрстку, картинки придётся снимать заново».</p>
+
+    <h2 id="faq">Частые вопросы</h2>
+    <h3>Сколько времени занимает проверка?</h3>
+    <p>От пяти до пятнадцати минут: календарь снимков и одна выгрузка CDX. Работы с файлами — уже следующий этап.</p>
+
+    <h3>Архив показывает снимки, но страницы не открываются. Почему?</h3>
+    <p>Бывает у снимков с редиректами и ошибками: в списке они есть, но по факту отдают заглушку. Поэтому в CDX и добавляют фильтр по коду ответа 200.</p>
+
+    <h3>Как понять, что сайт сохранялся регулярно?</h3>
+    <p>По числу разных дат в поле <code>timestamp</code>. Если на тысячу адресов приходится две даты, сайт обошли дважды и поверхностно.</p>
+
+    <h3>Стоит ли проверять каждый раздел отдельно?</h3>
+    <p>Да, если сайт крупный: выгрузка по <code>matchType=prefix</code> для каждого раздела показывает, где обход был плотнее, а где его почти не было.</p>
+
+    <h3>Что делать, если архив сохранил мало?</h3>
+    <p>Искать другие источники: бэкапы хостинга, копии у подрядчика, выгрузки, письма, каталоги поставщиков. Архив — один из источников, а не единственный.</p>
+
+    <h2>Смежные разборы</h2>
+    <ul>
+      <li><a href="/guide/cdx-api-vse-stranicy-sajta/">CDX API: как получить все страницы</a> — тот же список, но с разбором параметров</li>
+      <li><a href="/guide/arhiv-ili-rezervnaya-kopiya/">Веб-архив или резервная копия</a> — когда архив заведомо не подходит</li>
+      <li><a href="/guide/skachat-sajt-iz-wayback-machine/">Как скачать сайт из Wayback Machine</a> — следующий шаг после проверки</li>
+      <li><a href="/guide/pochemu-kartinki-ne-vosstanavlivayutsya/">Почему картинки не восстанавливаются</a> — что делать с медиа</li>
+    </ul>
+
+    <div class="article-cta">
+      <h2>Проверить и сразу собрать</h2>
+      <p>Site Restorer сам считает, сколько адресов сохранено, и показывает отчёт по типам файлов до начала загрузки.</p>
+      <a class="btn btn-primary" href="/#download">Скачать для Windows</a>
+    </div>
+
+    <p class="article-note">Материал описывает публичные возможности Internet Archive и практику восстановления сайтов. Обновлено 10 ноября 2026.</p>
+  </article>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-bottom" style="margin-top:0;border-top:0;padding-top:0">
+      <span>© <span data-year>2026</span> Site Restorer. MIT.</span>
+      <span class="footer-note">Статистика посещений — Яндекс.Метрика; отключается в уведомлении или в браузере.</span>
+      <span><a href="/">Главная</a> · <a href="/guide/">Разборы</a> · <a href="/en/" hreflang="en">English</a> · <a href="https://boosty.to/explosion/donate" rel="noopener">Поддержать проект</a> · <a href="/privacy/">Политика конфиденциальности</a> · <a href="#" data-consent-open>Настройки cookie</a></span>
+    </div>
+  </div>
+</footer>
+<script src="../../assets/app.js?v=2" defer></script>
+<script src="../../assets/consent.js?v=6" defer></script>
+</body>
+</html>

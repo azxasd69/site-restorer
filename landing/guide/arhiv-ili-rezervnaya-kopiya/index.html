@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Веб-архив или резервная копия: разница</title>
+<meta name="description" content="Чем веб-архив отличается от резервной копии по полноте, срокам и цене, когда хватит архива и почему бэкап всё равно нужен любому сайту.">
+<meta name="theme-color" content="#f3f4f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15181c" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+
+<link rel="canonical" href="https://lastcopy.ru/guide/arhiv-ili-rezervnaya-kopiya/">
+<link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/arhiv-ili-rezervnaya-kopiya/">
+<link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/arhiv-ili-rezervnaya-kopiya/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Site Restorer">
+<meta property="og:title" content="Веб-архив или резервная копия: разница">
+<meta property="og:description" content="Чем веб-архив отличается от резервной копии по полноте, срокам и цене, когда хватит архива и почему бэкап всё равно нужен любому сайту.">
+<meta property="og:url" content="https://lastcopy.ru/guide/arhiv-ili-rezervnaya-kopiya/">
+<meta property="og:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+<meta property="og:locale" content="ru_RU">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+
+<link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/style.css?v=3">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "@id": "https://lastcopy.ru/guide/arhiv-ili-rezervnaya-kopiya/#article",
+      "headline": "Веб-архив или резервная копия: что выбрать",
+      "description": "Чем веб-архив отличается от резервной копии по полноте, срокам и цене, когда хватит архива и почему бэкап всё равно нужен любому сайту.",
+      "inLanguage": "ru",
+      "datePublished": "2026-11-10",
+      "dateModified": "2026-11-10",
+      "author": {
+        "@type": "Organization",
+        "name": "Site Restorer",
+        "url": "https://lastcopy.ru/"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "Site Restorer",
+        "url": "https://lastcopy.ru/"
+      },
+      "mainEntityOfPage": "https://lastcopy.ru/guide/arhiv-ili-rezervnaya-kopiya/"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Главная",
+          "item": "https://lastcopy.ru/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Разборы",
+          "item": "https://lastcopy.ru/guide/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "Архив или резервная копия",
+          "item": "https://lastcopy.ru/guide/arhiv-ili-rezervnaya-kopiya/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Можно ли считать веб-архив резервной копией?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Нет. Архив содержит отрендеренные страницы и часть файлов, но не базу и не код. Он не разворачивается в работающий сайт с админкой."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Что надёжнее при аварии хостинга?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Свой бэкап вне хостинга. Архив поможет, только если бэкапа нет и нужно вернуть хотя бы контент по прежним адресам."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Как часто делать бэкап?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Так часто, как часто меняется контент: для магазина — ежедневно, для сайта услуг — раз в неделю, плюс копия перед любым обновлением."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Хватит ли архива, чтобы вернуть магазин?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Нет. Корзина, заказы, остатки и цены — это база данных. Из архива получится статический каталог без оформления заказов."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Нужно ли проверять бэкап, если он делается автоматически?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Обязательно. Автоматические копии ломаются тихо: кончается место, меняется путь, падает скрипт. Проверка раз в квартал — пятнадцать минут."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="/" aria-label="Site Restorer — на главную">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><rect x="3" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="16.5" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="3" y="16.5" width="11" height="11" rx="1.2" fill="#ffffff"/><rect x="17.2" y="17.2" width="9.6" height="9.6" rx="1" fill="none" stroke="#9FB0C2" stroke-width="1.5" stroke-dasharray="2.2 2"/></svg>
+      </span>
+      <span class="brand-name">Site Restorer</span>
+    </a>
+    <div class="header-actions">
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <nav class="breadcrumbs" aria-label="Хлебные крошки">
+    <a href="/">Главная</a><span aria-hidden="true">/</span><a href="/guide/">Разборы</a><span aria-hidden="true">/</span>Архив или резервная копия
+  </nav>
+
+  <article class="article">
+    <h1>Веб-архив или резервная копия: что выбрать</h1>
+    <div class="article-meta">
+      <span>Обновлено 10 ноября 2026</span>
+      <span>Чтение: 6 минут</span>
+      <span>Практика: бэкапы, сроки</span>
+    </div>
+
+    <div class="tldr">
+      <p>Коротко</p>
+      <ol>
+        <li><strong>Архив — снаружи, бэкап — изнутри.</strong> Архив хранит то, что увидел краулер; бэкап — всё, что было на сервере.</li>
+        <li><strong>База данных есть только в бэкапе.</strong> Из архива её не достать никогда.</li>
+        <li><strong>Архив не требует подготовки</strong> и часто это единственное, что осталось.</li>
+        <li><strong>Бэкап требует проверки:</strong> непроверенная копия — это надежда, а не копия.</li>
+        <li><strong>Правильная стратегия — обе:</strong> бэкап для восстановления, архив как страховка на случай потери сервера целиком.</li>
+      </ol>
+    </div>
+
+<p>Эти два слова часто используют как синонимы, и из-за этого возникают неверные ожидания: «у нас же есть копия в архиве» — а потом выясняется, что копия состоит из трёх страниц и без картинок. Разберём разницу по делу, без терминологии.</p>
+
+    <div class="toc">
+      <p>Содержание</p>
+      <ol>
+        <li><a href="#diff">1. Чем они отличаются</a></li>
+        <li><a href="#when">2. Когда хватает архива</a></li>
+        <li><a href="#whennot">3. Когда архив не поможет</a></li>
+        <li><a href="#check">4. Как проверять бэкап</a></li>
+        <li><a href="#both">5. Как совмещать</a></li>
+        <li><a href="#faq">Частые вопросы</a></li>
+      </ol>
+    </div>
+
+    <h2 id="diff">1. Чем они отличаются</h2>
+    <table>
+      <thead><tr><th>Критерий</th><th>Веб-архив</th><th>Резервная копия</th></tr></thead>
+      <tbody>
+        <tr><td>Что внутри</td><td>ответы сервера: страницы и часть ресурсов</td><td>файлы сайта и дамп базы</td></tr>
+        <tr><td>База данных</td><td>нет</td><td>есть</td></tr>
+        <tr><td>Админка и код</td><td>нет</td><td>есть</td></tr>
+        <tr><td>Медиа</td><td>частично</td><td>полностью</td></tr>
+        <tr><td>Кто делает</td><td>внешний сервис, без вашего участия</td><td>вы или хостинг, по расписанию</td></tr>
+        <tr><td>Актуальность</td><td>на дату обхода</td><td>на дату копии</td></tr>
+        <tr><td>Готовность к запуску</td><td>только статическая копия</td><td>полный сайт</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="when">2. Когда хватает архива</h2>
+    <ul>
+      <li>нужно сохранить контент и адреса страниц, а не функциональность;</li>
+      <li>сайт был статическим или почти статическим;</li>
+      <li>других источников нет вообще;</li>
+      <li>нужно быстро вернуть хоть что-то по прежним адресам, чтобы не потерять поисковый трафик.</li>
+    </ul>
+    <p>Это честный сценарий: восстановленная копия читается, индексируется и объясняет посетителю, что происходит. Для блога, портфолио или сайта услуг этого часто достаточно.</p>
+
+    <h2 id="whennot">3. Когда архив не поможет</h2>
+    <ul>
+      <li>магазин: корзина, заказы, остатки — всё это база;</li>
+      <li>личный кабинет и любая авторизация;</li>
+      <li>формы, заявки, бронирования;</li>
+      <li>страницы, закрытые от обхода, и внутренние разделы;</li>
+      <li>медиатека: фото товаров, документы, видео.</li>
+    </ul>
+    <p>В этих случаях архив даёт материал для новой версии, но не работающий сайт. Обещать заказчику «восстановим магазин из архива» — значит гарантированно разочаровать его через неделю.</p>
+
+    <div class="cta-inline">
+      <h3>Когда бэкапа нет</h3>
+      <p>Site Restorer собирает из архива максимум возможного и честно показывает, что вернуть не удалось.</p>
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+
+    <h2 id="check">4. Как проверять бэкап</h2>
+    <p>Непроверенная копия — это надежда. Минимальная проверка раз в квартал:</p>
+    <ol>
+      <li>Скачайте последний бэкап и распакуйте его локально.</li>
+      <li>Убедитесь, что дамп базы открывается и содержит свежие записи.</li>
+      <li>Проверьте, что в архиве есть <code>uploads</code> и он не пустой.</li>
+      <li>Разверните копию на тестовом адресе и откройте три страницы.</li>
+      <li>Запишите дату проверки: иначе через месяц никто не вспомнит, рабочий ли архив.</li>
+    </ol>
+    <p>Правило «трёх копий» никто не отменял: одна на сервере, одна вне сервера, одна в другом месте. Архив в этой схеме — не копия, а страховка на случай, когда исчезает всё сразу.</p>
+
+    <h2 id="both">5. Как совмещать</h2>
+    <table>
+      <thead><tr><th>Задача</th><th>Инструмент</th></tr></thead>
+      <tbody>
+        <tr><td>Вернуть сайт после сбоя</td><td>бэкап: развернуть и проверить</td></tr>
+        <tr><td>Вернуть контент, когда бэкапа нет</td><td>архив: собрать статическую копию</td></tr>
+        <tr><td>Понять, как сайт выглядел год назад</td><td>архив: снимки по датам</td></tr>
+        <tr><td>Переделать дизайн</td><td>архив как референс + бэкап как источник файлов</td></tr>
+        <tr><td>Сохранить трафик при аварии</td><td>архив: та же структура адресов</td></tr>
+      </tbody>
+    </table>
+    <p>Практика: держите бэкап как основной инструмент, а архив — как второй, который работает без вас. Дешёвый и полезный вариант — раз в месяц проверять, что сайт вообще сохраняется в архив: это ни к чему не обязывает, но иногда спасает.</p>
+
+    <h2 id="faq">Частые вопросы</h2>
+    <h3>Можно ли считать веб-архив резервной копией?</h3>
+    <p>Нет. Архив содержит отрендеренные страницы и часть файлов, но не базу и не код. Он не разворачивается в работающий сайт с админкой.</p>
+
+    <h3>Что надёжнее при аварии хостинга?</h3>
+    <p>Свой бэкап вне хостинга. Архив поможет, только если бэкапа нет и нужно вернуть хотя бы контент по прежним адресам.</p>
+
+    <h3>Как часто делать бэкап?</h3>
+    <p>Так часто, как часто меняется контент: для магазина — ежедневно, для сайта услуг — раз в неделю, плюс копия перед любым обновлением.</p>
+
+    <h3>Хватит ли архива, чтобы вернуть магазин?</h3>
+    <p>Нет. Корзина, заказы, остатки и цены — это база данных. Из архива получится статический каталог без оформления заказов.</p>
+
+    <h3>Нужно ли проверять бэкап, если он делается автоматически?</h3>
+    <p>Обязательно. Автоматические копии ломаются тихо: кончается место, меняется путь, падает скрипт. Проверка раз в квартал — пятнадцать минут.</p>
+
+    <h2>Смежные разборы</h2>
+    <ul>
+      <li><a href="/guide/vosstanovit-sajt-iz-veb-arhiva/">Как восстановить сайт из веб-архива</a> — если архив — единственный источник</li>
+      <li><a href="/guide/kak-proverit-chto-arhiv-sohranil-sajt/">Как проверить, что архив сохранил сайт</a> — оценка полноты за пятнадцать минут</li>
+      <li><a href="/guide/chto-delat-esli-hosting-poteryal-dannye/">Хостинг потерял данные: первые часы</a> — что делать, когда бэкапа нет</li>
+      <li><a href="/guide/pochemu-kartinki-ne-vosstanavlivayutsya/">Почему картинки не восстанавливаются</a> — чего именно не хватает в архиве</li>
+    </ul>
+
+    <div class="article-cta">
+      <h2>Когда бэкапа нет</h2>
+      <p>Site Restorer собирает из архива максимум возможного и честно показывает, что вернуть не удалось.</p>
+      <a class="btn btn-primary" href="/#download">Скачать для Windows</a>
+    </div>
+
+    <p class="article-note">Материал описывает публичные возможности Internet Archive и практику восстановления сайтов. Обновлено 10 ноября 2026.</p>
+  </article>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-bottom" style="margin-top:0;border-top:0;padding-top:0">
+      <span>© <span data-year>2026</span> Site Restorer. MIT.</span>
+      <span class="footer-note">Статистика посещений — Яндекс.Метрика; отключается в уведомлении или в браузере.</span>
+      <span><a href="/">Главная</a> · <a href="/guide/">Разборы</a> · <a href="/en/" hreflang="en">English</a> · <a href="https://boosty.to/explosion/donate" rel="noopener">Поддержать проект</a> · <a href="/privacy/">Политика конфиденциальности</a> · <a href="#" data-consent-open>Настройки cookie</a></span>
+    </div>
+  </div>
+</footer>
+<script src="../../assets/app.js?v=2" defer></script>
+<script src="../../assets/consent.js?v=6" defer></script>
+</body>
+</html>
