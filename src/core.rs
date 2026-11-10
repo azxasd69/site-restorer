@@ -4,7 +4,7 @@
 use crate::paths;
 use crate::sanitize::sanitize_site;
 
-use regex::Regex;
+use regex_lite::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -953,7 +953,7 @@ impl Engine {
         let base_rx = Regex::new(r"(?i)<base\b[^>]*>").unwrap();
         let site_rx = Regex::new(&format!(
             r#"(?i)^(?:https?:)?//(?:www\.)?{}(?::\d+)?(/[^"'\s<>()\\]*)"#,
-            regex::escape(&self.host)
+            regex_lite::escape(&self.host)
         ))
         .unwrap();
 
@@ -1027,11 +1027,11 @@ impl Engine {
                 let mut text = decoded.text;
                 if lower.ends_with(".js") {
                     text = site_rx
-                        .replace_all(&text, |caps: &regex::Captures| caps[1].to_string())
+                        .replace_all(&text, |caps: &regex_lite::Captures| caps[1].to_string())
                         .into_owned();
                 } else {
                     text = attr_rx
-                        .replace_all(&text, |caps: &regex::Captures| {
+                        .replace_all(&text, |caps: &regex_lite::Captures| {
                             let attr = &caps[1];
                             let (value, quote) = if let Some(v) = caps.get(2) {
                                 (v.as_str(), "\"")
@@ -1045,7 +1045,7 @@ impl Engine {
                         })
                         .into_owned();
                     text = srcset_rx
-                        .replace_all(&text, |caps: &regex::Captures| {
+                        .replace_all(&text, |caps: &regex_lite::Captures| {
                             let attr = &caps[1];
                             let quote = if caps.get(2).is_some() { "\"" } else { "'" };
                             let value = caps.get(2).or_else(|| caps.get(3)).map(|m| m.as_str()).unwrap_or("");
@@ -1069,7 +1069,7 @@ impl Engine {
                         })
                         .into_owned();
                     text = css_rx
-                        .replace_all(&text, |caps: &regex::Captures| {
+                        .replace_all(&text, |caps: &regex_lite::Captures| {
                             let url = &caps[1];
                             format!("url({})", self.rewrite_ref(url, src_dir, &index, &site_rx))
                         })

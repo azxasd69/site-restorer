@@ -4,7 +4,7 @@
 //! адреса, ссылка из веб-архива или поиска, адрес, набранный в русской раскладке,
 //! кириллический домен (IDN -> punycode).
 
-use regex::Regex;
+use regex_lite::Regex;
 use std::sync::OnceLock;
 
 /// ЙЦУКЕН -> QWERTY по физическим клавишам.
@@ -238,7 +238,7 @@ fn finish(host: &str) -> Option<(String, Note)> {
     let cyr_tld = tld.len() > 1 && is_cyrillic(&tld);
 
     if cyr_tld {
-        if let Ok(puny) = idna::domain_to_ascii(&host) {
+        if let Some(puny) = crate::puny::domain_to_ascii(&host) {
             if valid_host(&puny) {
                 return Some((puny, Note::Idn));
             }
@@ -247,7 +247,7 @@ fn finish(host: &str) -> Option<(String, Note)> {
     if (latin_tld || valid_host(&dekeyed)) && valid_host(&dekeyed) {
         return Some((dekeyed, Note::Layout));
     }
-    if let Ok(puny) = idna::domain_to_ascii(&host) {
+    if let Some(puny) = crate::puny::domain_to_ascii(&host) {
         if valid_host(&puny) {
             return Some((puny, Note::Idn));
         }

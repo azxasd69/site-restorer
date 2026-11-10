@@ -15,6 +15,9 @@ mod encoding;
 #[cfg(feature = "gui")]
 mod i18n;
 mod paths;
+#[cfg(feature = "gui")]
+mod pick;
+mod puny;
 mod sanitize;
 mod tr;
 
@@ -103,10 +106,9 @@ fn ensure_console_utf8() {
     }
 }
 
-#[allow(dead_code)] // используется только GUI-сборкой
 /// Сообщение об ошибке отдельным окном: у GUI-сборки нет консоли, иначе
 /// пользователь видит только «ничего не произошло».
-#[cfg(windows)]
+#[cfg(all(windows, feature = "gui"))]
 fn message_box(text: &str) {
     #[link(name = "user32")]
     unsafe extern "system" {
@@ -132,7 +134,8 @@ fn message_box(text: &str) {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(all(windows, feature = "gui")))]
+#[allow(dead_code)] // нужна только GUI-сборке
 fn message_box(text: &str) {
     eprintln!("{text}");
 }

@@ -364,8 +364,8 @@ impl eframe::App for App {
                             .add_enabled(!self.running, egui::Button::new(t.browse))
                             .clicked()
                         {
-                            if let Some(dir) = rfd::FileDialog::new().pick_folder() {
-                                self.out = dir
+                            if let Some(dir) = crate::pick::pick_folder() {
+                                self.out = std::path::PathBuf::from(dir)
                                     .join("site")
                                     .to_string_lossy()
                                     .into_owned();

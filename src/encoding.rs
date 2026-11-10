@@ -14,10 +14,9 @@
 //! веб-архива регулярно не соответствуют телу (например, KOI8-R под видом
 //! windows-1251), а объявление может стоять в комментарии.
 
-use chardetng::{EncodingDetector, Iso2022JpDetection, Utf8Detection};
 use std::sync::OnceLock;
 use encoding_rs::{Encoding, UTF_16BE, UTF_16LE, WINDOWS_1251};
-use regex::Regex;
+use regex_lite::Regex;
 
 /// Результат декодирования документа.
 #[derive(Debug, Clone)]
@@ -241,14 +240,30 @@ fn script_rx() -> &'static Regex {
     })
 }
 
+/// Определение кодировки по содержимому: перебираем кириллические варианты и
+/// берём тот, что даёт самый «читаемый» текст. Практически это то же, что делал
+/// chardetng (статистика по байтам), но без отдельной зависимости и без ICU.
 fn detect_encoding(data: &[u8]) -> Option<&'static Encoding> {
     if data.len() < 8 {
         return None;
     }
-    let mut detector = EncodingDetector::new(Iso2022JpDetection::Deny);
-    detector.feed(data, true);
-    let enc = detector.guess(Some(b"ru"), Utf8Detection::Deny);
-    Some(enc)
+    const CANDIDATES: [&Encoding; 6] = [
+        WINDOWS_1251,
+        encoding_rs::KOI8_R,
+        encoding_rs::KOI8_U,
+        encoding_rs::IBM866,
+        encoding_rs::ISO_8859_5,
+        encoding_rs::WINDOWS_1252,
+    ];
+    let mut best: Option<(&'static Encoding, f64)> = None;
+    for enc in CANDIDATES {
+        let (text, _, _) = enc.decode(data);
+        let score = quality(&text);
+        if best.is_none_or(|(_, s)| score > s) {
+            best = Some((enc, score));
+        }
+    }
+    best.map(|(enc, _)| enc)
 }
 
 /// «Двойное кодирование»: UTF-8, прочитанный как однобайтовая кириллица,
