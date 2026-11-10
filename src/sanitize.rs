@@ -288,10 +288,10 @@ fn finish(host: &str) -> Option<(String, Note)> {
     None
 }
 
-/// Главная точка входа: адрес любого вида -> (домен, откуда он взялся).
 /// Чистка того, что пришло из буфера обмена (нужна окну, не CLI):
-#[allow(dead_code)] BOM, невидимые символы,
-/// переводы строк, табы, markdown-обёртка `[текст](ссылка)`, кавычки, `<...>`.
+/// BOM, невидимые символы, переводы строк, табы, markdown-обёртка
+/// `[текст](ссылка)`, кавычки, `<...>`.
+#[allow(dead_code)]
 pub fn clean_payload(raw: &str) -> String {
     let mut cleaned = String::with_capacity(raw.len());
     for ch in raw.chars() {
@@ -342,6 +342,7 @@ fn markdown_target(text: &str) -> &str {
     if inside.is_empty() { text } else { inside }
 }
 
+/// Главная точка входа: адрес любого вида -> (домен, откуда он взялся).
 pub fn sanitize_site(text: &str) -> Option<(String, Note)> {
     if text.trim().is_empty() {
         return None;
