@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Разборы: восстановление сайта из веб-архива</title>
-<meta name="description" content="Практические материалы о восстановлении сайтов: что делать при потере данных хостингом, как скачать копию из Wayback Machine, как собрать её локально и проверить.">
+<meta name="description" content="Три разбора: что делать в первые часы после потери данных, как забрать копию из веб-архива и как собрать из неё рабочий сайт.">
 <meta name="theme-color" content="#f3f4f5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#15181c" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
@@ -23,7 +23,7 @@
 <meta name="twitter:image" content="https://lastcopy.ru/assets/img/og-ru.png">
 
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/style.css?v=2">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -60,7 +60,12 @@
   <div class="wrap header-inner">
     <a class="brand" href="/" aria-label="Site Restorer — на главную">
       <span class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v9"/><path d="M8 10l4 4 4-4"/><path d="M5 17h14"/></svg>
+        <svg viewBox="0 0 32 32">
+          <rect x="3" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/>
+          <rect x="16.5" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/>
+          <rect x="3" y="16.5" width="11" height="11" rx="1.2" fill="#ffffff"/>
+          <rect x="17.2" y="17.2" width="9.6" height="9.6" rx="1" fill="none" stroke="#9FB0C2" stroke-width="1.5" stroke-dasharray="2.2 2"/>
+        </svg>
       </span>
       <span class="brand-name">Site Restorer</span>
     </a>
@@ -72,7 +77,7 @@
 
 <main class="wrap">
   <nav class="breadcrumbs" aria-label="Хлебные крошки">
-    <a href="/">Главная</a><span>/</span>Разборы
+    <a href="/">Главная</a><span aria-hidden="true">/</span>Разборы
   </nav>
 
   <article class="article">
@@ -88,11 +93,11 @@
     <h2>Когда сайт пропал</h2>
     <div class="grid-2" style="display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));margin:16px 0 8px">
       <a class="card" href="/guide/chto-delat-esli-hosting-poteryal-dannye/" style="text-decoration:none;display:block">
-        <h3 style="margin-top:0">Хостинг потерял данные: первые часы</h3>
+        <h3 class="mt-0">Хостинг потерял данные: первые часы</h3>
         <p style="margin-bottom:0;color:var(--muted);font-size:15px">Что заморозить, где искать бэкапы, как спасти домен и почту и не потерять поисковый трафик. Контекст — авария Beget 2 ноября 2026.</p>
       </a>
       <a class="card" href="/guide/chto-delat-esli-sajt-udalili/" style="text-decoration:none;display:block">
-        <h3 style="margin-top:0">Сайт удалили: что делать в первые часы</h3>
+        <h3 class="mt-0">Сайт удалили: что делать в первые часы</h3>
         <p style="margin-bottom:0;color:var(--muted);font-size:15px">Хостинг закрыл аккаунт, истёк домен, сайт сняли из панели: как спасти адрес, найти копии контента и вернуть трафик.</p>
       </a>
     </div>
@@ -100,11 +105,11 @@
     <h2>Скачать копию из архива</h2>
     <div class="grid-2" style="display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));margin:16px 0 8px">
       <a class="card" href="/guide/skachat-sajt-iz-wayback-machine/" style="text-decoration:none;display:block">
-        <h3 style="margin-top:0">Как скачать сайт из Wayback Machine</h3>
+        <h3 class="mt-0">Как скачать сайт из Wayback Machine</h3>
         <p style="margin-bottom:0;color:var(--muted);font-size:15px">Адреса архива и режим id_, выгрузка списка адресов через CDX, чем помогают wget и HTTrack и где они ломаются.</p>
       </a>
       <a class="card" href="/guide/vosstanovit-sajt-iz-veb-arhiva/" style="text-decoration:none;display:block">
-        <h3 style="margin-top:0">Как восстановить сайт из веб-архива</h3>
+        <h3 class="mt-0">Как восстановить сайт из веб-архива</h3>
         <p style="margin-bottom:0;color:var(--muted);font-size:15px">Полный порядок: проверка индекса, загрузка, сборка локальной копии, кодировки, проверка ссылок и чек-лист.</p>
       </a>
     </div>
@@ -136,11 +141,11 @@
     <div class="footer-bottom" style="margin-top:0;border-top:0;padding-top:0">
       <span>© <span data-year>2026</span> Site Restorer. MIT.</span>
       <span class="footer-note">Статистика посещений — Яндекс.Метрика; отключается в уведомлении или в браузере.</span>
-      <span><a href="/">Главная</a> · <a href="/en/" hreflang="en">English</a> · <a href="/privacy/">Политика конфиденциальности</a> · <a href="#" data-consent-open>Настройки cookie</a></span>
+      <span><a href="/">Главная</a> · <a href="/en/" hreflang="en">English</a> · <a href="https://boosty.to/explosion/donate" rel="noopener">Поддержать проект</a> · <a href="/privacy/">Политика конфиденциальности</a> · <a href="#" data-consent-open>Настройки cookie</a></span>
     </div>
   </div>
 </footer>
-<script src="../assets/app.js" defer></script>
-<script src="../assets/consent.js?v=4" defer></script>
+<script src="../assets/app.js?v=2" defer></script>
+<script src="../assets/consent.js?v=5" defer></script>
 </body>
 </html>

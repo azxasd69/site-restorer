@@ -177,8 +177,19 @@
   var choice = readChoice();
 
   // Режим «только уведомление»: считаем всех, кроме тех, кто отказался.
+  // Загрузку откладываем до простоя, чтобы счётчик не отнимал канал и CPU
+  // у первого экрана; страховочный таймаут — для браузеров без idle-колбэка.
+  function scheduleMetrika() {
+    var start = function () { loadMetrika(); };
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(start, { timeout: 2500 });
+    } else {
+      window.setTimeout(start, 1200);
+    }
+  }
+
   if (choice !== 'denied') {
-    loadMetrika();
+    scheduleMetrika();
   }
 
   // Уведомление показываем один раз — пока посетитель не нажмёт кнопку.
