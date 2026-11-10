@@ -127,9 +127,16 @@
     deny.textContent = t.deny;
     deny.addEventListener('click', function () {
       saveChoice('denied');
-      dropMetrikaCookies();
-      // перезагружаем страницу, чтобы счётчик не стартовал заново
-      window.location.reload();
+      // сначала отправляем цель, потом чистим cookie и перезагружаемся
+      try {
+        if (typeof window.ym === 'function') window.ym(COUNTER_ID, 'reachGoal', 'consent_off');
+      } catch (error) {
+        /* счётчик мог не загрузиться */
+      }
+      window.setTimeout(function () {
+        dropMetrikaCookies();
+        window.location.reload();
+      }, 350);
     });
 
     var accept = document.createElement('button');
