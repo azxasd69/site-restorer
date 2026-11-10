@@ -16,8 +16,8 @@
 | `SiteRestorer-x86.exe` | Windows 10/11 x86 | 5,6 МБ | Rust + egui, 32-битная сборка |
 | `SiteRestorer-rust-win-cli-x64.exe` | Windows x64 | 2,7 МБ | Rust, только командная строка |
 | `SiteRestorer-rust-win-cli-x86.exe` | Windows x86 | 2,1 МБ | Rust, самый маленький бинарник для Windows |
-| `SiteRestorer-rust-linux-cli` | Linux x64 | 3,4 МБ | Rust, статический ELF (`ldd` → not a dynamic executable) |
-| `SiteRestorer-rust-linux-gui` | Linux x64 | 9,1 МБ | Rust + egui (нужны системные X11/GL) |
+| `SiteRestorer-rust-linux-cli` | Linux x64 | 2,1 МБ | Rust, статический ELF (`ldd` → not a dynamic executable) |
+| `SiteRestorer-rust-linux-gui` | Linux x64 | 7,5 МБ | Rust + egui (нужны системные X11/GL) |
 | `SiteRestorer-rust-linux-i586-cli` | Linux i586 | — | опциональная цель: собирается, если на раннере есть 32-битный TLS-тулчейн |
 | `SiteRestorer-python-win-x64.exe` | Windows x64 | 12,6 МБ | классическая версия на Python + Tk |
 | `SiteRestorer-python-win-x86.exe` | Windows x86 | 10,2 МБ | классическая версия, 32 бита |

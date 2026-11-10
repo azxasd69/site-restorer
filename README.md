@@ -20,9 +20,9 @@
 |---|---|---|
 | `SiteRestorer.exe` | Windows 10/11 x64 — **основной** | 6,2 МБ |
 | `SiteRestorer-x86.exe` | Windows 10/11 x86 | 5,6 МБ |
-| `SiteRestorer-rust-linux-cli` | Linux x64, статический бинарник | 3,4 МБ |
-| `SiteRestorer-rust-linux-gui` | Linux x64, нативное окно (X11/GL) | 9,1 МБ |
-| `SiteRestorer-rust-win-cli-x64.exe` / `-x86.exe` | Windows, только командная строка | 2,7 / 2,1 МБ |
+| `SiteRestorer-rust-linux-cli` | Linux x64, статический бинарник | 2,1 МБ |
+| `SiteRestorer-rust-linux-gui` | Linux x64, нативное окно (X11/GL) | 7,5 МБ |
+| `SiteRestorer-rust-win-cli-x64.exe` / `-x86.exe` | Windows, только командная строка | 1,8 / 1,3 МБ |
 | `SiteRestorer-python-win-x64.exe` | Windows x64, классическая версия на Python | 12,6 МБ |
 | `SiteRestorer-python-win-x86.exe` | Windows x86, классическая версия | 10,2 МБ |
 | `SiteRestorer-python-linux-x64` | Linux x64, классическая версия | 27 МБ |
