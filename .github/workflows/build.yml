@@ -60,13 +60,8 @@ jobs:
             rustflags: "-C linker=musl-gcc"
             optional: false
             out: SiteRestorer-rust-linux-cli
-          - os: ubuntu-latest
-            target: i686-unknown-linux-musl
-            features: "cli"
-            apt: "musl-tools gcc-multilib libc6-dev-i386"
-            rustflags: ""
-            optional: true
-            out: SiteRestorer-rust-linux-i586-cli
+          # i586-Linux исключён: ring/TLS не собирается под i686-musl, а из-за
+          # needs упавшая (даже необязательная) джоба блокировала release.
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             features: "gui"
