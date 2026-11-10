@@ -200,6 +200,51 @@ mod tests {
         }
     }
 
+    /// Границы, которые мутационный анализ пометил как непокрытые:
+    /// длина метки, длина домена и пустая метка.
+    #[test]
+    fn length_boundaries() {
+        // метка из 63 символов допустима, из 64 — уже нет
+        let ok_label = "a".repeat(63) + ".ru";
+        assert_eq!(
+            domain_to_ascii(&ok_label).as_deref(),
+            Some(ok_label.as_str())
+        );
+        let long_label = "a".repeat(64) + ".ru";
+        assert!(domain_to_ascii(&long_label).is_none());
+
+        // домен ровно 253 символа проходит, 254 — нет
+        let mut parts = Vec::new();
+        let mut total = 0;
+        while total + 64 <= 253 {
+            parts.push("a".repeat(63));
+            total += 64;
+        }
+        let tail_len = 253 - total;
+        parts.push("b".repeat(tail_len));
+        let domain = parts.join(".");
+        assert_eq!(domain.len(), 253, "собранный домен должен быть ровно 253");
+        assert_eq!(domain_to_ascii(&domain).as_deref(), Some(domain.as_str()));
+
+        let too_long = format!("{domain}.c");
+        assert!(domain_to_ascii(&too_long).is_none());
+
+        // пустая метка и висящая точка
+        assert!(domain_to_ascii("a..ru").is_none());
+        assert_eq!(domain_to_ascii("rdbzh.ru.").as_deref(), Some("rdbzh.ru"));
+    }
+
+    /// Длинная CJK-метка заставляет цикл bias в `adapt` прокрутиться
+    /// несколько раз — этой ветки не хватало после первого прогона mutants.
+    #[test]
+    fn long_cjk_label() {
+        let label = "日本語のドメイン名はとても長くなることがあります";
+        assert_eq!(
+            domain_to_ascii(&format!("{label}.jp")).as_deref(),
+            Some("xn--l8jtaiq6azendq0bl2qtb1hk70b2uqnnlh113dwk4ct4f682uso3b.jp")
+        );
+    }
+
     #[test]
     fn ascii_passes_through() {
         assert_eq!(
