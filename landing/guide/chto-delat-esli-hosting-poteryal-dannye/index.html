@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Хостинг потерял данные: что делать в первые часы</title>
+<meta name="description" content="Пошаговый план: проверить, что именно недоступно, найти бэкапы, оценить веб-архив, сохранить домен и почту, поднять копию и не потерять поисковый трафик.">
+<meta name="theme-color" content="#f7f5f1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131519" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+
+<link rel="canonical" href="https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/">
+<link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/">
+<link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Site Restorer">
+<meta property="og:title" content="Хостинг потерял данные: что делать в первые часы">
+<meta property="og:description" content="Проверить, что именно недоступно, найти бэкапы, оценить веб-архив, сохранить домен и почту, поднять копию и не потерять поисковый трафик.">
+<meta property="og:url" content="https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/">
+<meta property="og:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+<meta property="og:locale" content="ru_RU">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+
+<link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/style.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "@id": "https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/#article",
+      "headline": "Хостинг потерял данные: что делать в первые часы",
+      "description": "Проверить, что именно недоступно, найти бэкапы, оценить веб-архив, сохранить домен и почту, поднять копию и не потерять поисковый трафик.",
+      "inLanguage": "ru",
+      "datePublished": "2026-11-11",
+      "dateModified": "2026-11-11",
+      "author": { "@type": "Organization", "name": "Site Restorer", "url": "https://lastcopy.ru/" },
+      "publisher": { "@type": "Organization", "name": "Site Restorer", "url": "https://lastcopy.ru/" },
+      "mainEntityOfPage": "https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Главная", "item": "https://lastcopy.ru/" },
+        { "@type": "ListItem", "position": 2, "name": "Хостинг потерял данные", "item": "https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/" }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Хостинг говорит, что данные утеряны. Шансов нет?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Шансы есть почти всегда, вопрос в источнике. Проверяйте по порядку: резервные копии хостинга (даже старые), локальные архивы и Git, копии у разработчика и подрядчиков, кэш поисковых систем, веб-архив. Часто текстовая часть сайта сохраняется на 95–100 %." }
+        },
+        {
+          "@type": "Question",
+          "name": "Нужно ли сразу менять DNS?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Нет. Сначала зафиксируйте текущие записи (A, AAAA, MX, TXT, CNAME) и срок действия домена. Если переключить DNS на новый сервер до того, как готова копия, вы потеряете время на распространение записей и можете уронить почту." }
+        },
+        {
+          "@type": "Question",
+          "name": "Что важнее восстанавливать в первую очередь?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Почту и домен — они влияют на все остальные сервисы и на восстановление доступов. Затем страницы с наибольшим трафиком и заявками, и только потом всё остальное." }
+        },
+        {
+          "@type": "Question",
+          "name": "Как не потерять позиции в поиске после переезда?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Сохранить те же адреса страниц, отдавать 200 вместо 404, обновить sitemap.xml и robots.txt, отправить адреса на переобход. Если структура изменилась — настроить 301 с прежних адресов на новые." }
+        },
+        {
+          "@type": "Question",
+          "name": "Можно ли восстановить базу данных и заявки?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Только из бэкапа. Веб-архив хранит страницы, а не данные: заявки, заказы, пользователей и переписку он не содержит." }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="/" aria-label="Site Restorer — на главную">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v9"/><path d="M8 10l4 4 4-4"/><path d="M5 17h14"/></svg>
+      </span>
+      <span class="brand-name">Site Restorer</span>
+    </a>
+    <div class="header-actions">
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <nav class="breadcrumbs" aria-label="Хлебные крошки">
+    <a href="/">Главная</a><span>/</span>Хостинг потерял данные
+  </nav>
+
+  <article class="article">
+    <h1>Хостинг потерял данные: что делать в первые часы</h1>
+    <div class="article-meta">
+      <span>Обновлено 11 ноября 2026</span>
+      <span>Чтение: 7 минут</span>
+      <span>Контекст: авария Beget, 2 ноября 2026</span>
+    </div>
+
+    <div class="tldr">
+      <p>Коротко</p>
+      <ol>
+        <li>Не меняйте DNS и не перезаписывайте записи, пока не сохраните текущие.</li>
+        <li>Выясните, что именно недоступно: домен, сервер, только сайт или почта.</li>
+        <li>Ищите бэкапы по всем каналам: хостинг, разработчик, Git, облако, почта.</li>
+        <li>Проверьте веб-архив — часто это единственный источник текста и структуры.</li>
+        <li>Восстанавливайте сначала почту и домен, потом страницы с трафиком.</li>
+      </ol>
+    </div>
+
+    <p>Когда хостинг сообщает о потере данных, время работает против вас: домен и почта живут своей жизнью, поисковые роботы продолжают приходить на мёртвый сервер, а клиенты — писать в никуда. Порядок ниже проверен на реальной аварии ноября 2026 года, когда провайдер подтвердил потерю виртуальных серверов, объектного хранилища и резервных копий.</p>
+
+    <div class="toc">
+      <p>Содержание</p>
+      <ol>
+        <li><a href="#freeze">Шаг 0. Заморозить изменения</a></li>
+        <li><a href="#diagnose">Шаг 1. Понять, что именно потеряно</a></li>
+        <li><a href="#backups">Шаг 2. Найти бэкапы</a></li>
+        <li><a href="#archive">Шаг 3. Оценить веб-архив</a></li>
+        <li><a href="#domain">Шаг 4. Спасти домен и почту</a></li>
+        <li><a href="#restore">Шаг 5. Поднять копию</a></li>
+        <li><a href="#seo">Шаг 6. Не потерять поисковый трафик</a></li>
+        <li><a href="#faq">Частые вопросы</a></li>
+      </ol>
+    </div>
+
+    <h2 id="freeze">Шаг 0. Заморозить изменения</h2>
+    <p>Первое действие — не техническое. Сохраните текущее состояние DNS и домена:</p>
+    <ul>
+      <li>Выгрузите все записи зоны: <code>A</code>, <code>AAAA</code>, <code>CNAME</code>, <code>MX</code>, <code>TXT</code> (включая SPF и DKIM), <code>CAA</code>.</li>
+      <li>Проверьте срок действия домена и статус у регистратора: он не должен истечь в разгар восстановления.</li>
+      <li>Не переключайте NS «на всякий случай»: распространение занимает часы, а старая зона может ещё понадобиться.</li>
+      <li>Не отвечайте на письма «срочное восстановление сайта» от незнакомых подрядчиков — в такие моменты активизируются мошенники.</li>
+    </ul>
+
+    <h2 id="diagnose">Шаг 1. Понять, что именно потеряно</h2>
+    <table>
+      <thead><tr><th>Симптом</th><th>Что проверять</th><th>Что это значит</th></tr></thead>
+      <tbody>
+        <tr><td>Домен не открывается</td><td><code>nslookup домен</code>, <code>curl -I</code></td><td>Домен жив, если резолвится; проблема на сервере</td></tr>
+        <tr><td>Сайт открывается, но пустой</td><td>Панель хостинга, FTP</td><td>Файлы удалены или отключён аккаунт</td></tr>
+        <tr><td>Почта не доходит</td><td>MX-записи, порты 25/587/993</td><td>Почтовый сервер на том же хостинге</td></tr>
+        <tr><td>Часть страниц жива</td><td>CDN, другой сервер</td><td>Сайт мог быть разнесён по площадкам</td></tr>
+      </tbody>
+    </table>
+    <p>Отдельно проверьте, не осталась ли рабочая копия на CDN (Cloudflare, Bunny) — иногда оттуда можно вытащить статику, даже если origin утрачен.</p>
+
+    <h2 id="backups">Шаг 2. Найти бэкапы</h2>
+    <p>Идти нужно по всем каналам, а не только туда, где «должно быть»:</p>
+    <ul>
+      <li><strong>Хостинг.</strong> Даже если провайдер говорит «всё потеряно», уточните про оффсайт-копии и снапшоты за прошлые месяцы.</li>
+      <li><strong>Разработчик и подрядчики.</strong> У студий и фрилансеров часто остаются архивы, дампы и исходники тем.</li>
+      <li><strong>Git.</strong> Если сайт собирался из репозитория, код и контент могут быть там.</li>
+      <li><strong>Почта и облако.</strong> Архивы, отправленные клиентам, письма с вложениями, Google Drive, Яндекс.Диск.</li>
+      <li><strong>Локальные машины.</strong> Старые копии в папках «сайт», «backup», «дизайн».</li>
+    </ul>
+    <p>Типичная ошибка — считать бэкапом выгрузку базы без файлов: если нет темы и загруженных файлов, сайт не поднимется.</p>
+
+    <h2 id="archive">Шаг 3. Оценить веб-архив</h2>
+    <p>Если бэкапов нет, веб-архив почти всегда содержит текст и структуру. Начните с проверки: сколько адресов сохранено и каких типов.</p>
+    <pre class="code-body" style="border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:14px 16px;overflow-x:auto"><code>https://web.archive.org/cdx/search/cdx?url=example.com&amp;matchType=domain&amp;output=json&amp;limit=10&amp;collapse=urlkey</code></pre>
+    <p>Дальше — скачивание и сборка копии. Подробный порядок с режимом <code>id_</code>, кодировками и проверкой ссылок — в отдельном разборе: <a href="/guide/vosstanovit-sajt-iz-veb-arhiva/">как восстановить сайт из веб-архива</a>.</p>
+    <p>Важно заранее сказать заказчику честно: картинки товаров и динамика (корзина, вход, поиск) из архива не вернутся. Текст, структура и стили — вернутся с высокой вероятностью.</p>
+
+    <div class="cta-inline">
+      <h3>Автоматизировать восстановление</h3>
+      <p>Site Restorer собирает копию сайта из Internet Archive и показывает отчёт о полноте: что вернулось, что потеряно.</p>
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+
+    <h2 id="domain">Шаг 4. Спасти домен и почту</h2>
+    <p>Домен и почта — инфраструктура, через которую восстанавливаются доступы. Если они на том же хостинге, действуйте первыми:</p>
+    <ul>
+      <li>Перенесите домен к другому регистратору или хотя бы убедитесь, что он не заблокирован и оплачен на год вперёд.</li>
+      <li>Поднимите почту отдельно (Яндекс 360, Mail.ru для бизнеса, Google Workspace, собственный сервер) и восстановите MX, SPF, DKIM и DMARC.</li>
+      <li>Проверьте, что письма на <code>info@</code>, <code>sales@</code> и другие ящики приходят: восстановление доступов к сервисам идёт через них.</li>
+    </ul>
+
+    <h2 id="restore">Шаг 5. Поднять копию</h2>
+    <p>Пока копия не готова, домен лучше оставить на прежнем месте: 404 или заглушка выглядят хуже, чем временная страница с честным статусом. Порядок такой:</p>
+    <ol>
+      <li>Загрузите статическую копию на новый хостинг или VPS.</li>
+      <li>Проверьте её локально и на тестовом домене (или через <code>--resolve</code>), чтобы не отдавать людям битые страницы.</li>
+      <li>Переключите DNS с минимальным TTL за сутки до переезда.</li>
+      <li>Включите HTTPS и проверьте редиректы <code>http → https</code> и <code>www → без www</code>.</li>
+    </ol>
+
+    <h2 id="seo">Шаг 6. Не потерять поисковый трафик</h2>
+    <ul>
+      <li><strong>Сохраните адреса.</strong> Если структура та же, страницы продолжат отдавать 200 и позиции удержатся.</li>
+      <li><strong>301 вместо 404.</strong> Если адреса изменились, настройте постоянные редиректы со старых на новые.</li>
+      <li><strong>Обновите sitemap.xml и robots.txt</strong> и отправьте карту сайта на переобход в Search Console и Яндекс.Вебмастере.</li>
+      <li><strong>Не закрывайте сайт от индексации</strong> на время работ: это самая частая ошибка при восстановлении.</li>
+    </ul>
+
+    <h2 id="faq">Частые вопросы</h2>
+    <h3>Хостинг говорит, что данные утеряны. Шансов нет?</h3>
+    <p>Шансы есть почти всегда, вопрос в источнике. Проверяйте по порядку: резервные копии хостинга, локальные архивы и Git, копии у разработчика, кэш поисковых систем, веб-архив. Часто текстовая часть сайта сохраняется на 95–100 %.</p>
+
+    <h3>Нужно ли сразу менять DNS?</h3>
+    <p>Нет. Сначала зафиксируйте текущие записи и срок действия домена. Переключение до готовности копии съест время на распространение и может уронить почту.</p>
+
+    <h3>Что важнее восстанавливать в первую очередь?</h3>
+    <p>Почту и домен: через них восстанавливаются остальные доступы. Затем страницы с наибольшим трафиком и заявками, и только потом всё остальное.</p>
+
+    <h3>Как не потерять позиции в поиске?</h3>
+    <p>Сохранить те же адреса, отдавать 200 вместо 404, обновить sitemap и robots.txt, отправить адреса на переобход. При смене структуры — 301 с прежних адресов.</p>
+
+    <h3>Можно ли восстановить базу данных и заявки?</h3>
+    <p>Только из бэкапа. Веб-архив хранит страницы, а не данные: заявки, заказы, пользователей и переписку он не содержит.</p>
+
+    <div class="article-cta">
+      <h2>Следующий шаг — восстановить сайт</h2>
+      <p>Пошаговый разбор с CDX-индексом, режимом <code>id_</code>, сборкой копии и проверкой ссылок.</p>
+      <a class="btn btn-primary" href="/guide/vosstanovit-sajt-iz-veb-arhiva/">Открыть инструкцию</a>
+    </div>
+
+    <p class="article-note">Материал основан на разборе аварии Beget (2 ноября 2026) и практике восстановления сайтов из веб-архива. Обновлено 11 ноября 2026.</p>
+  </article>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-bottom" style="margin-top:0;border-top:0;padding-top:0">
+      <span>© <span data-year>2026</span> Site Restorer. MIT.</span>
+      <span><a href="/">Главная</a> · <a href="/en/" hreflang="en">English</a> · <a href="https://github.com/azxasd69/site-restorer" rel="noopener">GitHub</a></span>
+    </div>
+  </div>
+</footer>
+<script src="../../assets/app.js" defer></script>
+</body>
+</html>

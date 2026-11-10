@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Как восстановить сайт из веб-архива: пошаговый разбор</title>
+<meta name="description" content="Пошагово: проверить CDX-индекс, скачать страницы в id_-режиме, собрать локальную копию, исправить ссылки и кодировки, открыть и проверить результат.">
+<meta name="theme-color" content="#f7f5f1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131519" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+
+<link rel="canonical" href="https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/">
+<link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/">
+<link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Site Restorer">
+<meta property="og:title" content="Как восстановить сайт из веб-архива: пошаговый разбор">
+<meta property="og:description" content="Проверить CDX-индекс, скачать страницы в id_-режиме, собрать локальную копию, исправить ссылки и кодировки, открыть и проверить результат.">
+<meta property="og:url" content="https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/">
+<meta property="og:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+<meta property="og:locale" content="ru_RU">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://lastcopy.ru/assets/img/og-ru.png">
+
+<link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/style.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "@id": "https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/#article",
+      "headline": "Как восстановить сайт из веб-архива: пошаговый разбор",
+      "description": "Проверить CDX-индекс, скачать страницы в id_-режиме, собрать локальную копию, исправить ссылки и кодировки, открыть и проверить результат.",
+      "inLanguage": "ru",
+      "datePublished": "2026-11-11",
+      "dateModified": "2026-11-11",
+      "author": { "@type": "Organization", "name": "Site Restorer", "url": "https://lastcopy.ru/" },
+      "publisher": { "@type": "Organization", "name": "Site Restorer", "url": "https://lastcopy.ru/" },
+      "mainEntityOfPage": "https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Главная", "item": "https://lastcopy.ru/" },
+        { "@type": "ListItem", "position": 2, "name": "Как восстановить сайт из веб-архива", "item": "https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/" }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Можно ли восстановить сайт, если его нет в веб-архиве?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Нет. Если краулер Internet Archive ни разу не заходил на сайт, восстанавливать нечего. Единственные варианты — бэкапы хостинга, локальные копии у разработчика, кэш поисковых систем или письма с сохранёнными страницами." }
+        },
+        {
+          "@type": "Question",
+          "name": "Вернутся ли картинки товаров и фотографии?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Только если архив их сохранил. Краулеры часто забирают страницы, но не каждое изображение. Проверить можно по CDX-индексу: если для файла нет ни одной записи, его нет ни в одном снимке." }
+        },
+        {
+          "@type": "Question",
+          "name": "Будут ли работать корзина, вход и поиск?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Нет. Восстановленная копия статическая: работают страницы, стили, скрипты и файлы. Всё, что требует серверной логики и базы данных, работать не будет." }
+        },
+        {
+          "@type": "Question",
+          "name": "Нужен ли Python или другой софт?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Для скачивания и сборки — нет, достаточно портативного приложения. Python нужен только для запуска простого локального сервера командой python -m http.server, но подойдёт любой статический сервер." }
+        },
+        {
+          "@type": "Question",
+          "name": "Законно ли восстанавливать сайт из архива?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Восстанавливать свой сайт — да. Публиковать копию чужого сайта нельзя: контент защищён авторским правом, а у Internet Archive есть условия использования." }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="/" aria-label="Site Restorer — на главную">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v9"/><path d="M8 10l4 4 4-4"/><path d="M5 17h14"/></svg>
+      </span>
+      <span class="brand-name">Site Restorer</span>
+    </a>
+    <div class="header-actions">
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <nav class="breadcrumbs" aria-label="Хлебные крошки">
+    <a href="/">Главная</a><span>/</span>Как восстановить сайт из веб-архива
+  </nav>
+
+  <article class="article">
+    <h1>Как восстановить сайт из веб-архива</h1>
+    <div class="article-meta">
+      <span>Обновлено 11 ноября 2026</span>
+      <span>Чтение: 8 минут</span>
+      <span>Практика: Internet Archive</span>
+    </div>
+
+    <div class="tldr">
+      <p>Коротко</p>
+      <ol>
+        <li>Проверьте, что архив вообще сохранил: CDX-индекс показывает все записанные адреса.</li>
+        <li>Скачивайте в <code>id_</code>-режиме — он отдаёт исходные файлы без панели архива и переписанных ссылок.</li>
+        <li>После скачивания ссылки нужно переписать в относительные, а кодировки — в UTF-8.</li>
+        <li>Готовую копию открывают локальным веб-сервером, а не двойным кликом по файлу.</li>
+        <li>Восстановится только то, что краулер когда-то забрал: чудес не бывает.</li>
+      </ol>
+    </div>
+
+    <p>Веб-архив — это единственный источник контента, когда сайт удалён, хостинг потерял данные или доступ к серверу утрачен. Ниже — рабочий порядок действий, который выдерживает сайты на тысячи страниц, и границы, за которые этот способ не выходит.</p>
+
+    <div class="toc">
+      <p>Содержание</p>
+      <ol>
+        <li><a href="#when">Когда архив — единственный путь</a></li>
+        <li><a href="#what">Что архив хранит, а что нет</a></li>
+        <li><a href="#check">Шаг 1. Проверить CDX-индекс</a></li>
+        <li><a href="#download">Шаг 2. Скачать страницы и файлы</a></li>
+        <li><a href="#build">Шаг 3. Собрать локальную копию</a></li>
+        <li><a href="#verify">Шаг 4. Проверить и открыть</a></li>
+        <li><a href="#time">Сколько это занимает</a></li>
+        <li><a href="#checklist">Чек-лист</a></li>
+        <li><a href="#faq">Частые вопросы</a></li>
+      </ol>
+    </div>
+
+    <h2 id="when">Когда архив — единственный путь</h2>
+    <p>Типичные ситуации, в которых других источников не остаётся:</p>
+    <ul>
+      <li><strong>Хостинг потерял данные.</strong> Домен резолвится, сервер не отвечает, бэкапов нет — как это было с клиентами Beget после аварии 2 ноября 2026 года.</li>
+      <li><strong>Сайт удалён вместе с аккаунтом.</strong> Доступ к панели управления утрачен, оплата не продлевалась, файлы не сохранились.</li>
+      <li><strong>Нужна старая версия.</strong> Сайт живой, но требуется восстановить удалённый раздел или сравнить, что было год назад.</li>
+      <li><strong>Проект заброшен.</strong> Нужна копия для истории, переезда или передачи клиенту, а CMS и базы давно нет.</li>
+    </ul>
+    <p>Если у вас есть полный бэкап хостинга — сначала восстанавливайте его, архив подождёт. Если бэкапа нет, порядок ниже — самый быстрый способ вернуть текст и структуру.</p>
+
+    <h2 id="what">Что архив хранит, а что нет</h2>
+    <table>
+      <thead><tr><th>Тип данных</th><th>Восстанавливается</th><th>Комментарий</th></tr></thead>
+      <tbody>
+        <tr><td>HTML-страницы</td><td>Почти всегда</td><td>Основной контент, статьи, каталог, описания</td></tr>
+        <tr><td>CSS, JS, шрифты</td><td>Часто</td><td>Кэш CMS с хэшем в имени подставляется эвристикой</td></tr>
+        <tr><td>Изображения контента</td><td>Частично</td><td>Краулер забирает не каждую картинку</td></tr>
+        <tr><td>Картинки товаров</td><td>Редко</td><td>В одном из кейсов отсутствовали 2 510 изображений</td></tr>
+        <tr><td>PDF, документы</td><td>Если сохранялись</td><td>Обычно попадают в архив целиком</td></tr>
+        <tr><td>Корзина, вход, поиск, AJAX</td><td>Нет</td><td>Требуют бэкенда и базы данных</td></tr>
+        <tr><td>Заявки, письма, база</td><td>Нет</td><td>Это данные, а не страницы — их архив не хранит</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="check">Шаг 1. Проверить CDX-индекс</h2>
+    <p>CDX — служебный интерфейс Internet Archive, который перечисляет все сохранённые записи по домену. Один запрос показывает, есть ли смысл вообще начинать:</p>
+    <pre class="code-body" style="border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:14px 16px;overflow-x:auto"><code>https://web.archive.org/cdx/search/cdx?url=example.com&amp;matchType=domain&amp;output=json&amp;limit=10&amp;collapse=urlkey</code></pre>
+    <p>В ответе будут поля <code>timestamp</code> (когда снят), <code>original</code> (адрес), <code>mimetype</code> (тип файла) и <code>statuscode</code> (код ответа). Ключевой параметр — <code>collapse=urlkey</code>: он схлопывает десятки снимков одного адреса до одной строки.</p>
+    <ul>
+      <li>Нет записей — восстанавливать нечего, ищите бэкапы.</li>
+      <li>Есть только <code>text/html</code> — вернётся текст и структура, картинки, скорее всего, нет.</li>
+      <li>Коды 301/302 в <code>statuscode</code> — снимок редиректа, а не страницы; берите другой год.</li>
+    </ul>
+    <p>Ограничения на стороне архива: до 50 000 адресов на домен и постраничная выдача для больших сайтов. Если записей больше, часть придётся добирать отдельными запросами.</p>
+
+    <h2 id="download">Шаг 2. Скачать страницы и файлы</h2>
+    <p>Вручную это выглядит так: открываете <code>https://web.archive.org/web/&lt;timestamp&gt;/&lt;url&gt;</code>, сохраняете страницу, затем руками ищете стили и картинки. На сотне страниц это заканчивается через час.</p>
+    <p>Для автоматизации есть два важных правила.</p>
+    <ol>
+      <li><strong>Режим <code>id_</code>.</strong> Добавьте <code>id_</code> после метки времени: <code>…/web/20240101120000id_/https://example.com/</code>. Тогда архив отдаст исходный файл без своей панели и без переписанных ссылок — иначе копия будет ссылаться обратно на архив, а не на ваши файлы.</li>
+      <li><strong>Взять все типы файлов, а не только HTML.</strong> CDX отдаёт адреса CSS, JS, изображений и PDF — их нужно скачивать тем же проходом, иначе копия будет без стилей.</li>
+    </ol>
+    <p>Дальше начинаются технические мелочи, из-за которых самодельные скрипты обычно и ломаются: лимиты архива (429 и 503), обрывы соединений, тысячи адресов, повторные загрузки при перезапуске. Именно это закрывает <a href="/">Site Restorer</a>: инвентаризация через CDX, параллельная загрузка с адаптивной конкурентностью 2 → 24 потока, паузы на лимитах, докачка с места остановки.</p>
+
+    <div class="cta-inline">
+      <h3>Скачать Site Restorer</h3>
+      <p>Портативный бинарник для Windows и Linux, без установки и зависимостей. MIT.</p>
+      <a class="btn btn-primary btn-small" href="/#download">Скачать</a>
+    </div>
+
+    <h2 id="build">Шаг 3. Собрать локальную копию</h2>
+    <p>Скачанные файлы ещё не сайт. После загрузки нужно четыре преобразования:</p>
+    <ul>
+      <li><strong>Ссылки.</strong> Абсолютные адреса <code>https://example.com/catalog/</code> переписываются в относительные, иначе браузер уйдёт в интернет вместо локального файла.</li>
+      <li><strong>Кэш CMS.</strong> Имена вида <code>styles_8f3a1c.css</code> содержат хэш сборки: файла с таким именем в архиве может не быть. Правильная стратегия — подставить файл того же типа, а не оставить битую ссылку.</li>
+      <li><strong>Миниатюры.</strong> Адреса вида <code>/resize_cache/…/500x500/…</code> обычно отсутствуют, зато оригинал сохранён — его и надо подставить.</li>
+      <li><strong>Кодировки.</strong> Страницы 2010-х часто в <code>windows-1251</code> или <code>koi8-r</code>. Их надо перекодировать в UTF-8 и поправить <code>&lt;meta charset&gt;</code>, иначе вместо текста будут кракозябры.</li>
+    </ul>
+    <p>Отдельный случай — бинарники под расширением <code>.html</code>. В архиве под таким адресом может лежать JPEG или PDF; если декодировать его как текст, файл будет уничтожен. Проверять магию файла обязательно.</p>
+
+    <h2 id="verify">Шаг 4. Проверить и открыть</h2>
+    <p>Хороший инструмент заканчивает работу отчётом: сколько адресов было в индексе, сколько скачано, сколько битых ссылок и какой объём копии. Это позволяет честно сказать заказчику, что вернулось, а что потеряно.</p>
+    <p>Открывать копию двойным кликом по <code>index.html</code> не стоит: ссылки вида <code>/catalog/</code> в файловой системе не разрешаются. Поднимите локальный сервер:</p>
+    <pre class="code-body" style="border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:14px 16px;overflow-x:auto"><code>cd Документы\SiteRestore\site
+python -m http.server 8080
+# http://127.0.0.1:8080/</code></pre>
+    <p>Подойдёт любой статический сервер: Python здесь просто самый доступный вариант.</p>
+
+    <h2 id="time">Сколько это занимает</h2>
+    <p>Зависит от размера сайта и лимитов архива, а не от вашего интернета. Ориентиры:</p>
+    <table>
+      <thead><tr><th>Размер сайта</th><th>Время</th><th>Что влияет</th></tr></thead>
+      <tbody>
+        <tr><td>До 100 страниц</td><td>Минуты</td><td>Скорость ответа архива</td></tr>
+        <tr><td>1–2 тысячи адресов</td><td>1–3 часа</td><td>Лимиты на IP, доля 404</td></tr>
+        <tr><td>10 тысяч и больше</td><td>Ночная загрузка</td><td>Постраничный CDX, повторы</td></tr>
+      </tbody>
+    </table>
+    <p>Internet Archive ограничивает частоту запросов с одного IP, поэтому «ускорить» большие сайты можно только терпением и докачкой. Прерывание не страшно: уже скачанное повторно не запрашивается.</p>
+
+    <h2 id="checklist">Чек-лист</h2>
+    <ul>
+      <li>CDX показывает записи по домену и по типам файлов.</li>
+      <li>Скачивание идёт в режиме <code>id_</code>, а не через панель архива.</li>
+      <li>Скачаны HTML, CSS, JS, изображения и PDF.</li>
+      <li>Ссылки переписаны в относительные, кэш CMS обработан.</li>
+      <li>Кодировки приведены к UTF-8, бинарники под <code>.html</code> не испорчены.</li>
+      <li>Есть отчёт: покрытие, объём, список битых ссылок.</li>
+      <li>Копия открыта локальным сервером и проверена на трёх-четырёх типах страниц.</li>
+    </ul>
+
+    <h2 id="faq">Частые вопросы</h2>
+    <h3>Можно ли восстановить сайт, если его нет в веб-архиве?</h3>
+    <p>Нет. Если краулер Internet Archive ни разу не заходил на сайт, восстанавливать нечего. Остаются бэкапы хостинга, локальные копии у разработчика, кэш поисковых систем или письма с сохранёнными страницами.</p>
+
+    <h3>Вернутся ли картинки товаров?</h3>
+    <p>Только если архив их сохранил. Проверить просто: если в CDX нет ни одной записи для файла, его нет ни в одном снимке. В разобранном кейсе так потерялись 2 510 изображений — текст при этом уцелел на 98,2 %.</p>
+
+    <h3>Будут ли работать корзина, вход и поиск?</h3>
+    <p>Нет. Копия статическая: работают страницы, стили, скрипты и файлы. Всё, что требует серверной логики и базы данных, — нет.</p>
+
+    <h3>Нужен ли Python?</h3>
+    <p>Для скачивания и сборки — нет. Python нужен только для запуска простого локального сервера, но подойдёт любой статический сервер.</p>
+
+    <h3>Законно ли это?</h3>
+    <p>Восстанавливать свой сайт — да. Публиковать копию чужого сайта нельзя: контент защищён авторским правом, а у Internet Archive есть условия использования.</p>
+
+    <div class="article-cta">
+      <h2>Восстановить сайт целиком</h2>
+      <p>Site Restorer проходит путь от адреса до готовой копии: инвентаризация, параллельная загрузка, сборка, проверка и отчёт. Один бинарник, без установки.</p>
+      <a class="btn btn-primary" href="/#download">Скачать для Windows</a>
+    </div>
+
+    <p class="article-note">Материал основан на практике восстановления сайтов из Internet Archive и на открытом коде Site Restorer. Цифры кейса — из <a href="https://github.com/azxasd69/site-restorer/blob/main/docs/prokupol-case.md" rel="noopener">разбора в репозитории</a>.</p>
+  </article>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-bottom" style="margin-top:0;border-top:0;padding-top:0">
+      <span>© <span data-year>2026</span> Site Restorer. MIT.</span>
+      <span><a href="/">Главная</a> · <a href="/en/" hreflang="en">English</a> · <a href="https://github.com/azxasd69/site-restorer" rel="noopener">GitHub</a></span>
+    </div>
+  </div>
+</footer>
+<script src="../../assets/app.js" defer></script>
+</body>
+</html>

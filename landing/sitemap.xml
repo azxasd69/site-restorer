@@ -17,4 +17,20 @@
     <changefreq>monthly</changefreq>
     <priority>0.9</priority>
   </url>
+  <url>
+    <loc>https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/"/>
+    <lastmod>2026-11-11</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/chto-delat-esli-hosting-poteryal-dannye/"/>
+    <lastmod>2026-11-11</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
 </urlset>
