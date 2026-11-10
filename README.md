@@ -14,6 +14,12 @@ Python-версия (`legacy/python`) и порт на Go (`ports/go`) оста�
 
 ![Главное окно](docs/screenshots/01-idle.png)
 
+| Инвентаризация архива | Скачивание файлов |
+|---|---|
+| ![Инвентаризация](docs/screenshots/02-inventory.png) | ![Скачивание](docs/screenshots/03-download.png) |
+
+![Сборка копии](docs/screenshots/04-build.png)
+
 ## Скачать
 
 Все сборки — на странице [Releases](https://github.com/azxasd69/site-restorer/releases);

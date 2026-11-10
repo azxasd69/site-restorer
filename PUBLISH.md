@@ -106,12 +106,13 @@ git push origin v2.4
 | `LICENSE` | MIT |
 | `CHANGELOG.md` | история версий |
 | `ARCHITECTURE.md` | разбор алгоритмов |
-| `src/` | исходники (`core.py`, `main.py`, `sanitize.py`, иконка) |
-| `build.ps1` | локальная сборка x64/x86 |
+| `src/` | исходники на Rust: ядро (`core.rs`), окно (`app.rs`), настройки, часы, отчёт |
+| `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` | версия 3.2.0 и закреплённый тулчейн |
 | `.github/workflows/build.yml` | CI: сборка и релиз по тегу |
-| `docs/screenshots/` | скриншоты для README |
+| `BUILD.md`, `docs/RELEASE.md` | локальная сборка и порядок выпуска |
+| `docs/screenshots/` | снимки окна для README и лендинга |
 | `docs/prokupol-case.md` | кейс восстановления prokupol.ru |
-| `tests/` | юнит-тесты, которые гоняет CI |
+| `tests/` | тесты (`cargo nextest`), их гоняет CI |
 | `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md` | правила участия |
 | `.github/ISSUE_TEMPLATE/`, `pull_request_template.md` | шаблоны обращений |
 
