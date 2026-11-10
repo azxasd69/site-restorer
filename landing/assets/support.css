@@ -1,0 +1,269 @@
+/* Site Restorer — страница поддержки (/support/).
+   Только блоки, которых нет в style.css: токены, кнопки, шапка, подвал,
+   .wrap, .breadcrumbs, .faq и .eyebrow берутся из общего файла. */
+
+.sp-page { max-width: 1000px; margin: 0 auto; }
+
+/* ---------- Первый экран ---------- */
+
+.sp-hero { padding-block: 14px 4px; }
+
+.sp-hero h1 {
+  font-size: clamp(1.75rem, 4.2vw, 2.5rem);
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+  margin: 10px 0 14px;
+  max-width: 22ch;
+}
+
+.sp-lead { font-size: 1.04rem; color: var(--ink-2); max-width: 64ch; }
+
+/* Единственная тёмная плита на странице: главный акцент,
+   в пару к таблице отчёта на лендинге. */
+.sp-panel {
+  margin-top: 24px;
+  padding: 22px;
+  background: var(--graphite);
+  color: #e8eaec;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.sp-amounts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+
+.sp-amount {
+  padding: 14px 15px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.sp-sum {
+  display: block;
+  font-family: var(--mono);
+  font-size: 1.5rem;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+
+.sp-what {
+  display: block;
+  margin-top: 7px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #c3cad2;
+}
+
+.sp-fee {
+  margin-top: 16px;
+  padding: 11px 13px;
+  border-left: 3px solid var(--accent);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: #cfd6dd;
+}
+.sp-fee b { color: #fff; font-family: var(--mono); }
+
+.sp-cta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+
+.sp-panel .btn-secondary {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #e8eaec;
+}
+.sp-panel .btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: #fff;
+}
+
+.sp-note { margin-top: 14px; font-size: 12.8px; line-height: 1.55; color: #9aa4af; }
+
+/* В тёмной теме панель того же цвета, что страница: тень не читается,
+   поэтому отделяем её тонкой линией. */
+@media (prefers-color-scheme: dark) {
+  .sp-panel { border: 1px solid #2b3037; }
+}
+
+/* ---------- Секции ---------- */
+
+.sp-section {
+  margin-top: 44px;
+  padding-top: 34px;
+  border-top: 1px solid var(--line);
+}
+
+.sp-section h2 {
+  font-size: clamp(1.2rem, 2.4vw, 1.55rem);
+  letter-spacing: -0.02em;
+  margin-bottom: 10px;
+}
+
+.sp-intro { color: var(--muted); font-size: 15px; max-width: 66ch; margin-bottom: 22px; }
+
+/* ---------- Расходы ---------- */
+
+.sp-costs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.sp-cost {
+  padding: 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--lost-line);
+  border-radius: var(--radius);
+}
+.sp-cost.is-main { border-left-color: var(--accent); grid-column: 1 / -1; }
+.sp-cost.is-main p { max-width: 72ch; }
+
+.sp-cost h3 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.98rem;
+  margin-bottom: 8px;
+}
+
+.sp-cost p { font-size: 14px; color: var(--ink-2); }
+
+.sp-cost .why {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.sp-tag {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: 2px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  border: 1px solid var(--accent-line);
+}
+
+/* ---------- Суммы ---------- */
+
+.sp-ladder { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+
+.sp-rung {
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.sp-rung .sum { font-family: var(--mono); font-size: 1.6rem; letter-spacing: -0.02em; color: var(--ink); }
+.sp-rung .name {
+  margin-top: 3px;
+  font-size: 12px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.sp-rung p { margin-top: 11px; font-size: 14px; color: var(--ink-2); }
+
+.sp-after { margin-top: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.sp-after p { font-size: 14px; color: var(--muted); }
+.sp-after b { color: var(--ink-2); }
+
+/* ---------- Деньги ---------- */
+
+.sp-money {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.sp-table-wrap {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.sp-table { width: 100%; border-collapse: collapse; }
+
+.sp-table th,
+.sp-table td {
+  padding: 10px 13px;
+  font-size: 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+
+.sp-table thead th {
+  background: var(--graphite);
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 400;
+}
+
+.sp-table tbody th { font-weight: 500; color: var(--ink); }
+.sp-table tbody td { color: var(--ink-2); }
+.sp-table .num { text-align: right; font-family: var(--mono); white-space: nowrap; }
+.sp-table tr:last-child th,
+.sp-table tr:last-child td { border-bottom: 0; }
+
+.sp-table .row-key th,
+.sp-table .row-key td {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.sp-table .aside { color: var(--muted); font-weight: 400; }
+
+.sp-caption { margin-top: 10px; font-size: 13px; color: var(--muted); }
+
+.sp-promises { display: grid; gap: 10px; }
+.sp-promise {
+  padding: 13px 15px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.sp-promise b { display: block; font-size: 14px; color: var(--ink); }
+.sp-promise span { display: block; margin-top: 4px; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
+
+/* ---------- Финал ---------- */
+
+.sp-ending {
+  margin-top: 32px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  font-size: 14.5px;
+  color: var(--muted);
+  max-width: 64ch;
+}
+
+/* ---------- Адаптив ---------- */
+
+@media (max-width: 900px) {
+  .sp-costs,
+  .sp-ladder,
+  .sp-after,
+  .sp-money { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .sp-panel { padding: 16px; margin-top: 20px; }
+  .sp-amounts { grid-template-columns: 1fr; }
+  .sp-sum { font-size: 1.35rem; }
+  .sp-cta .btn { width: 100%; justify-content: center; }
+  .sp-table th, .sp-table td { padding: 9px 10px; font-size: 13px; }
+  .sp-table thead th { font-size: 10px; letter-spacing: 0.05em; }
+  .sp-cost { padding: 15px 16px; border-left-width: 3px; }
+  .sp-cost h3 { flex-wrap: wrap; }
+}

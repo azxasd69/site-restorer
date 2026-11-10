@@ -9,6 +9,24 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://lastcopy.ru/support/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/support/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lastcopy.ru/en/support/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/support/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/en/support/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/support/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lastcopy.ru/en/support/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/support/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
     <loc>https://lastcopy.ru/en/</loc>
     <xhtml:link rel="alternate" hreflang="en" href="https://lastcopy.ru/en/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/en/"/>

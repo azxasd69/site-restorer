@@ -65,6 +65,8 @@ Facts an agent should rely on:
 
 ## Support and feedback
 
+- [Поддержать Site Restorer](https://lastcopy.ru/support/): what a donation pays for, line by line — signing certificate, 32-bit and Linux stands, domain, troubleshooting; how much arrives after Boosty fees (11.7 % + payout), so the ask can be checked against the numbers.
+- [Support Site Restorer](https://lastcopy.ru/en/support/): the same page in English.
 - [Boosty](https://boosty.to/explosion/donate): voluntary support for the author; the project runs without ads, subscriptions or telemetry.
 - [Issues](https://github.com/azxasd69/site-restorer/issues): bug reports and feature requests.
 

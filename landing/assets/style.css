@@ -1292,6 +1292,12 @@ a:hover { text-decoration-color: currentColor; }
   .header-actions .btn span { display: none; }
   .header-actions .btn { padding-inline: 12px; }
   .case-figures { grid-template-columns: 1fr; }
+  /* Шапка шире экрана: знак, «Поддержать», RU/EN, «Скачать» и меню вместе
+     не помещаются в 390 px. Оставляем только второй язык — текущий скрыт. */
+  .lang a[aria-current="true"],
+  .lang .sep { display: none; }
+  .lang a { padding-inline: 7px; }
+  .header-inner { gap: 8px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
