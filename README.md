@@ -169,6 +169,8 @@ site-restorer/
 ├── BUILD.md             матрица сборок и размеров
 ├── ARCHITECTURE.md      как устроено внутри
 ├── TZ.md                техническое задание
+├── DESIGN.md            техническое решение
+├── PLAN.md              план доработок
 ├── CHANGELOG.md         история версий
 └── LICENSE              MIT
 ```
@@ -203,6 +205,7 @@ Python-версия и порт на Go больше не собираются: 
 ## Участие
 
 - [TZ.md](TZ.md) — техническое задание: требования и критерии приёмки.
+- [DESIGN.md](DESIGN.md) — техническое решение; [PLAN.md](PLAN.md) — план доработок.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — окружение, правила кода, коммиты, PR.
 - [SECURITY.md](SECURITY.md) — как приватно сообщить об уязвимости.
 - Баги и идеи — через [issues](https://github.com/azxasd69/site-restorer/issues).
