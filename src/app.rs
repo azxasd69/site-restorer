@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy)]
 enum Level {
@@ -56,6 +57,11 @@ pub struct App {
     bps: f64,
     eta: u64,
     threads: usize,
+    files_per_sec: f32,
+    pause: u64,
+    geom: Option<crate::settings::Window>,
+    last_saved: crate::settings::Settings,
+    last_save_at: Instant,
     types: [usize; 8],
     rx: Option<Receiver<Msg>>,
     cancel: Option<Arc<AtomicBool>>,
@@ -90,25 +96,38 @@ fn theme() -> egui::Visuals {
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         cc.egui_ctx.set_visuals(theme());
-        if let Some(mon) = cc.egui_ctx.input(|i| i.viewport().monitor_size)
-            && mon.x > 400.0
-            && mon.y > 400.0
-        {
-            let size = egui::vec2(900.0, 660.0);
-            let pos = egui::pos2(
-                ((mon.x - size.x) / 2.0).max(0.0),
-                ((mon.y - 48.0 - size.y) / 2.0).max(0.0),
-            );
-            cc.egui_ctx
-                .send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
+        let settings = crate::settings::load();
+        match settings.window {
+            Some(w) => {
+                cc.egui_ctx
+                    .send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(w.x, w.y)));
+                cc.egui_ctx
+                    .send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(w.w, w.h)));
+            }
+            None => {
+                if let Some(mon) = cc.egui_ctx.input(|i| i.viewport().monitor_size)
+                    && mon.x > 400.0
+                    && mon.y > 400.0
+                {
+                    let size = egui::vec2(900.0, 660.0);
+                    let pos = egui::pos2(
+                        ((mon.x - size.x) / 2.0).max(0.0),
+                        ((mon.y - 48.0 - size.y) / 2.0).max(0.0),
+                    );
+                    cc.egui_ctx
+                        .send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
+                }
+            }
         }
         let lang = match std::env::var("SR_LANG").as_deref() {
             Ok("en") => Lang::En,
+            Ok("ru") => Lang::Ru,
+            _ if settings.lang == "en" => Lang::En,
             _ => Lang::Ru,
         };
         Self {
-            site: std::env::var("SR_AUTOSTART").unwrap_or_default(),
-            out: std::env::var("SR_OUT").unwrap_or_else(|_| default_out()),
+            site: std::env::var("SR_AUTOSTART").unwrap_or_else(|_| settings.site.clone()),
+            out: std::env::var("SR_OUT").unwrap_or_else(|_| settings.out.clone()),
             note: lang.t().hint.to_string(),
             log: vec![(format!("Site Restorer {}", crate::APP_VERSION), Level::Info)],
             lang,
@@ -126,6 +145,11 @@ impl App {
             bps: 0.0,
             eta: 0,
             threads: 0,
+            files_per_sec: 0.0,
+            pause: 0,
+            geom: settings.window,
+            last_saved: settings,
+            last_save_at: Instant::now(),
             types: [0; 8],
             rx: None,
             cancel: None,
@@ -161,7 +185,8 @@ impl App {
     }
 
     fn push_log(&mut self, text: impl Into<String>, level: Level) {
-        self.log.push((text.into(), level));
+        let stamp = crate::clock::hh_mm_ss();
+        self.log.push((format!("{stamp}  {}", text.into()), level));
         if self.log.len() > 500 {
             self.log.remove(0);
         }
@@ -268,6 +293,7 @@ impl App {
 
         // сообщения ядра должны идти на том же языке, что и окно
         crate::tr::set_english(self.lang == Lang::En);
+        self.persist(true);
         std::thread::spawn(move || {
             let result = engine.run().map(|o| {
                 format!(
@@ -281,6 +307,31 @@ impl App {
             });
             let _ = tx.send(Msg::Done(result));
         });
+    }
+
+    /// Настройки, которые нужно запомнить между запусками.
+    fn current_settings(&self) -> crate::settings::Settings {
+        crate::settings::Settings {
+            site: self.site.clone(),
+            out: self.out.clone(),
+            lang: if self.lang == Lang::En { "en" } else { "ru" }.to_string(),
+            window: self.geom,
+        }
+    }
+
+    /// Записать настройки, если они изменились. `force` — без задержки.
+    fn persist(&mut self, force: bool) {
+        if !force && self.last_save_at.elapsed() < Duration::from_millis(1500) {
+            return;
+        }
+        let settings = self.current_settings();
+        if settings == self.last_saved {
+            return;
+        }
+        if crate::settings::save(&settings) {
+            self.last_saved = settings;
+            self.last_save_at = Instant::now();
+        }
     }
 
     fn stop(&mut self) {
@@ -324,6 +375,8 @@ impl App {
                     self.bps = p.bps;
                     self.eta = p.eta;
                     self.threads = p.threads;
+                    self.files_per_sec = p.files_per_sec;
+                    self.pause = p.pause;
                     for (idx, entry) in p.types.iter().enumerate() {
                         self.types[idx * 2] = entry.1;
                         self.types[idx * 2 + 1] = entry.2;
@@ -372,13 +425,6 @@ impl App {
             // без этого кадра оно осталось бы непоказанным
             ctx.request_repaint();
         }
-    }
-}
-
-fn default_out() -> String {
-    match std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
-        Ok(home) => format!("{home}/SiteRestore/site"),
-        Err(_) => "SiteRestore/site".to_string(),
     }
 }
 
@@ -889,6 +935,22 @@ impl eframe::App for App {
                                             if self.errors > 0 { ERR } else { TEXT },
                                         );
                                     });
+                                    ui.add_space(4.0);
+                                    ui.horizontal(|ui| {
+                                        let mut text = format!(
+                                            "{:.1} {}   ·   {:.1} MB",
+                                            self.files_per_sec,
+                                            t.k_rate,
+                                            self.bytes as f64 / 1_048_576.0
+                                        );
+                                        if self.pause > 0 {
+                                            text.push_str(&format!(
+                                                "   ·   {} {}",
+                                                t.k_pause, self.pause
+                                            ));
+                                        }
+                                        ui.label(egui::RichText::new(text).size(11.5).color(MUTED));
+                                    });
                                     ui.add_space(7.0);
                                     ui.separator();
                                     ui.add_space(6.0);
@@ -1088,9 +1150,35 @@ impl eframe::App for App {
                                 );
                             });
                     });
+                    ui.add_space(8.0);
+                    if ui.button(t.help_reset).clicked() {
+                        let _ = crate::settings::reset();
+                        self.site.clear();
+                        self.out = crate::settings::default_out();
+                        self.lang = Lang::Ru;
+                        self.geom = None;
+                        self.last_saved = crate::settings::Settings::default();
+                        self.note = self.lang.t().hint.to_string();
+                        self.push_log(t.help_reset_done, Level::Info);
+                    }
                 });
             self.show_help = open;
         }
+
+        // Геометрия окна: берём фактические размеры кадра и запоминаем.
+        if let Some(rect) = ui.ctx().input(|i| i.viewport().inner_rect)
+            && rect.width() >= 480.0
+            && rect.height() >= 360.0
+            && let Some(pos) = ui.ctx().input(|i| i.viewport().outer_rect).map(|r| r.min)
+        {
+            self.geom = Some(crate::settings::Window {
+                x: pos.x,
+                y: pos.y,
+                w: rect.width(),
+                h: rect.height(),
+            });
+        }
+        self.persist(false);
     }
 }
 

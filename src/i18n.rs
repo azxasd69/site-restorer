@@ -53,6 +53,10 @@ pub struct T {
     pub s_verify: &'static str,
     pub s_report: &'static str,
     pub eta_hint: &'static str,
+    pub k_rate: &'static str,
+    pub k_pause: &'static str,
+    pub help_reset: &'static str,
+    pub help_reset_done: &'static str,
 }
 
 pub static RU: T = T {
@@ -101,6 +105,10 @@ pub static RU: T = T {
     s_verify: "Проверка",
     s_report: "Отчёт",
     eta_hint: "осталось",
+    k_rate: "файлов/с",
+    k_pause: "пауза, с:",
+    help_reset: "Сбросить настройки",
+    help_reset_done: "настройки сброшены",
     help_text: "ЧТО ДЕЛАЕТ ПРОГРАММА\n\
 Скачивает из Wayback Machine (Internet Archive) все сохранённые страницы и файлы\n\
 указанного сайта и собирает статическую копию для локального просмотра.\n\n\
@@ -169,6 +177,10 @@ pub static EN: T = T {
     s_verify: "Check",
     s_report: "Report",
     eta_hint: "left",
+    k_rate: "files/s",
+    k_pause: "pause, s:",
+    help_reset: "Reset settings",
+    help_reset_done: "settings reset",
     help_text: "WHAT IT DOES\n\
 Downloads every archived page and file of a site from the Wayback Machine\n\
 (Internet Archive) and builds a static copy for local viewing.\n\n\

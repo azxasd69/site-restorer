@@ -12,6 +12,7 @@
 mod app;
 #[cfg(feature = "gui")]
 mod clip;
+mod clock;
 mod core;
 mod encoding;
 #[cfg(feature = "gui")]
@@ -21,6 +22,7 @@ mod paths;
 mod pick;
 mod puny;
 mod sanitize;
+mod settings;
 mod tr;
 
 /// Версия берётся из Cargo.toml.
@@ -325,34 +327,43 @@ fn cli(args: &[String]) -> i32 {
                 } else {
                     String::new()
                 };
+                let pause = if p.pause > 0 {
+                    tr::pick(format!(" пауза {} с", p.pause), format!(" pause {}s", p.pause))
+                } else {
+                    String::new()
+                };
                 println!(
                     "{}",
                     tr::pick(
                         format!(
-                            "[{:5.1}%] {}  {} | {:.0} КБ/с потоков={} ok={} нет={} ошибок={} {:.1} МБ{}",
+                            "[{:5.1}%] {}  {} | {:.0} КБ/с файлов/с={:.1} потоков={} ok={} нет={} ошибок={} {:.1} МБ{}{}",
                             p.overall,
                             p.stage,
                             p.text,
                             p.bps / 1024.0,
+                            p.files_per_sec,
                             p.threads,
                             p.ok,
                             p.missing,
                             p.errors,
                             p.bytes as f64 / 1_048_576.0,
-                            eta
+                            eta,
+                            pause
                         ),
                         format!(
-                            "[{:5.1}%] {}  {} | {:.0} KB/s threads={} ok={} missing={} errors={} {:.1} MB{}",
+                            "[{:5.1}%] {}  {} | {:.0} KB/s files/s={:.1} threads={} ok={} missing={} errors={} {:.1} MB{}{}",
                             p.overall,
                             p.stage,
                             p.text,
                             p.bps / 1024.0,
+                            p.files_per_sec,
                             p.threads,
                             p.ok,
                             p.missing,
                             p.errors,
                             p.bytes as f64 / 1_048_576.0,
-                            eta
+                            eta,
+                            pause
                         ),
                     )
                 );
@@ -435,6 +446,17 @@ fn cli(args: &[String]) -> i32 {
                     format!("report: {}", outcome.report.display())
                 )
             );
+            // Машиночитаемый итог: одна строка, чтобы прогон разбирался скриптом.
+            println!(
+                "RESULT {{\"ok\":{},\"total\":{},\"pages\":{},\"refs\":{},\"broken\":{},\"site\":\"{}\",\"report\":\"{}\"}}",
+                outcome.ok,
+                outcome.total,
+                outcome.stats.pages,
+                outcome.stats.refs,
+                outcome.stats.broken,
+                json_escape(&outcome.site.to_string_lossy()),
+                json_escape(&outcome.report.to_string_lossy()),
+            );
             0
         }
         Err(err) if err == "cancelled" => {
@@ -455,4 +477,21 @@ fn cli(args: &[String]) -> i32 {
             1
         }
     }
+}
+
+/// Экранирование строки для JSON-итога.
+fn json_escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push(' '),
+            c => out.push(c),
+        }
+    }
+    out
 }

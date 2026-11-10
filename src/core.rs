@@ -7,6 +7,7 @@ use crate::sanitize::sanitize_site;
 use regex_lite::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -29,6 +30,10 @@ const ERROR_MARKERS: [&[u8]; 3] = [
 pub struct Item {
     pub url: String,
     pub ts: String,
+    /// Исходный адрес из индекса: нужен, чтобы повторить запрос конкретного снимка.
+    pub orig: String,
+    /// Тип содержимого из индекса.
+    pub mime: String,
     pub path: String,
     pub kind: &'static str,
 }
@@ -46,6 +51,9 @@ pub struct Progress {
     pub errors: usize,
     pub bytes: u64,
     pub bps: f64,
+    pub files_per_sec: f32,
+    /// Остаток общей паузы в секундах (0 — паузы нет).
+    pub pause: u64,
     pub threads: usize,
     pub eta: u64,
     pub types: [(&'static str, usize, usize); 4],
@@ -215,6 +223,68 @@ impl Shared {
             .and_then(|v| v.to_str().ok())
             .map(|v| v.to_string());
         let body = resp.body_mut().read_to_vec().map_err(|e| e.to_string())?;
+        Ok((status, body, retry_after, content_type))
+    }
+
+    /// Сколько секунд осталось до конца общей паузы.
+    fn pause_left(&self) -> u64 {
+        let until = *self.pause_until.lock().unwrap();
+        until.saturating_duration_since(Instant::now()).as_secs()
+    }
+
+    /// То же, что `fetch`, но тело читается порциями: пока идёт чтение,
+    /// вызывается `on_progress(получено байт, число строк)`. Нужно для индекса:
+    /// ответ в десятки мегабайт идёт долго, и без счётчиков полоса «замирает».
+    fn fetch_stream(
+        &self,
+        url: &str,
+        mut on_progress: impl FnMut(u64, usize),
+    ) -> Result<Fetched, String> {
+        self.wait_if_paused();
+        self.rate_wait();
+        let mut resp = self
+            .agent
+            .get(url)
+            .header("User-Agent", UA)
+            .header("Accept", "*/*")
+            .call()
+            .map_err(|e| e.to_string())?;
+        let status = resp.status().as_u16();
+        let retry_after = resp
+            .headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<f64>().ok());
+        let content_type = resp
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.to_string());
+        let mut body: Vec<u8> = Vec::new();
+        let mut lines = 0usize;
+        let mut last = Instant::now();
+        {
+            let mut reader = resp.body_mut().as_reader();
+            let mut chunk = [0u8; 64 * 1024];
+            loop {
+                if self.cancel.load(Ordering::Relaxed) {
+                    break;
+                }
+                let read = match reader.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(n) => n,
+                    Err(err) => return Err(err.to_string()),
+                };
+                let part = &chunk[..read];
+                body.extend_from_slice(part);
+                lines += part.iter().filter(|b| **b == b'\n').count();
+                if last.elapsed() >= Duration::from_millis(200) {
+                    on_progress(body.len() as u64, lines);
+                    last = Instant::now();
+                }
+            }
+        }
+        on_progress(body.len() as u64, lines);
         Ok((status, body, retry_after, content_type))
     }
 
@@ -560,6 +630,8 @@ impl Engine {
             errors: counters.errors.load(Ordering::Relaxed),
             bytes: counters.bytes.load(Ordering::Relaxed),
             bps,
+            files_per_sec: (done as f64 / elapsed) as f32,
+            pause: self.shared.pause_left(),
             threads: self.shared.gate.limit(),
             eta,
             types,
@@ -618,7 +690,32 @@ impl Engine {
         // с паузой дешевле, чем уход в постраничный режим, который у части
         // сайтов вообще не поддерживается.
         for attempt in 0..3u32 {
-            match self.shared.fetch(&query) {
+            let result = {
+                let started = Instant::now();
+                let mut on_index = |bytes: u64, lines: usize| {
+                    let secs = started.elapsed().as_secs_f64();
+                    let overall = 4.0 + 4.0 * (1.0 - (-secs / 15.0).exp()) as f32;
+                    self.emit(
+                        "inventory",
+                        overall,
+                        &crate::tr::pick(
+                            format!(
+                                "{} · записей ~{} · {secs:.0} с",
+                                size_text(bytes),
+                                lines.saturating_sub(1)
+                            ),
+                            format!(
+                                "{} · records ~{} · {secs:.0} s",
+                                size_text(bytes),
+                                lines.saturating_sub(1)
+                            ),
+                        ),
+                        false,
+                    );
+                };
+                self.shared.fetch_stream(&query, &mut on_index)
+            };
+            match result {
                 Ok((200, body, _, _)) => {
                     rows = parse_rows(&body);
                     if !rows.is_empty() {
@@ -671,16 +768,46 @@ impl Engine {
                 let query = self.cdx_query(&format!(
                     "output=json&fl=timestamp,original,mimetype,statuscode&filter=statuscode:200&collapse=urlkey&limit={PAGE_LIMIT}&page={page}"
                 ));
+                let page_no = page;
                 self.emit(
                     "inventory",
-                    2.0 + 5.0 * (page + 1) as f32 / max_pages as f32,
+                    4.0 + 4.0 * page_no as f32 / max_pages as f32,
                     &crate::tr::pick(
-                        format!("CDX: страница {} из {}", page + 1, max_pages),
-                        format!("CDX: page {} of {}", page + 1, max_pages),
+                        format!("CDX: страница {} из {}", page_no + 1, max_pages),
+                        format!("CDX: page {} of {}", page_no + 1, max_pages),
                     ),
                     true,
                 );
-                match self.shared.fetch(&query) {
+                let result = {
+                    let started = Instant::now();
+                    let mut on_page = |bytes: u64, lines: usize| {
+                        let secs = started.elapsed().as_secs_f64();
+                        let inner = 1.0 - (-secs / 15.0).exp();
+                        let overall =
+                            4.0 + 4.0 * (page_no as f32 + inner as f32) / max_pages as f32;
+                        self.emit(
+                            "inventory",
+                            overall,
+                            &crate::tr::pick(
+                                format!(
+                                    "CDX: страница {} · {} · записей ~{} · {secs:.0} с",
+                                    page_no + 1,
+                                    size_text(bytes),
+                                    lines.saturating_sub(1)
+                                ),
+                                format!(
+                                    "CDX: page {} · {} · records ~{} · {secs:.0} s",
+                                    page_no + 1,
+                                    size_text(bytes),
+                                    lines.saturating_sub(1)
+                                ),
+                            ),
+                            false,
+                        );
+                    };
+                    self.shared.fetch_stream(&query, &mut on_page)
+                };
+                match result {
                     Ok((200, body, _, _)) => {
                         attempts = 0;
                         let chunk = parse_rows(&body);
@@ -735,29 +862,32 @@ impl Engine {
             }
         }
 
-        let mut best: HashMap<String, (String, String)> = HashMap::new();
+        let mut best: HashMap<String, (String, String, String)> = HashMap::new();
         for row in &rows {
             if row.len() < 3 {
                 continue;
             }
             let ts = row[0].clone();
             let orig = row[1].clone();
+            let mime = row[2].clone();
             let url = paths::normalize_url(&orig, &self.host);
             match best.get(&url) {
-                Some((old_ts, _)) if *old_ts >= ts => {}
+                Some((old_ts, _, _)) if *old_ts >= ts => {}
                 _ => {
-                    best.insert(url, (ts, orig));
+                    best.insert(url, (ts, orig, mime));
                 }
             }
         }
 
         let mut items: Vec<Item> = best
             .into_iter()
-            .map(|(url, (ts, _orig))| Item {
+            .map(|(url, (ts, orig, mime))| Item {
                 path: paths::url_to_local_path(&url),
                 kind: paths::file_type(&url),
                 url,
                 ts,
+                orig,
+                mime,
             })
             .collect();
         items.sort_by(|a, b| a.url.cmp(&b.url));
@@ -774,8 +904,13 @@ impl Engine {
         let mut inv = String::new();
         for item in &items {
             inv.push_str(&format!(
-                "{{\"url\":\"{}\",\"path\":\"{}\",\"type\":\"{}\"}}\n",
-                item.url, item.path, item.kind
+                "{{\"url\":\"{}\",\"ts\":\"{}\",\"orig\":\"{}\",\"mime\":\"{}\",\"path\":\"{}\",\"type\":\"{}\"}}\n",
+                json_escape(&item.url),
+                json_escape(&item.ts),
+                json_escape(&item.orig),
+                json_escape(&item.mime),
+                json_escape(&item.path),
+                item.kind
             ));
         }
         fs::write(self.data_dir.join("inventory.jsonl"), inv).map_err(|e| e.to_string())?;
@@ -919,6 +1054,8 @@ impl Engine {
                             errors: shared.counters.errors.load(Ordering::Relaxed),
                             bytes: shared.counters.bytes.load(Ordering::Relaxed),
                             bps,
+                            files_per_sec: (done as f64 / elapsed) as f32,
+                            pause: shared.pause_left(),
                             threads: shared.gate.limit(),
                             eta: if done > 0
                                 && total > done
@@ -1136,7 +1273,11 @@ impl Engine {
         if summary.is_empty() {
             return String::new();
         }
-        format!("<tr><td>Перекодировано в UTF-8</td><td class=\"n\">{summary}</td></tr>")
+        let label = crate::tr::pick(
+            "Перекодировано в UTF-8".to_string(),
+            "Converted to UTF-8".to_string(),
+        );
+        format!("<tr><td>{label}</td><td class=\"n\">{summary}</td></tr>")
     }
 
     fn enc_summary(&self) -> String {
@@ -1189,6 +1330,9 @@ impl Engine {
         .unwrap();
         let mut stats = Stats::default();
         for path in walk_files(&self.site_dir) {
+            if self.shared.cancel.load(Ordering::Relaxed) {
+                return stats;
+            }
             let name = path.to_string_lossy().to_lowercase();
             if !name.ends_with(".html") && !name.ends_with(".htm") {
                 continue;
@@ -1251,6 +1395,9 @@ impl Engine {
 
     // ------------------------------------------------------------ report
     fn report(&self, stats: Stats) -> Result<PathBuf, String> {
+        if self.shared.cancel.load(Ordering::Relaxed) {
+            return Err("cancelled".to_string());
+        }
         let types = self.shared.types.lock().unwrap().as_array();
         let mut rows = String::new();
         for (name, ok, total) in types {
@@ -1273,7 +1420,34 @@ impl Engine {
             .filter_map(|f| fs::metadata(f).ok())
             .map(|m| m.len())
             .sum();
+        let tr2 = |ru: &str, en: &str| crate::tr::pick(ru.to_string(), en.to_string());
         let doc = REPORT_TMPL
+            .replace("{{lang}}", if crate::tr::is_english() { "en" } else { "ru" })
+            .replace("{{t_title}}", &tr2("Отчёт:", "Report:"))
+            .replace("{{t_h1}}", &tr2("Копия сайта:", "Copy of"))
+            .replace("{{t_sub}}", &tr2("Отчёт о покрытии архива", "Archive coverage report"))
+            .replace("{{t_downloaded}}", &tr2("Скачано", "Downloaded"))
+            .replace("{{t_coverage}}", &tr2("Покрытие", "Coverage"))
+            .replace("{{t_size}}", &tr2("Объём", "Size"))
+            .replace("{{t_pages}}", &tr2("Страниц", "Pages"))
+            .replace("{{unit_mb}}", &tr2("МБ", "MB"))
+            .replace("{{t_types}}", &tr2("По типам файлов", "By file type"))
+            .replace("{{t_type}}", &tr2("Тип", "Type"))
+            .replace("{{t_total}}", &tr2("Всего", "Total"))
+            .replace("{{t_share}}", &tr2("Доля", "Share"))
+            .replace("{{t_integrity}}", &tr2("Целостность", "Integrity"))
+            .replace("{{t_refs}}", &tr2("Внутренних ссылок", "Internal links"))
+            .replace("{{t_broken}}", &tr2("Битых ссылок", "Broken links"))
+            .replace("{{t_broken_note}}", &tr2("(нет в копии)", "(missing from copy)"))
+            .replace("{{t_404}}", &tr2("Отказов 404 при загрузке", "404 responses on download"))
+            .replace("{{t_errors}}", &tr2("Ошибок загрузки", "Download errors"))
+            .replace(
+                "{{t_footer}}",
+                &tr2(
+                    "Статическая копия: корзина, вход и AJAX исходного сайта не работают. Открывайте папку site локальным веб-сервером.",
+                    "Static copy: the original cart, sign-in and AJAX do not work. Serve the site folder with a local web server.",
+                ),
+            )
             .replace("{{host}}", &self.host)
             .replace("{{ok}}", &ok.to_string())
             .replace("{{total}}", &total.to_string())
@@ -1318,6 +1492,9 @@ impl Engine {
         self.download()?;
         self.build()?;
         let stats = self.verify();
+        if self.shared.cancel.load(Ordering::Relaxed) {
+            return Err("cancelled".to_string());
+        }
         let report = self.report(stats)?;
         self.emit("report", 100.0, crate::tr::t("готово", "done"), true);
         let mut types = [0usize; 8];
@@ -1350,12 +1527,107 @@ fn console_verbose() -> bool {
 }
 
 fn label(kind: &str) -> &'static str {
+    let english = crate::tr::is_english();
     match kind {
         "html" => "HTML",
         "code" => "CSS/JS/XML",
-        "img" => "IMG",
-        _ => "OTHER",
+        "img" => {
+            if english {
+                "Images"
+            } else {
+                "Изображения"
+            }
+        }
+        _ => {
+            if english {
+                "Other"
+            } else {
+                "Прочее"
+            }
+        }
     }
+}
+
+/// Экранирование для JSON-строк инвентаря.
+fn json_escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push(' '),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Размер в человекочитаемом виде для сообщений о ходе индексации.
+fn size_text(bytes: u64) -> String {
+    let kb = bytes as f64 / 1024.0;
+    if kb < 1024.0 {
+        crate::tr::pick(format!("{kb:.0} КБ"), format!("{kb:.0} KB"))
+    } else {
+        crate::tr::pick(
+            format!("{:.1} МБ", kb / 1024.0),
+            format!("{:.1} MB", kb / 1024.0),
+        )
+    }
+}
+
+/// Прочитать инвентарь с диска. Понимает и прежний формат (адрес, путь, тип),
+/// и текущий (с меткой снимка, исходным адресом и типом содержимого): файл
+/// прежней версии должен читаться новой.
+#[allow(dead_code)]
+pub fn read_inventory(file: &Path) -> Vec<Item> {
+    let Ok(text) = fs::read_to_string(file) else {
+        return Vec::new();
+    };
+    text.lines()
+        .filter_map(|line| {
+            let url = json_field(line, "url")?;
+            let path = json_field(line, "path")
+                .filter(|p| !p.is_empty())
+                .unwrap_or_else(|| paths::url_to_local_path(&url));
+            Some(Item {
+                kind: paths::file_type(&url),
+                ts: json_field(line, "ts").unwrap_or_default(),
+                orig: json_field(line, "orig").unwrap_or_else(|| url.clone()),
+                mime: json_field(line, "mime").unwrap_or_default(),
+                url,
+                path,
+            })
+        })
+        .collect()
+}
+
+/// Значение строкового поля из строки JSON: `"key":"value"`.
+fn json_field(line: &str, key: &str) -> Option<String> {
+    let needle = format!("\"{key}\":\"");
+    let start = line.find(&needle)? + needle.len();
+    let mut out = String::new();
+    let mut escaped = false;
+    for ch in line[start..].chars() {
+        if escaped {
+            out.push(match ch {
+                'n' => '\n',
+                'r' => '\r',
+                't' => '\t',
+                c => c,
+            });
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '"' => return Some(out),
+            c => out.push(c),
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------- index
@@ -1544,6 +1816,23 @@ fn parse_pages(text: &str) -> Option<usize> {
         }
         from += pos + "numpages".len();
     }
+    // Объектный формат: {"pages": 3}. Кавычки в образце важны: без них
+    // образец совпал бы с «numpages» из предыдущего формата.
+    if let Some(pos) = hay.find("\"pages\"") {
+        let tail = &text[pos + "\"pages\"".len()..];
+        if let Some(colon) = tail.find(':') {
+            let digits: String = tail[colon + 1..]
+                .chars()
+                .skip_while(|c| c.is_whitespace())
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
+            if let Ok(n) = digits.parse::<usize>()
+                && n > 0
+            {
+                return Some(n);
+            }
+        }
+    }
     let trimmed = text.trim();
     if !trimmed.is_empty() && trimmed.chars().all(|c| c.is_ascii_digit()) {
         return trimmed.parse::<usize>().ok().filter(|n| *n > 0);
@@ -1606,8 +1895,8 @@ fn walk_files(root: &Path) -> Vec<PathBuf> {
     out
 }
 
-const REPORT_TMPL: &str = r#"<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8">
-<title>Отчёт: {{host}}</title>
+const REPORT_TMPL: &str = r#"<!DOCTYPE html><html lang="{{lang}}"><head><meta charset="utf-8">
+<title>{{t_title}} {{host}}</title>
 <style>body{font:15px/1.5 "Segoe UI",Arial;background:#f7f8fa;color:#16181d;margin:0}
 .w{max-width:860px;margin:0 auto;padding:36px 22px}h1{font-size:26px;margin:0 0 4px}
 .s{color:#6b7280;margin-bottom:24px}.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
@@ -1616,20 +1905,19 @@ const REPORT_TMPL: &str = r#"<!DOCTYPE html><html lang="ru"><head><meta charset=
 .v{font-size:24px;font-weight:650}table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e5e7eb;border-radius:10px;margin-top:14px}
 th,td{padding:9px 12px;border-bottom:1px solid #eee;text-align:left}th{background:#fafbfc}
 .n{text-align:right;font-variant-numeric:tabular-nums}h2{font-size:18px;margin:28px 0 8px}</style></head><body><div class="w">
-<h1>Копия сайта: {{host}}</h1><div class="s">Отчёт о покрытии архива</div>
-<div class="g"><div class="c"><div class="k">Скачано</div><div class="v">{{ok}} / {{total}}</div></div>
-<div class="c"><div class="k">Покрытие</div><div class="v">{{pct}}%</div></div>
-<div class="c"><div class="k">Объём</div><div class="v">{{mb}} МБ</div></div>
-<div class="c"><div class="k">Страниц</div><div class="v">{{pages}}</div></div></div>
-<h2>По типам файлов</h2><table><tr><th>Тип</th><th class="n">Скачано</th><th class="n">Всего</th><th class="n">Доля</th></tr>{{rows}}</table>
-<h2>Целостность</h2><table>
-<tr><td>Внутренних ссылок</td><td class="n">{{refs}}</td></tr>
-<tr><td>Битых ссылок <span style="color:#6b7280">(нет в копии)</span></td><td class="n">{{broken}}</td></tr>
+<h1>{{t_h1}} {{host}}</h1><div class="s">{{t_sub}}</div>
+<div class="g"><div class="c"><div class="k">{{t_downloaded}}</div><div class="v">{{ok}} / {{total}}</div></div>
+<div class="c"><div class="k">{{t_coverage}}</div><div class="v">{{pct}}%</div></div>
+<div class="c"><div class="k">{{t_size}}</div><div class="v">{{mb}} {{unit_mb}}</div></div>
+<div class="c"><div class="k">{{t_pages}}</div><div class="v">{{pages}}</div></div></div>
+<h2>{{t_types}}</h2><table><tr><th>{{t_type}}</th><th class="n">{{t_downloaded}}</th><th class="n">{{t_total}}</th><th class="n">{{t_share}}</th></tr>{{rows}}</table>
+<h2>{{t_integrity}}</h2><table>
+<tr><td>{{t_refs}}</td><td class="n">{{refs}}</td></tr>
+<tr><td>{{t_broken}} <span style="color:#6b7280">{{t_broken_note}}</span></td><td class="n">{{broken}}</td></tr>
 {{encodings}}
-<tr><td>Отказов 404 при загрузке</td><td class="n">{{missing}}</td></tr>
-<tr><td>Ошибок загрузки</td><td class="n">{{errors}}</td></tr></table>
-<p style="color:#6b7280;margin-top:24px">Статическая копия: корзина, вход и AJAX исходного сайта не работают.
-Открывайте папку <b>site</b> любым локальным веб-сервером.</p>
+<tr><td>{{t_404}}</td><td class="n">{{missing}}</td></tr>
+<tr><td>{{t_errors}}</td><td class="n">{{errors}}</td></tr></table>
+<p style="color:#6b7280;margin-top:24px">{{t_footer}}</p>
 </div></body></html>"#;
 
 #[cfg(test)]
@@ -1650,10 +1938,41 @@ mod tests {
 
     #[test]
     fn parse_pages_variants() {
+        // формат «пары ключ — значение»
         assert_eq!(parse_pages(r#"[["numpages"],["912"]]"#), Some(912));
-        assert_eq!(parse_pages(r#"{"pages": 3}"#), None);
+        // объектный формат: раньше не распознавался (см. план, Д-07)
+        assert_eq!(parse_pages(r#"{"pages": 3}"#), Some(3));
+        assert_eq!(parse_pages(r#"{"pages": 41, "other": 1}"#), Some(41));
+        // голое число
         assert_eq!(parse_pages("12"), Some(12));
         assert_eq!(parse_pages(""), None);
+        assert_eq!(parse_pages(r#"{"pages": 0}"#), None);
+    }
+
+    #[test]
+    fn inventory_reads_old_and_new_format() {
+        let dir = std::env::temp_dir().join(format!("sr-inventory-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("inventory.jsonl");
+        let text = concat!(
+            r#"{"url":"https://example.com/a","path":"a/index.html","type":"html"}"#,
+            "\n",
+            r#"{"url":"https://example.com/b.png","ts":"20200101000000","orig":"http://example.com/b.png","mime":"image/png","path":"b.png","type":"img"}"#,
+            "\n",
+            "не json",
+            "\n"
+        );
+        std::fs::write(&file, text).unwrap();
+        let items = read_inventory(&file);
+        assert_eq!(items.len(), 2, "две корректные строки, мусор отброшен");
+        let first = items.iter().find(|i| i.url.ends_with("/a")).unwrap();
+        assert_eq!(first.kind, "html");
+        assert_eq!(first.path, "a/index.html");
+        assert!(first.ts.is_empty(), "в прежнем формате метки снимка нет");
+        let second = items.iter().find(|i| i.url.ends_with("/b.png")).unwrap();
+        assert_eq!(second.ts, "20200101000000");
+        assert_eq!(second.mime, "image/png");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -1824,6 +2143,30 @@ mod build_tests {
         assert!(
             text.contains("../../upload/resize_cache/iblock/f00/138_110_1/pic.png"),
             "текст: {text}"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn report_follows_interface_language() {
+        let root = workdir("report-lang");
+        put(
+            &root,
+            "index.html",
+            b"<html><body><a href=\"/nope.html\">x</a></body></html>",
+        );
+        let engine = build(&root);
+        let stats = engine.verify();
+        crate::tr::set_english(true);
+        let path = engine.report(stats).unwrap();
+        let html = fs::read_to_string(&path).unwrap();
+        crate::tr::set_english(false);
+        assert!(html.contains("<html lang=\"en\""), "язык документа: {html}");
+        assert!(html.contains("Coverage"), "подписи на английском");
+        assert!(html.contains("By file type"));
+        assert!(
+            !html.contains("Покрытие"),
+            "русских подписей быть не должно"
         );
         let _ = fs::remove_dir_all(&root);
     }
