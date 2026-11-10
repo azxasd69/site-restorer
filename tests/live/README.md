@@ -18,11 +18,11 @@
 ```powershell
 # CLI-матрица (группы: start, site, fetch, fail)
 pwsh -File tests\live\run-cli-matrix.ps1 `
-  -Exe D:\dist\SiteRestorer-rust-win-cli-x64.exe `
+  -Exe D:\dist\SiteRestorer-windows-x64-cli.exe `
   -Work D:\sr-tests\live -Only start,site,fail -Json
 
 # GUI-проверки на Windows (нет консольного окна, прогон, стоп, докачка)
-pwsh -File tests\live\run-gui-matrix.ps1 -Exe D:\dist\SiteRestorer.exe
+pwsh -File tests\live\run-gui-matrix.ps1 -Exe D:\dist\SiteRestorer-windows-x64.exe
 ```
 
 `-Only` принимает названия групп или подстроку имени кейса; `-Json` пишет

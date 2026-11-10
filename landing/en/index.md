@@ -58,7 +58,7 @@ python -m http.server 8080
 Command line:
 
 ```powershell
-SiteRestorer.exe --cli --site example.com --out D:\mirror --workers 16
+SiteRestorer-windows-x64.exe --cli --site example.com --out D:\mirror --workers 16
 ```
 
 ## Case study
@@ -89,13 +89,13 @@ What did not come back:
 
 ## Download
 
-- x64 GUI (Rust + egui, 6.2 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer.exe
-- x86 GUI (5.6 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-x86.exe
-- Windows x64 CLI (1.8 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-win-cli-x64.exe
-- Windows x86 CLI (1.3 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-win-cli-x86.exe
-- Linux x64 CLI, static (2.1 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-linux-cli
-- Linux x64 GUI (7.5 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-linux-gui
-- Linux package (binaries + install.sh + .desktop, 4.5 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/site-restorer-linux-x64.tar.gz
+- x64 GUI (Rust + egui, 6.2 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64.exe
+- x86 GUI (5.6 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x86.exe
+- Windows x64 CLI (1.8 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64-cli.exe
+- Windows x86 CLI (1.3 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x86-cli.exe
+- Linux x64 CLI, static (2.1 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64-cli
+- Linux x64 GUI (7.5 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64-gui
+- Linux package (binaries + install.sh + .desktop, 4.5 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64.tar.gz
 - Checksums: https://github.com/azxasd69/site-restorer/releases/latest/download/SHA256SUMS.txt
 - All releases: https://github.com/azxasd69/site-restorer/releases
 

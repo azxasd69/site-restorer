@@ -91,7 +91,7 @@ git push origin v2.4
 ```
 
 Через 3–5 минут на странице **Releases** появятся:
-`SiteRestorer.exe` (x64) и `SiteRestorer-x86.exe` (32-бит) — их и будут скачивать.
+`SiteRestorer-windows-x64.exe` (x64) и `SiteRestorer-windows-x86.exe` (32-бит) — их и будут скачивать.
 
 Если CI не нужен, загрузите exe вручную: **Releases → Draft a new release →**
 тег `v2.4` → прикрепите файлы.

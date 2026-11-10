@@ -27,8 +27,8 @@ CI запускает их на каждый push и pull request — PR без 
 ## Сборка
 
 ```powershell
-.\build.ps1            # x64 -> dist\SiteRestorer.exe
-.\build.ps1 -Arch x86  # x86 -> dist\SiteRestorer-x86.exe
+.\build.ps1            # x64 -> dist\SiteRestorer-windows-x64.exe
+.\build.ps1 -Arch x86  # x86 -> dist\SiteRestorer-windows-x86.exe
 ```
 
 ## Правила кода

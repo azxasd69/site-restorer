@@ -77,8 +77,8 @@ C:\Python314\python.exe -m http.server 8090
 Ссылки на скачивание не содержат номера версии:
 
 ```
-https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer.exe
-https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-x86.exe
+https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64.exe
+https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x86.exe
 ```
 
 Они всегда ведут на последний релиз, поэтому обновлять их при выходе новой версии

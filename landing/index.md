@@ -58,7 +58,7 @@ python -m http.server 8080
 Командная строка:
 
 ```powershell
-SiteRestorer.exe --cli --site example.com --out D:\mirror --workers 16
+SiteRestorer-windows-x64.exe --cli --site example.com --out D:\mirror --workers 16
 ```
 
 ## Кейс
@@ -89,13 +89,13 @@ SiteRestorer.exe --cli --site example.com --out D:\mirror --workers 16
 
 ## Скачать
 
-- x64 (GUI, Rust + egui, 6,2 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer.exe
-- x86 (GUI, 5,6 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-x86.exe
-- CLI для Windows x64 (1,8 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-win-cli-x64.exe
-- CLI для Windows x86 (1,3 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-win-cli-x86.exe
-- CLI для Linux x64 (статический, 2,1 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-linux-cli
-- Linux GUI x64 (7,5 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-linux-gui
-- Пакет для Linux (бинари + install.sh + .desktop, 4,5 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/site-restorer-linux-x64.tar.gz
+- x64 (GUI, Rust + egui, 6,2 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64.exe
+- x86 (GUI, 5,6 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x86.exe
+- CLI для Windows x64 (1,8 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64-cli.exe
+- CLI для Windows x86 (1,3 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x86-cli.exe
+- CLI для Linux x64 (статический, 2,1 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64-cli
+- Linux GUI x64 (7,5 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64-gui
+- Пакет для Linux (бинари + install.sh + .desktop, 4,5 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64.tar.gz
 - Контрольные суммы: https://github.com/azxasd69/site-restorer/releases/latest/download/SHA256SUMS.txt
 - Все версии: https://github.com/azxasd69/site-restorer/releases
 
