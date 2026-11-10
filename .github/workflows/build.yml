@@ -306,12 +306,14 @@ jobs:
     needs: [rust, go, python, python-linux]
     runs-on: ubuntu-latest
     steps:
+      # checkout первым: его git clean удаляет untracked-файлы, поэтому
+      # скачанные артефакты должны появиться уже после него
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: assets
           merge-multiple: true
-
-      - uses: actions/checkout@v4
 
       - name: Package Linux bundle
         run: |
