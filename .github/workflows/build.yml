@@ -316,8 +316,8 @@ jobs:
       - name: Package Linux bundle
         run: |
           set -e
-          mkdir -p bundle/site-restorer-linux-x64/share/applications \
-                   bundle/site-restorer-linux-x64/share/icons
+          mkdir -p bundle/site-restorer-linux-x64/share/applications
+          mkdir -p bundle/site-restorer-linux-x64/share/icons
           install -m755 assets/SiteRestorer-rust-linux-cli bundle/site-restorer-linux-x64/site-restorer
           install -m755 assets/SiteRestorer-rust-linux-gui bundle/site-restorer-linux-x64/site-restorer-gui
           install -m644 packaging/linux/site-restorer.desktop bundle/site-restorer-linux-x64/share/applications/
