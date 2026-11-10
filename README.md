@@ -23,7 +23,7 @@ Python-версия (`legacy/python`) и порт на Go (`ports/go`) оста�
 | `SiteRestorer-windows-x64-cli.exe` / `-x86-cli.exe` | Windows, только командная строка | 1,8 / 1,3 МБ |
 | `SiteRestorer-linux-x64-gui` | Linux x64, нативное окно (X11/GL) | 7,5 МБ |
 | `SiteRestorer-linux-x64-cli` | Linux x64, статический бинарник (musl) | 2,1 МБ |
-| `SiteRestorer-linux-x64.tar.gz` | Linux x64: оба бинарника + `.desktop`, иконка, `install.sh` | 4,7 МБ |
+| `SiteRestorer-linux-x64.tar.gz` | Linux x64: оба бинарника + `.desktop`, иконка, `install.sh` | 4,5 МБ |
 
 Имена не содержат версию — ссылки `releases/latest/download/<имя>` постоянны.
 Версию печатает `--version` и первая строка журнала.

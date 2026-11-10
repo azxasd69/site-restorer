@@ -18,7 +18,7 @@ Python (`legacy/python`) и Go (`ports/go`) переведены в архив: 
 | `SiteRestorer-windows-x86-cli.exe` | Windows x86 | 1,3 МБ | самый маленький бинарник для Windows |
 | `SiteRestorer-linux-x64-gui` | Linux x64 | 7,5 МБ | окно egui (нужны системные X11/GL) |
 | `SiteRestorer-linux-x64-cli` | Linux x64 | 2,1 МБ | статический ELF (`ldd` → not a dynamic executable) |
-| `SiteRestorer-linux-x64.tar.gz` | Linux x64 | 4,7 МБ | оба бинарника + `.desktop`, иконка, `install.sh` |
+| `SiteRestorer-linux-x64.tar.gz` | Linux x64 | 4,5 МБ | оба бинарника + `.desktop`, иконка, `install.sh` |
 
 Размеры сняты с релиза **v3.1.2**. Имя не содержит версию — ссылки
 `releases/latest/download/<имя>` постоянны; версию печатает `--version`
