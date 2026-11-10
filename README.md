@@ -163,7 +163,7 @@ site-restorer/
 ├── legacy/python/       архив: исходная реализация на Python (не развивается)
 ├── ports/go/            архив: порт на Go (не развивается)
 ├── landing/             лендинг проекта (RU/EN) для GitHub Pages
-├── docs/                скриншоты, кейс, заметки по сборке под Windows
+├── docs/                скриншоты, кейс, ТЗ (TZ.md), заметки по сборке под Windows
 ├── .github/workflows/   CI: тесты, сборки всех стеков, релиз по тегу
 ├── Cargo.toml           Rust-пакет (бинарь + фича gui)
 ├── BUILD.md             матрица сборок и размеров
