@@ -1452,3 +1452,9 @@ a:hover { text-decoration-color: currentColor; }
   .cookie-bar-actions { width: 100%; }
   .cookie-bar-actions .btn { flex: 1 1 auto; justify-content: center; }
 }
+
+/* Таблицы внутри статей на узких экранах: компактнее, чтобы три колонки читались */
+@media (max-width: 560px) {
+  .article th, .article td { padding: 8px 9px; font-size: 13.5px; }
+  .article table { font-size: 13.5px; }
+}
