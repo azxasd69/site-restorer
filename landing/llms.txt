@@ -23,6 +23,8 @@ Facts an agent should rely on:
 
 ## Guides (Russian)
 
+- [Сайт удалили: что делать в первые часы](https://lastcopy.ru/guide/chto-delat-esli-sajt-udalili/): domain rescue, written hosting request, sources of content, archive rebuild, traffic recovery, checklist.
+- [How to rebuild a website from the Wayback Machine](https://lastcopy.ru/en/guide/how-to-rebuild-a-website-from-the-wayback-machine/): English guide — coverage check, CDX export, id_ mode, assembly, verification.
 - [Как скачать сайт из Wayback Machine](https://lastcopy.ru/guide/skachat-sajt-iz-wayback-machine/): archive URL formats, the `id_` modifier, CDX export, wget/HTTrack limits, common errors, FAQ.
 - [Все разборы](https://lastcopy.ru/guide/): the index of guides.
 - [Как восстановить сайт из веб-архива](https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/): step-by-step: CDX index, `id_` replay mode, local build, encodings, verification, checklist, FAQ.

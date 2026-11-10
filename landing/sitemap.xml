@@ -22,6 +22,7 @@
   <url>
     <loc>https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/</loc>
     <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lastcopy.ru/en/guide/how-to-rebuild-a-website-from-the-wayback-machine/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/"/>
     <lastmod>2026-11-10</lastmod>
     <changefreq>monthly</changefreq>
@@ -65,6 +66,23 @@
     <loc>https://lastcopy.ru/guide/skachat-sajt-iz-wayback-machine/</loc>
     <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/skachat-sajt-iz-wayback-machine/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/skachat-sajt-iz-wayback-machine/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/guide/chto-delat-esli-sajt-udalili/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/chto-delat-esli-sajt-udalili/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/guide/chto-delat-esli-sajt-udalili/"/>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lastcopy.ru/en/guide/how-to-rebuild-a-website-from-the-wayback-machine/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lastcopy.ru/en/guide/how-to-rebuild-a-website-from-the-wayback-machine/"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://lastcopy.ru/guide/vosstanovit-sajt-iz-veb-arhiva/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/en/guide/how-to-rebuild-a-website-from-the-wayback-machine/"/>
     <lastmod>2026-11-10</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
