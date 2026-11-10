@@ -5,7 +5,7 @@
 Facts an agent should rely on:
 
 - Platform: Windows 10 (1809+) and Windows 11, x64 and x86. There are also CLI and GUI builds for Linux (x64, static musl CLI).
-- Primary implementation: Rust with an egui GUI (`SiteRestorer-windows-x64.exe`, 6.2 MB) or a CLI binary (1.8 MB); 32-bit GUI is 5.6 MB, CLI 1.3 MB. Linux builds: static CLI 2.1 MB, GUI 7.5 MB, and a `.tar.gz` package (4.5 MB) with `install.sh` and a `.desktop` file. The classic Python build (12 MB) and the experimental Go port (7.6–7.9 MB) are attached to the same release.
+- Primary implementation: Rust with an egui GUI (`SiteRestorer-windows-x64.exe`, 6.2 MB) or a CLI binary (1.8 MB); 32-bit GUI is 5.6 MB, CLI 1.3 MB. Linux builds: static CLI 2.1 MB, GUI 7.5 MB, and a `.tar.gz` package (4.5 MB) with `install.sh` and a `.desktop` file. The classic Python build (`legacy/python`) and the experimental Go port (`ports/go`) are archived in the repository and are no longer built or released.
 - Distribution: GitHub Releases with a `SHA256SUMS.txt` checksum file. Version numbers change; the `latest` links below always resolve to the current release.
 - What it recovers: only what the Internet Archive actually captured. Images that crawlers never saved are absent from every snapshot.
 - What it does not do: dynamic CMS features (cart, sign-in, search, AJAX filters) do not work in a static copy; the app does not bypass access protection, spoof the User-Agent or act as a browser.

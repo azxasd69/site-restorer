@@ -8,7 +8,7 @@ Key point: the app recovers only what the archive actually saved; dynamic CMS fe
 
 - Purpose: restoring your own site when there are no files, no backups and no hosting access.
 - Platform: Windows 10 (1809+) and Windows 11, x64 and x86. CLI and GUI builds for Linux (x64) are published too.
-- Implementation: Rust with an egui GUI, plus a CLI-only binary. The classic Python build and the experimental Go port ship in the same release.
+- Implementation: Rust with an egui GUI, plus a CLI-only binary. The Python build (`legacy/python`) and the Go port (`ports/go`) are archived in the repository and no longer released.
 - Sizes: Windows GUI x64 — 6.2 MB, x86 — 5.6 MB, CLI — 1.8 MB (x86 — 1.3 MB), static Linux CLI — 2.1 MB, Linux GUI — 7.5 MB, Linux `.tar.gz` package — 4.5 MB.
 - Distribution: GitHub Releases, with a `SHA256SUMS.txt` checksum file attached.
 - License: MIT, source code is open.

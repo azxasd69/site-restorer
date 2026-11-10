@@ -1,0 +1,40 @@
+name: Check download links
+
+# Ловит класс дефектов, который уже случался: имя файла на лендинге перестало
+# совпадать с ассетом релиза (ссылка отдаёт 404) после переименования ассетов.
+# Запускается на правки лендинга, по расписанию и вручную.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "landing/**"
+      - "scripts/check_downloads.py"
+      - ".github/workflows/links.yml"
+  schedule:
+    - cron: "0 6 * * 1" # каждый понедельник, 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  links:
+    name: links
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Verify every download link against the latest release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/check_downloads.py
