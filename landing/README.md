@@ -42,7 +42,7 @@ C:\Python314\python.exe -m http.server 8090
 2. Settings → Pages → Build and deployment → Source: **GitHub Actions**.
 3. Закоммитить и запушить. Workflow публикует содержимое `landing/` как артефакт,
    поэтому структура сайта сохраняется как есть.
-4. Через минуту сайт будет на `https://azxasd69.github.io/site-restorer/`,
+4. Через минуту сайт будет на `https://lastcopy.ru/`,
    английская версия — `/site-restorer/en/`.
 
 Относительные ссылки внутри сайта работают и под подпапкой `/site-restorer/`,
@@ -59,7 +59,7 @@ C:\Python314\python.exe -m http.server 8090
 
 ## Чек-лист после публикации (домен известен)
 
-Сайт уже опубликован на GitHub Pages: `https://azxasd69.github.io/site-restorer/`.
+Сайт уже опубликован на GitHub Pages: `https://lastcopy.ru/`.
 Canonical, `hreflang`, абсолютные `og:url` / `og:image` / `twitter:image`, `sitemap.xml`
 и строка `Sitemap:` в `robots.txt` уже прописаны под этот адрес.
 

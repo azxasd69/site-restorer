@@ -1,17 +1,18 @@
 # Site Restorer — восстановление сайта из веб-архива
 
-> Site Restorer — портативное приложение для Windows, которое собирает копию сайта из Internet Archive: инвентаризирует сохранённые адреса через CDX-индекс, скачивает файлы параллельно, переписывает ссылки в относительные, проверяет битые ссылки и формирует отчёт о полноте. Один exe, без установки и без Python. Лицензия MIT. Интерфейс на русском и английском.
+> Site Restorer — портативное приложение для Windows, которое собирает копию сайта из Internet Archive: инвентаризирует сохранённые адреса через CDX-индекс, скачивает файлы параллельно, переписывает ссылки в относительные, проверяет битые ссылки и формирует отчёт о полноте. Основная сборка — один самодостаточный бинарник на Rust: без установки, без интерпретатора и без зависимостей. Лицензия MIT. Интерфейс на русском и английском.
 
 Ключевое: программа восстанавливает только то, что сохранил архив; динамические функции CMS (корзина, вход, поиск, AJAX) в статической копии не работают.
 
 ## Что это
 
 - Назначение: восстановление собственного сайта, когда нет ни файлов, ни резервных копий, ни доступа к хостингу.
-- Платформа: Windows 10 (1809+) и Windows 11, x64 и x86.
-- Формат поставки: портативный `SiteRestorer.exe` (x64 ≈ 12 МБ, x86 ≈ 10 МБ), установка не требуется.
-- Стек: Python, упакованный в exe через PyInstaller; Tcl/Tk внутри.
+- Платформа: Windows 10 (1809+) и Windows 11, x64 и x86. Есть CLI и GUI сборки для Linux (x64).
+- Реализация: Rust + egui для интерфейса; CLI-бинарник без GUI. Классическая версия на Python и экспериментальный порт на Go приложены к тому же релизу.
+- Размеры: GUI для Windows x64 — 6,9 МБ, x86 — 6,2 МБ, CLI — 2,6 МБ, статический CLI для Linux — 3,3 МБ.
+- Поставка: GitHub Releases, к релизу прилагается `SHA256SUMS.txt` с контрольными суммами.
 - Лицензия: MIT. Исходный код открыт.
-- Языки интерфейса: русский, английский.
+- Языки интерфейса: русский, английский, переключение на лету.
 
 ## Возможности
 
@@ -20,11 +21,12 @@
 - Работа с лимитами архива: `Retry-After`, экспоненциальные паузы, предохранитель на серию 429, keep-alive.
 - Докачка: уже скачанное не запрашивается повторно, прерванный прогон продолжается с места остановки.
 - Сборка локальной копии: абсолютные ссылки → относительные; эвристики для кэша CMS с хэшем в имени и для миниатюр.
-- Проверка и отчёт: обход готовых страниц, подсчёт внутренних и битых ссылок, файл `report.html` с покрытием по типам файлов, объёмом и ошибками.
+- Проверка и отчёт: обход готовых страниц, подсчёт внутренних и битых ссылок, файл `report.html` с покрытием по типам файлов, объёмом копии и списком ошибок.
+- Кодировки: страницы и стили в cp1251 (и другой объявленной кодировке) перекодируются в UTF-8, `<meta charset>` приводится в порядок.
 - Любой ввод адреса: ссылка из письма, поиска или архива, русская раскладка клавиатуры, IDN-домены.
 - Любая CMS: проверено на Bitrix, WordPress, MODX, Craft CMS, Laravel.
 - Диагностика: журнал с URL, HTTP-кодом, размером и временем каждого запроса.
-- Командная строка: `--site`, `--out`, `--workers`, `--rate`, `--limit`, `--lang`.
+- Командная строка: `--site`, `--out`, `--workers`, `--rate`, `--limit`, `--lang`, `--version`.
 
 ## Как это работает
 
@@ -85,11 +87,14 @@ SiteRestorer.exe --cli --site example.com --out D:\mirror --workers 16
 
 ## Скачать
 
-- x64: https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer.exe
-- x86: https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-x86.exe
+- x64 (GUI, Rust + egui, 6,9 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer.exe
+- x86 (GUI, 6,2 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-x86.exe
+- CLI для Windows x64 (2,6 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-win-cli-x64.exe
+- CLI для Linux x64 (статический, 3,3 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-linux-cli
+- Контрольные суммы: https://github.com/azxasd69/site-restorer/releases/latest/download/SHA256SUMS.txt
 - Все версии: https://github.com/azxasd69/site-restorer/releases
 
-Сборка не подписана платным сертификатом: Windows SmartScreen может показать предупреждение — «Подробнее» → «Выполнить всё равно» (или `Unblock.cmd` из архива). Исходный код и CI открыты, можно собрать самому.
+Сборка не подписана платным сертификатом: Windows SmartScreen может показать предупреждение — «Подробнее» → «Выполнить всё равно» (или `Unblock.cmd` из архива). Исходный код и CI открыты, можно собрать самому: матрица сборок — в `BUILD.md`.
 
 ## Поддержать автора
 
@@ -97,7 +102,7 @@ SiteRestorer.exe --cli --site example.com --out D:\mirror --workers 16
 
 ## Частые вопросы
 
-**Нужен ли Python?** Нет: интерпретатор и Tcl/Tk упакованы в exe. Python нужен только для `python -m http.server`, но подойдёт любой статический сервер.
+**Нужен ли Python?** Нет: основная сборка — один бинарник на Rust, без интерпретатора. Python нужен только для `python -m http.server`, но подойдёт любой статический сервер.
 
 **Что если архив ничего не сохранил?** Отчёт это покажет, программа ничего не выдумывает. Стоит проверить варианты домена (`www` и без) и соседние годы: для каждого адреса перебираются ближайшие снимки.
 
@@ -111,11 +116,12 @@ SiteRestorer.exe --cli --site example.com --out D:\mirror --workers 16
 
 ## Ссылки
 
-- Лендинг (RU): https://azxasd69.github.io/site-restorer/
-- Лендинг (EN): https://azxasd69.github.io/site-restorer/en/
+- Лендинг (RU): https://lastcopy.ru/
+- Лендинг (EN): https://lastcopy.ru/en/
 - Репозиторий: https://github.com/azxasd69/site-restorer
 - README: https://github.com/azxasd69/site-restorer/blob/main/README.md
 - Архитектура: https://github.com/azxasd69/site-restorer/blob/main/ARCHITECTURE.md
+- Матрица сборок: https://github.com/azxasd69/site-restorer/blob/main/BUILD.md
 - История изменений: https://github.com/azxasd69/site-restorer/blob/main/CHANGELOG.md
 - Ошибки и идеи: https://github.com/azxasd69/site-restorer/issues
 - Лицензия MIT: https://github.com/azxasd69/site-restorer/blob/main/LICENSE

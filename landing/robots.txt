@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://azxasd69.github.io/site-restorer/sitemap.xml
+Sitemap: https://lastcopy.ru/sitemap.xml

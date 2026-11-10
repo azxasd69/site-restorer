@@ -1,17 +1,18 @@
 # Site Restorer — rebuild a website from the web archive
 
-> Site Restorer is a portable Windows app that rebuilds a site from the Internet Archive: it inventories captured URLs via the CDX index, downloads files in parallel, rewrites links to relative paths, checks for broken references and writes a coverage report. A single executable, no installer and no Python. MIT licensed. UI in Russian and English.
+> Site Restorer is a portable Windows app that rebuilds a site from the Internet Archive: it inventories captured URLs via the CDX index, downloads files in parallel, rewrites links to relative paths, checks for broken references and writes a coverage report. The primary build is a single self-contained Rust binary — no installer, no runtime, no dependencies. MIT licensed. UI in Russian and English.
 
 Key point: the app recovers only what the archive actually saved; dynamic CMS features (cart, sign-in, search, AJAX) do not work in a static copy.
 
 ## What it is
 
 - Purpose: restoring your own site when there are no files, no backups and no hosting access.
-- Platform: Windows 10 (1809+) and Windows 11, x64 and x86.
-- Distribution: portable `SiteRestorer.exe` (x64 ≈ 12 MB, x86 ≈ 10 MB), no installation.
-- Stack: Python bundled into an executable with PyInstaller; Tcl/Tk included.
+- Platform: Windows 10 (1809+) and Windows 11, x64 and x86. CLI and GUI builds for Linux (x64) are published too.
+- Implementation: Rust with an egui GUI, plus a CLI-only binary. The classic Python build and the experimental Go port ship in the same release.
+- Sizes: Windows GUI x64 — 6.9 MB, x86 — 6.2 MB, CLI — 2.6 MB, static Linux CLI — 3.3 MB.
+- Distribution: GitHub Releases, with a `SHA256SUMS.txt` checksum file attached.
 - License: MIT, source code is open.
-- UI languages: Russian, English.
+- UI languages: Russian, English, switched on the fly.
 
 ## Features
 
@@ -21,10 +22,11 @@ Key point: the app recovers only what the archive actually saved; dynamic CMS fe
 - Resume: nothing already downloaded is requested twice; an interrupted run continues where it stopped.
 - Offline build: absolute links rewritten to relative ones; heuristics for CMS caches with build hashes and for image thumbnails.
 - Verification and report: pages are scanned, internal and broken links counted, `report.html` shows coverage by file type, total size and errors.
+- Encodings: pages and stylesheets saved in cp1251 (or another declared encoding) are converted to UTF-8 and `<meta charset>` is fixed.
 - Any address format: links from email, search or the archive, wrong keyboard layout, IDN domains.
 - Any CMS: tested on Bitrix, WordPress, MODX, Craft CMS, Laravel.
 - Diagnostics: a log entry with URL, HTTP status, size and timing for every request.
-- CLI: `--site`, `--out`, `--workers`, `--rate`, `--limit`, `--lang`.
+- CLI: `--site`, `--out`, `--workers`, `--rate`, `--limit`, `--lang`, `--version`.
 
 ## How it works
 
@@ -85,11 +87,14 @@ What did not come back:
 
 ## Download
 
-- x64: https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer.exe
-- x86: https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-x86.exe
+- x64 GUI (Rust + egui, 6.9 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer.exe
+- x86 GUI (6.2 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-x86.exe
+- Windows x64 CLI (2.6 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-win-cli-x64.exe
+- Linux x64 CLI, static (3.3 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-linux-cli
+- Checksums: https://github.com/azxasd69/site-restorer/releases/latest/download/SHA256SUMS.txt
 - All releases: https://github.com/azxasd69/site-restorer/releases
 
-The build is not signed with a paid certificate, so Windows SmartScreen may warn: choose "More info" → "Run anyway" (or run `Unblock.cmd` from the archive). The source code and CI are public — you can build it yourself.
+The build is not signed with a paid certificate, so Windows SmartScreen may warn: choose "More info" → "Run anyway" (or run `Unblock.cmd` from the archive). The source code and CI are public — build matrix in `BUILD.md`.
 
 ## Support the author
 
@@ -97,7 +102,7 @@ No ads, subscriptions or telemetry: https://boosty.to/explosion/donate
 
 ## FAQ
 
-**Do I need Python?** No — the interpreter and Tcl/Tk are bundled. Python is only useful for `python -m http.server`; any static server will do.
+**Do I need Python?** No — the primary build is a single Rust binary with no interpreter. Python is only useful for `python -m http.server`; any static server will do.
 
 **What if the archive saved nothing?** The report will say so; the app does not invent content. Try domain variants (with and without `www`) and nearby years: the closest snapshots are probed for every URL.
 
@@ -111,11 +116,12 @@ No ads, subscriptions or telemetry: https://boosty.to/explosion/donate
 
 ## Links
 
-- Landing (RU): https://azxasd69.github.io/site-restorer/
-- Landing (EN): https://azxasd69.github.io/site-restorer/en/
+- Landing (RU): https://lastcopy.ru/
+- Landing (EN): https://lastcopy.ru/en/
 - Repository: https://github.com/azxasd69/site-restorer
 - README: https://github.com/azxasd69/site-restorer/blob/main/README.md
 - Architecture: https://github.com/azxasd69/site-restorer/blob/main/ARCHITECTURE.md
+- Build matrix: https://github.com/azxasd69/site-restorer/blob/main/BUILD.md
 - Changelog: https://github.com/azxasd69/site-restorer/blob/main/CHANGELOG.md
 - Issues: https://github.com/azxasd69/site-restorer/issues
 - MIT license: https://github.com/azxasd69/site-restorer/blob/main/LICENSE

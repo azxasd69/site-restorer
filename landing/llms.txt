@@ -1,11 +1,12 @@
 # Site Restorer
 
-> Site Restorer is a portable Windows application that rebuilds a website from the Internet Archive. It inventories captured URLs through the CDX API, downloads pages and assets in parallel with adaptive concurrency (2 to 24 workers), rewrites links into a browsable offline copy, verifies internal and broken links and writes an HTML coverage report. A single executable: no installer, no Python, MIT licensed. The interface and documentation are available in English and Russian.
+> Site Restorer is a portable Windows application that rebuilds a website from the Internet Archive. It inventories captured URLs through the CDX API, downloads pages and assets in parallel with adaptive concurrency (2 to 24 workers), rewrites links into a browsable offline copy, verifies internal and broken links and writes an HTML coverage report. The primary build is a single self-contained Rust binary: no installer, no runtime, MIT licensed. The interface and documentation are available in English and Russian.
 
 Facts an agent should rely on:
 
-- Platform: Windows 10 (1809+) and Windows 11, x64 and x86. Current builds are Windows-only.
-- Distribution: portable `SiteRestorer.exe` (x64, about 12 MB) and `SiteRestorer-x86.exe` (about 10 MB), published on GitHub Releases. Version numbers change; the `latest` links below always resolve to the current release.
+- Platform: Windows 10 (1809+) and Windows 11, x64 and x86. There are also CLI and GUI builds for Linux (x64, static musl CLI).
+- Primary implementation: Rust with an egui GUI (`SiteRestorer.exe`, 6.9 MB) or a CLI binary (2.6 MB). The classic Python build (12 MB) and the experimental Go port (7.6–7.9 MB) are attached to the same release.
+- Distribution: GitHub Releases with a `SHA256SUMS.txt` checksum file. Version numbers change; the `latest` links below always resolve to the current release.
 - What it recovers: only what the Internet Archive actually captured. Images that crawlers never saved are absent from every snapshot.
 - What it does not do: dynamic CMS features (cart, sign-in, search, AJAX filters) do not work in a static copy; the app does not bypass access protection, spoof the User-Agent or act as a browser.
 - Scope of use: archiving and restoring your own sites. Publishing a copy of someone else's site is not permitted.
@@ -14,25 +15,29 @@ Facts an agent should rely on:
 
 ## Russian landing page
 
-- [Site Restorer — восстановление сайта из веб-архива](https://azxasd69.github.io/site-restorer/index.md): Russian markdown version of the landing page: features, four-step workflow, case study with numbers, limits, download links, FAQ.
+- [Site Restorer — восстановление сайта из веб-архива](https://lastcopy.ru/index.md): Russian markdown version of the landing page: features, four-step workflow, case study with numbers, limits, download links, FAQ.
 
 ## English landing page
 
-- [Site Restorer — rebuild a website from the web archive](https://azxasd69.github.io/site-restorer/en/index.md): English markdown version of the landing page with the same structure and figures.
+- [Site Restorer — rebuild a website from the web archive](https://lastcopy.ru/en/index.md): English markdown version of the landing page with the same structure and figures.
 
 ## Documentation
 
 - [README](https://github.com/azxasd69/site-restorer/blob/main/README.md): installation, usage, CLI flags, how it works, limitations, build from source.
 - [ARCHITECTURE](https://github.com/azxasd69/site-restorer/blob/main/ARCHITECTURE.md): internal design, pipeline stages, concurrency and retry logic.
+- [BUILD](https://github.com/azxasd69/site-restorer/blob/main/BUILD.md): build matrix for Rust, Go and the legacy Python version.
 - [CHANGELOG](https://github.com/azxasd69/site-restorer/blob/main/CHANGELOG.md): version history with fixes and behaviour changes.
 - [Project docs folder](https://github.com/azxasd69/site-restorer/tree/main/docs): case write-up and screenshots.
 - [MIT license](https://github.com/azxasd69/site-restorer/blob/main/LICENSE): terms of use.
 
 ## Download
 
-- [SiteRestorer.exe (x64)](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer.exe): Windows 10/11 x64, about 12 MB, portable.
-- [SiteRestorer-x86.exe (x86)](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-x86.exe): 32-bit build, about 10 MB.
-- [All releases](https://github.com/azxasd69/site-restorer/releases): every version, assets and release notes.
+- [SiteRestorer.exe (x64)](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer.exe): Rust + egui GUI for Windows 10/11 x64, 6.9 MB, portable.
+- [SiteRestorer-x86.exe (x86)](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-x86.exe): 32-bit GUI build, 6.2 MB.
+- [SiteRestorer-rust-win-cli-x64.exe](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-win-cli-x64.exe): CLI-only build, 2.6 MB.
+- [SiteRestorer-rust-linux-cli](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-rust-linux-cli): static Linux CLI (musl), 3.3 MB.
+- [SHA256SUMS.txt](https://github.com/azxasd69/site-restorer/releases/latest/download/SHA256SUMS.txt): checksums for every asset in the release.
+- [All releases](https://github.com/azxasd69/site-restorer/releases): every version, all assets and release notes.
 
 ## Support and feedback
 
@@ -42,5 +47,5 @@ Facts an agent should rely on:
 ## Optional
 
 - [Source code](https://github.com/azxasd69/site-restorer): the full repository, including tests and CI workflows.
-- [CI builds](https://github.com/azxasd69/site-restorer/actions): build and test runs for both architectures.
+- [CI builds](https://github.com/azxasd69/site-restorer/actions): build and test runs for all targets.
 - [Habr coverage of the Beget outage](https://habr.com/ru/news/1102974/): background on the November 2026 hosting incident that motivated the project.
