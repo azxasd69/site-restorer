@@ -289,6 +289,59 @@ fn finish(host: &str) -> Option<(String, Note)> {
 }
 
 /// Главная точка входа: адрес любого вида -> (домен, откуда он взялся).
+/// Чистка того, что пришло из буфера обмена (нужна окну, не CLI):
+#[allow(dead_code)] BOM, невидимые символы,
+/// переводы строк, табы, markdown-обёртка `[текст](ссылка)`, кавычки, `<...>`.
+pub fn clean_payload(raw: &str) -> String {
+    let mut cleaned = String::with_capacity(raw.len());
+    for ch in raw.chars() {
+        match ch {
+            '\u{feff}' | '\u{200b}' | '\u{200c}' | '\u{200d}' | '\u{2060}' => {}
+            c if c.is_control() => cleaned.push(' '),
+            c => cleaned.push(c),
+        }
+    }
+    let cleaned = markdown_target(&cleaned);
+    let cleaned = cleaned
+        .trim()
+        .trim_matches(|c: char| {
+            matches!(
+                c,
+                '"' | '\'' | '`' | '<' | '>' | '(' | ')' | '[' | ']' | '«' | '»' | '“' | '”' | '„'
+            )
+        })
+        .trim();
+    // Несколько пробелов подряд — один: в поле они только мешают.
+    let mut out = String::with_capacity(cleaned.len());
+    let mut space = false;
+    for ch in cleaned.chars() {
+        if ch == ' ' {
+            if !space {
+                out.push(' ');
+            }
+            space = true;
+        } else {
+            space = false;
+            out.push(ch);
+        }
+    }
+    out.trim().to_string()
+}
+
+/// `[текст](https://адрес)` -> `https://адрес`; иначе строка без изменений.
+#[allow(dead_code)]
+fn markdown_target(text: &str) -> &str {
+    let Some(open) = text.find("](") else {
+        return text;
+    };
+    let tail = &text[open + 2..];
+    let Some(close) = tail.find(')') else {
+        return text;
+    };
+    let inside = tail[..close].trim();
+    if inside.is_empty() { text } else { inside }
+}
+
 pub fn sanitize_site(text: &str) -> Option<(String, Note)> {
     if text.trim().is_empty() {
         return None;
@@ -339,6 +392,93 @@ mod tests {
 
     fn host(input: &str) -> Option<String> {
         sanitize_site(input).map(|(h, _)| h)
+    }
+
+    /// Путь «буфер -> чистка -> разбор», как в окне при вставке.
+    fn paste(raw: &str) -> Option<String> {
+        sanitize_site(&clean_payload(raw)).map(|(host, _)| host)
+    }
+
+    #[test]
+    fn paste_from_browser() {
+        // Chromium кладёт адрес первой строкой и заголовок второй.
+        assert_eq!(
+            paste("https://prokupol.ru/catalog/?utm_source=x\r\nПрокупол — каталог\r\n").as_deref(),
+            Some("prokupol.ru")
+        );
+        // Firefox иногда добавляет пустую строку и переводы строк вперёд.
+        assert_eq!(
+            paste("\r\n\r\nhttps://rdbzh.ru/\r\nРадиодетали\r\n").as_deref(),
+            Some("rdbzh.ru")
+        );
+    }
+
+    #[test]
+    fn paste_with_wrapping() {
+        assert_eq!(
+            paste("  <https://rdbzh.ru/>  ").as_deref(),
+            Some("rdbzh.ru")
+        );
+        assert_eq!(
+            paste("\u{feff}https://rdbzh.ru/").as_deref(),
+            Some("rdbzh.ru")
+        );
+        assert_eq!(
+            paste("https://rdbzh.ru/\u{200b}").as_deref(),
+            Some("rdbzh.ru")
+        );
+        assert_eq!(
+            paste("[Радиодетали](https://rdbzh.ru/catalog/)").as_deref(),
+            Some("rdbzh.ru")
+        );
+        assert_eq!(paste("«https://rdbzh.ru/»").as_deref(), Some("rdbzh.ru"));
+        assert_eq!(paste("`rdbzh.ru`").as_deref(), Some("rdbzh.ru"));
+    }
+
+    #[test]
+    fn paste_several_urls_takes_first() {
+        assert_eq!(
+            paste("https://rdbzh.ru/\nhttps://prokupol.ru/").as_deref(),
+            Some("rdbzh.ru")
+        );
+    }
+
+    #[test]
+    fn paste_archive_and_search_links() {
+        assert_eq!(
+            paste("https://web.archive.org/web/20261016223707/https://prokupol.ru/").as_deref(),
+            Some("prokupol.ru")
+        );
+        assert_eq!(
+            paste("https://www.google.com/url?q=https%3A%2F%2Fprokupol.ru%2F&sa=D&source=docs")
+                .as_deref(),
+            Some("prokupol.ru")
+        );
+    }
+
+    #[test]
+    fn paste_cyrillic_and_layout() {
+        assert_eq!(
+            paste("прокупол.рф").as_deref(),
+            Some("xn--j1achbcce0a.xn--p1ai")
+        );
+        assert_eq!(paste("зкщлгзщдюкг").as_deref(), Some("prokupol.ru"));
+        assert_eq!(
+            paste("Сайт: прокупол.рф — магазин").as_deref(),
+            Some("xn--j1achbcce0a.xn--p1ai")
+        );
+    }
+
+    #[test]
+    fn paste_keeps_going_when_garbage() {
+        assert_eq!(paste("просто текст без адреса"), None);
+        assert_eq!(paste("   \r\n\t  "), None);
+    }
+
+    #[test]
+    fn clean_payload_collapses_spaces() {
+        assert_eq!(clean_payload("  a\t\tb\r\nc  "), "a b c");
+        assert_eq!(clean_payload("“rdbzh.ru”"), "rdbzh.ru");
     }
 
     #[test]

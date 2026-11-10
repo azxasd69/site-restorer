@@ -14,6 +14,8 @@ mod core;
 mod encoding;
 #[cfg(feature = "gui")]
 mod i18n;
+#[cfg(feature = "gui")]
+mod clip;
 mod paths;
 #[cfg(feature = "gui")]
 mod pick;
@@ -146,6 +148,17 @@ fn ensure_console_utf8() {}
 #[cfg(not(windows))]
 fn attach_parent_console() {}
 
+/// Инициализация COM в режиме apartment-threaded (идемпотентна, ошибки не критичны).
+#[cfg(all(windows, feature = "gui"))]
+unsafe fn init_com() {
+    #[link(name = "ole32")]
+    unsafe extern "system" {
+        fn OleInitialize(reserved: *mut std::ffi::c_void) -> i32;
+    }
+    // SAFETY: вызов до старта оконного цикла, на главном потоке.
+    let _ = unsafe { OleInitialize(std::ptr::null_mut()) };
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let console_mode = args
@@ -165,6 +178,13 @@ fn main() {
 
     #[cfg(feature = "gui")]
     {
+        // COM нужен до создания окна: без него чтение буфера обмена, которым
+        // владеет другой процесс (браузер, блокнот), возвращает пустоту —
+        // Ctrl+V «не работает», хотя копирование внутри окна работает.
+        #[cfg(windows)]
+        unsafe {
+            init_com();
+        }
         let title = if std::env::var("SR_LANG").as_deref() == Ok("en") {
             i18n::EN.title
         } else {
@@ -172,6 +192,9 @@ fn main() {
         };
         let options = eframe::NativeOptions {
             renderer: eframe::Renderer::Glow,
+            // На Windows вставку и копирование ведём сами (см. src/clip.rs):
+            // встроенный путь иногда не видит буфер другого процесса.
+            clipboard_shortcuts: !cfg!(windows),
             persist_window: false,
             viewport: eframe::egui::ViewportBuilder::default()
                 .with_inner_size([900.0, 660.0])

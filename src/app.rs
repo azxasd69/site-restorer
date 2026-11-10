@@ -60,6 +60,12 @@ pub struct App {
     rx: Option<Receiver<Msg>>,
     cancel: Option<Arc<AtomicBool>>,
     pending_start: bool,
+    /// Первый кадр: отдать фокус полю адреса, чтобы Ctrl+V работал сразу.
+    focus_site: bool,
+    /// Момент последнего изменения поля адреса — для разбора по паузе.
+    site_dirty_at: Option<f64>,
+    /// Текст, пришедший вставкой в этом кадре.
+    pasted: Option<String>,
 }
 
 /// Светлая тема одним местом: границы полей, фон всплывающих окон, скругления.
@@ -127,6 +133,9 @@ impl App {
             pending_start: std::env::var("SR_AUTOSTART")
                 .map(|v| !v.is_empty())
                 .unwrap_or(false),
+            focus_site: true,
+            site_dirty_at: None,
+            pasted: None,
         }
     }
 
@@ -161,19 +170,70 @@ impl App {
     }
 
     fn analyse(&mut self) {
+        self.normalize_field(false);
+    }
+
+    /// Разбор поля адреса. `rewrite` — заменить содержимое чистым хостом
+    /// (уход фокуса, Enter); во время набора поле не трогаем.
+    fn normalize_field(&mut self, rewrite: bool) {
         let t = self.lang.t();
-        match sanitize_site(&self.site) {
+        let raw = self.site.trim();
+        if raw.is_empty() {
+            self.note = t.hint.to_string();
+            return;
+        }
+        match sanitize_site(raw) {
             Some((host, note)) => {
-                let why = match note {
-                    Note::Plain => "plain",
-                    Note::Layout => "keyboard layout",
-                    Note::Idn => "IDN -> punycode",
-                };
-                let entry = paths::url_to_local_path(&format!("https://{host}/"));
-                self.note = format!("→ {host}  ({why})   {entry}");
+                self.note = self.note_line(&host, note);
+                if rewrite && raw != host {
+                    self.site = host;
+                }
             }
             None => self.note = t.bad_address.to_string(),
         }
+    }
+
+    fn note_line(&self, host: &str, note: Note) -> String {
+        let why = match note {
+            Note::Plain => "plain",
+            Note::Layout => "keyboard layout",
+            Note::Idn => "IDN -> punycode",
+        };
+        let entry = paths::url_to_local_path(&format!("https://{host}/"));
+        format!("→ {host}  ({why})   {entry}")
+    }
+
+    /// Вставка из буфера: чистим полезную нагрузку, разбираем сразу и
+    /// подменяем поле чистым хостом — как это делала версия на Python.
+    fn apply_paste(&mut self, raw: &str) {
+        let t = self.lang.t();
+        let cleaned = crate::sanitize::clean_payload(raw);
+        let trimmed = cleaned.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        match sanitize_site(trimmed) {
+            Some((host, note)) => {
+                if let Ok(path) = std::env::var("SR_DIAG") {
+                    use std::io::Write as _;
+                    if let Ok(mut f) = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(path)
+                    {
+                        let _ = writeln!(f, "site:{host}");
+                    }
+                }
+                let noisy = raw.trim() != trimmed || trimmed != host;
+                self.note = self.note_line(&host, note);
+                if noisy {
+                    self.push_log(format!("адрес: {} → {host}", shorten(raw)), Level::Info);
+                }
+                self.site = host;
+            }
+            None => self.note = t.bad_address.to_string(),
+        }
+        self.site_dirty_at = None;
     }
 
     fn start(&mut self) {
@@ -333,7 +393,7 @@ fn bar(ui: &mut egui::Ui, frac: f32, height: f32, width: f32) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
     let radius = egui::CornerRadius::same((height / 2.0) as u8);
     let painter = ui.painter();
-    painter.rect_filled(rect, radius, egui::Color32::from_rgb(226, 232, 240));
+    painter.rect_filled(rect, radius, TRACK);
     if frac > 0.0 {
         let filled = egui::Rect::from_min_size(
             rect.min,
@@ -458,6 +518,42 @@ impl eframe::App for App {
         }
         let t = self.lang.t();
         ui.style_mut().spacing.item_spacing = egui::vec2(8.0, 8.0);
+        // На Windows встроенные быстрые клавиши буфера отключены: читаем и
+        // пишем сами и подсовываем egui те же события, что дал бы winit.
+        #[cfg(windows)]
+        {
+            let (paste, copy, cut) = ui.input(|i| {
+                let cmd = i.modifiers.ctrl || i.modifiers.command;
+                let shift = i.modifiers.shift;
+                let paste = (cmd && !shift && i.key_pressed(egui::Key::V))
+                    || (cmd && shift && i.key_pressed(egui::Key::V))
+                    || (shift && !cmd && i.key_pressed(egui::Key::Insert));
+                let copy = cmd && !shift && i.key_pressed(egui::Key::C);
+                let cut = cmd && !shift && i.key_pressed(egui::Key::X);
+                (paste, copy, cut)
+            });
+            if paste {
+                if let Some(text) = crate::clip::read_text() {
+                    ui.ctx().input_mut(|i| i.events.push(egui::Event::Paste(text)));
+                }
+            }
+            if copy {
+                ui.ctx().input_mut(|i| i.events.push(egui::Event::Copy));
+            }
+            if cut {
+                ui.ctx().input_mut(|i| i.events.push(egui::Event::Cut));
+            }
+        }
+
+        let diag = std::env::var("SR_DIAG").ok();
+        // Вставка в этом кадре: Ctrl+V, Shift+Insert, средняя кнопка (X11/Wayland).
+        let pasted_now = ui.input(|i| {
+            i.events.iter().find_map(|event| match event {
+                egui::Event::Paste(text) => Some(text.clone()),
+                egui::Event::MiddleClickPaste { text, .. } => Some(text.clone()),
+                _ => None,
+            })
+        });
 
         // ---------- шапка и форма ----------
         egui::Panel::top("header")
@@ -510,7 +606,7 @@ impl eframe::App for App {
                     .min_col_width(112.0)
                     .show(ui, |ui| {
                         ui.label(egui::RichText::new(t.site).size(12.5).color(MUTED));
-                        ui.add_enabled(
+                        let site_resp = ui.add_enabled(
                             !self.running,
                             egui::TextEdit::singleline(&mut self.site)
                                 .hint_text(t.site_ph)
@@ -523,6 +619,46 @@ impl eframe::App for App {
                                 )
                                 .desired_width(f32::INFINITY),
                         );
+                        // Ctrl+V сразу после запуска должен попадать в поле, а не «в никуда».
+                        if self.focus_site {
+                            site_resp.request_focus();
+                            self.focus_site = false;
+                        }
+                        if site_resp.changed() {
+                            self.site_dirty_at = Some(ui.input(|i| i.time));
+                        }
+                        if let Some(text) = pasted_now.clone() {
+                            if site_resp.has_focus() {
+                                self.apply_paste(&text);
+                            }
+                        }
+                        #[cfg(not(windows))]
+                        if site_resp.has_focus() {
+                            let wants_paste = ui.input(|i| {
+                                let cmd = i.modifiers.ctrl || i.modifiers.command;
+                                let ctrl_shift_v =
+                                    cmd && i.modifiers.shift && i.key_pressed(egui::Key::V);
+                                // на Windows Shift+Insert уже обрабатывает egui-winit
+                                let shift_insert = !cfg!(target_os = "windows")
+                                    && i.modifiers.shift
+                                    && i.key_pressed(egui::Key::Insert);
+                                ctrl_shift_v || shift_insert
+                            });
+                            if wants_paste {
+                                ui.ctx()
+                                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                            }
+                        }
+                        if site_resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                            site_resp.surrender_focus();
+                        }
+                        if site_resp.lost_focus() {
+                            let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                            self.normalize_field(true);
+                            if enter && !self.running {
+                                self.start();
+                            }
+                        }
                         ui.end_row();
 
                         ui.label(egui::RichText::new(t.out).size(12.5).color(MUTED));
@@ -859,6 +995,73 @@ impl eframe::App for App {
                     });
             });
 
+        if let Some(path) = &diag {
+            let mut lines: Vec<String> = Vec::new();
+            ui.input(|i| {
+                for event in &i.events {
+                    match event {
+                        egui::Event::Paste(text) => {
+                            lines.push(format!("paste:{}", text.chars().count()))
+                        }
+                        egui::Event::Key {
+                            key,
+                            pressed: true,
+                            modifiers,
+                            ..
+                        } => lines.push(format!(
+                            "key:{key:?} ctrl={} shift={}",
+                            modifiers.ctrl, modifiers.shift
+                        )),
+                        egui::Event::Text(text) => {
+                            lines.push(format!("text:{}", text.chars().count()))
+                        }
+                        _ => {}
+                    }
+                }
+            });
+            if !lines.is_empty() {
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                {
+                    use std::io::Write as _;
+                    for line in lines {
+                        let _ = writeln!(f, "{line}");
+                    }
+                }
+            }
+        }
+        // Копирование: забираем текст, который подготовил egui, и пишем сами —
+        // встроенный путь на Windows иногда не доходит до буфера.
+        #[cfg(windows)]
+        {
+            let copied: Vec<String> = ui.ctx().output_mut(|o| {
+                o.commands
+                    .iter()
+                    .filter_map(|cmd| match cmd {
+                        egui::OutputCommand::CopyText(text) => Some(text.clone()),
+                        _ => None,
+                    })
+                    .collect()
+            });
+            for text in copied {
+                crate::clip::write_text(&text);
+            }
+        }
+
+        // Разбор ввода по паузе: подсказка обновляется сама, поле не переписываем.
+        if let Some(t0) = self.site_dirty_at {
+            let now = ui.input(|i| i.time);
+            if now - t0 >= 0.4 {
+                self.site_dirty_at = None;
+                self.normalize_field(false);
+            } else {
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_millis(120));
+            }
+        }
+
         if self.show_help {
             let ctx = ui.ctx().clone();
             let mut open = self.show_help;
@@ -884,6 +1087,21 @@ impl eframe::App for App {
                 });
             self.show_help = open;
         }
+    }
+}
+
+/// Короткий вид вставленного текста для журнала.
+fn shorten(text: &str) -> String {
+    let line: String = text
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let line = line.trim();
+    if line.chars().count() <= 60 {
+        line.to_string()
+    } else {
+        let head: String = line.chars().take(60).collect();
+        format!("{head}…")
     }
 }
 
