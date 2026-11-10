@@ -14,6 +14,17 @@ Key point: the app recovers only what the archive actually saved; dynamic CMS fe
 - License: MIT, source code is open.
 - UI languages: Russian, English, switched on the fly.
 
+## Advantages
+
+Six things that decide whether a copy works out:
+
+1. **Multithreaded download.** Up to 24 workers, adaptive pace driven by the archive's response, `Retry-After` pauses instead of failed files, optional rate limit. 1,200 files ≈ 4 minutes.
+2. **Automatic local assembly.** Links in attributes, image source sets, styles and scripts are rewritten to relative paths and the base tag is removed — the copy opens without the original domain.
+3. **Honest completeness report.** Recovered, never-archived and failed counts are kept apart; coverage by file type, size from the actual files, broken links, and a warning that the copy is static.
+4. **Addresses from every archived year.** Up to 50,000 addresses and 200 index pages, streamed index response, neighbouring years tried, truncation stated explicitly.
+5. **Resume and re-run.** A file counts as done only when it exists and is not empty, unfinished files stay under a temporary name, and a newer version reads the same folder and inventory.
+6. **Encodings and file integrity.** Byte order mark, declared charset and statistical content assessment, double-encoding repair; binary files behind a page address are copied untouched.
+
 ## Features
 
 - Archive inventory: Internet Archive CDX index, paged crawl, up to 50,000 URLs per run (caps: 50,000 URLs and 200 CDX pages).
@@ -104,6 +115,8 @@ The build is not signed with a paid certificate, so Windows SmartScreen may warn
 ## Support the author
 
 No ads, subscriptions or telemetry: https://boosty.to/explosion/donate
+
+The site also has a “Support” link in the header and under the advantages, a “Say thanks” block with a QR code in the download section, a dedicated section and a footer link.
 
 ## FAQ
 

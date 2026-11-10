@@ -15,11 +15,11 @@ Facts an agent should rely on:
 
 ## Russian landing page
 
-- [Site Restorer — восстановление сайта из веб-архива](https://lastcopy.ru/index.md): Russian markdown version of the landing page: features, four-step workflow, case study with numbers, limits, download links, FAQ.
+- [Site Restorer — восстановление сайта из веб-архива](https://lastcopy.ru/index.md): Russian markdown version of the landing page: six key advantages, four-step workflow, case study with numbers, limits, download links, FAQ.
 
 ## English landing page
 
-- [Site Restorer — rebuild a website from the web archive](https://lastcopy.ru/en/index.md): English markdown version of the landing page with the same structure and figures.
+- [Site Restorer — rebuild a website from the web archive](https://lastcopy.ru/en/index.md): English markdown version of the landing page with the same structure, advantages and figures.
 
 ## Guides (Russian)
 

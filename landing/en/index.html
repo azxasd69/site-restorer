@@ -3,16 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Site Restorer — rebuild a website from the web archive</title>
-<meta name="description" content="Rebuilds a site from the Internet Archive: URL inventory, parallel download, a browsable local copy and a coverage report. One executable, no installer.">
-<meta name="theme-color" content="#f7f5f1" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#131519" media="(prefers-color-scheme: dark)">
+<title>Site Restorer — rebuild a website from the Internet Archive</title>
+<meta name="description" content="Downloads a site's archived copy from the Internet Archive, assembles it locally and shows honestly what came back and what is lost. One exe, no install.">
+<meta name="theme-color" content="#f3f4f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15181c" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Site Restorer">
-<meta property="og:title" content="Site Restorer — rebuild a website from the web archive">
-<meta property="og:description" content="Pulls a site's archived copy from the Internet Archive, assembles it locally and reports what survived. A single Windows executable.">
+<meta property="og:title" content="Site Restorer — rebuild a website from the Internet Archive">
+<meta property="og:description" content="Downloads a site's archived copy, assembles it locally and shows honestly what came back and what is lost. One exe for Windows.">
 <meta property="og:locale" content="en_US">
 <meta property="og:locale:alternate" content="ru_RU">
 <link rel="canonical" href="https://lastcopy.ru/en/">
@@ -21,8 +21,8 @@
 <link rel="alternate" hreflang="x-default" href="https://lastcopy.ru/">
 <meta property="og:url" content="https://lastcopy.ru/en/">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Site Restorer — rebuild a website from the web archive">
-<meta name="twitter:description" content="Pulls a site's archived copy from the Internet Archive and assembles it locally. A single Windows executable.">
+<meta name="twitter:title" content="Site Restorer — rebuild a website from the Internet Archive">
+<meta name="twitter:description" content="Downloads a site's archived copy and assembles it locally. One exe for Windows, no install.">
 <meta name="twitter:image" content="https://lastcopy.ru/assets/img/og-en.png">
 <meta property="og:image" content="https://lastcopy.ru/assets/img/og-en.png">
 <meta property="og:image:width" content="1200">
@@ -30,25 +30,24 @@
 
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="../assets/img/touch-icon.png">
-<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/style.css?v=2">
 <link rel="describedby" href="../llms.txt">
 <link rel="alternate" type="text/markdown" href="index.md" title="Markdown version of this page">
-<script src="../assets/app.js" defer></script>
-<script src="../assets/consent.js?v=4" defer></script>
-<script src="../assets/goals.js?v=2" defer></script>
+<script src="../assets/app.js?v=2" defer></script>
+<script src="../assets/consent.js?v=5" defer></script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@graph": [
     {
       "@type": "SoftwareApplication",
-      "@id": "https://lastcopy.ru/#app",
+      "@id": "https://lastcopy.ru/en/#app",
       "name": "Site Restorer",
       "url": "https://lastcopy.ru/en/",
-      "description": "A portable Windows app that rebuilds a site's archived copy from the Internet Archive, rewrites links and reports coverage.",
+      "description": "Portable Windows application: rebuilds a website from the Internet Archive, fixes links and produces a completeness report.",
       "applicationCategory": "UtilitiesApplication",
       "operatingSystem": "Windows 10, Windows 11",
-      "inLanguage": ["en", "ru"],
+      "inLanguage": ["ru", "en"],
       "isAccessibleForFree": true,
       "downloadUrl": "https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64.exe",
       "license": "https://github.com/azxasd69/site-restorer/blob/main/LICENSE",
@@ -60,7 +59,7 @@
       "offers": {
         "@type": "Offer",
         "price": "0",
-        "priceCurrency": "RUB",
+        "priceCurrency": "USD",
         "availability": "https://schema.org/InStock"
       },
       "sameAs": ["https://github.com/azxasd69/site-restorer"]
@@ -71,26 +70,26 @@
       "mainEntity": [
         {
           "@type": "Question",
-          "name": "Do I need Python or anything else?",
+          "name": "Do I need Python or other software?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "No. The main build is a single self-contained Rust binary, so it runs on a clean Windows install. Python is only useful for serving the copy with python -m http.server; any static server will do."
+            "text": "No. The main build is a single self-contained Rust binary and runs on a clean Windows install. Python is only needed if you choose python -m http.server as your local server; any static server will do."
           }
         },
         {
           "@type": "Question",
-          "name": "What if the archive saved nothing?",
+          "name": "What if the archive kept nothing?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The report will say so, and the app will not invent content. It is worth trying domain variants with and without www and nearby years: the closest snapshots are probed for every URL."
+            "text": "The report will say so and nothing will be invented. Try the domain with and without www, and neighbouring years: the closest snapshot is picked for each address."
           }
         },
         {
           "@type": "Question",
-          "name": "How long does a restore take?",
+          "name": "How long does a recovery take?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "It depends on the site and on archive limits: minutes for a small site, hours for thousands of URLs. Resuming lets you stop and continue later."
+            "text": "It depends on the site size and the archive limits: a small site takes minutes, thousands of addresses take hours. Resuming lets you stop and continue later."
           }
         },
         {
@@ -98,15 +97,15 @@
           "name": "Will product images and photos come back?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Only if the archive captured them. Internet Archive crawlers often save pages but not every image."
+            "text": "Only if the archive stored them. Internet Archive crawlers often capture pages but not every image."
           }
         },
         {
           "@type": "Question",
-          "name": "Will the cart, sign-in and search work?",
+          "name": "Will the cart, login and search work?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "No. The copy is static: pages, styles, scripts and files are restored; anything that needs server-side logic and a database will not work."
+            "text": "No. The copy is static: pages, styles, scripts and files are restored; anything that needs server logic and a database will not work."
           }
         },
         {
@@ -114,7 +113,7 @@
           "name": "Is this legal?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The tool is built for restoring your own sites; it does not bypass protection or spoof the User-Agent. Publishing a copy of someone else's site is not allowed. The app is MIT licensed."
+            "text": "The tool is meant for recovering your own sites: it does not bypass protection and does not spoof a browser. Publishing someone else's copy is not allowed. The application is MIT licensed."
           }
         }
       ]
@@ -128,21 +127,27 @@
 
 <header class="site-header">
   <div class="wrap header-inner">
-    <a class="brand" href="#top" aria-label="Site Restorer — home">
+    <a class="brand" href="index.html" aria-label="Site Restorer — home">
       <span class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v9"/><path d="M8 10l4 4 4-4"/><path d="M5 17h14"/></svg>
+        <svg viewBox="0 0 32 32">
+          <rect x="3" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/>
+          <rect x="16.5" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/>
+          <rect x="3" y="16.5" width="11" height="11" rx="1.2" fill="#ffffff"/>
+          <rect x="17.2" y="17.2" width="9.6" height="9.6" rx="1" fill="none" stroke="#9FB0C2" stroke-width="1.5" stroke-dasharray="2.2 2"/>
+        </svg>
       </span>
       <span class="brand-name">Site Restorer</span>
     </a>
 
     <nav class="nav" id="site-nav" aria-label="Main navigation">
-      <a href="#features">Features</a>
+      <a href="#advantages">Advantages</a>
       <a href="#how">How it works</a>
-      <a href="#case">Case study</a>
+      <a href="#case">Case</a>
       <a href="#faq">FAQ</a>
     </nav>
 
     <div class="header-actions">
+      <a class="header-support" href="#support">Support</a>
       <span class="lang" aria-label="Language">
         <a href="../" hreflang="ru" lang="ru">RU</a>
         <span class="sep" aria-hidden="true">/</span>
@@ -164,10 +169,10 @@
   <!-- HERO -->
   <section class="hero">
     <div class="wrap hero-grid">
-      <div>
-        <p class="eyebrow">Windows 10/11 · MIT · no installer</p>
-        <h1>Rebuild a website that has no copy left</h1>
-        <p class="lead">Site Restorer pulls a site's saved copy out of the Internet Archive, assembles it into a browsable local build, and reports honestly what came back — and what is gone for good.</p>
+      <div class="hero-copy">
+        <p class="eyebrow">windows 10/11 · mit · no install</p>
+        <h1>Bring back a site that has no copy left</h1>
+        <p class="lead">Site Restorer pulls the archived version of a website out of the Internet Archive, assembles it into a local copy and shows honestly what came back and what is lost.</p>
 
         <div class="hero-actions">
           <a class="btn btn-primary" href="https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64.exe">
@@ -181,118 +186,139 @@
         </div>
 
         <p class="hero-note">
-          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>No Python needed</span>
-          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Portable executable</span>
-          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Any CMS</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>No Python needed</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Portable exe</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Any CMS</span>
         </p>
       </div>
 
-      <figure class="hero-media">
-        <div class="shot">
-          <img src="../assets/img/screenshot-running.png" width="968" height="742" alt="Site Restorer window: archive download, progress tiles, per-type bars and a timestamped request log" fetchpriority="high">
+      <div class="report">
+        <div class="report-head">
+          <span class="dot" aria-hidden="true"></span>
+          recovery report
+          <span class="meta">yoursite.ru · 2026-11-10</span>
         </div>
-        <figcaption class="shot-caption">Working: archive download, speed, threads and a log entry for every request.</figcaption>
-      </figure>
+        <table>
+          <thead>
+            <tr><th scope="col">type</th><th scope="col" style="text-align:right">recovered</th><th scope="col" style="text-align:right">lost</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>site addresses</td><td class="n ok">1,609</td><td class="n">29</td></tr>
+            <tr><td>catalogue pages</td><td class="n ok">1,042</td><td class="n">2</td></tr>
+            <tr><td>html pages</td><td class="n ok">1,164</td><td class="n">4</td></tr>
+            <tr class="is-lost"><td>product images</td><td class="n"><span class="dash">—</span></td><td class="n">2,510</td></tr>
+            <tr class="is-lost"><td>database, cart, login</td><td class="n"><span class="dash">—</span></td><td class="n">out of scope</td></tr>
+          </tbody>
+        </table>
+        <div class="report-foot">
+          <span>coverage: <b>98.2 %</b></span>
+          <span>size: <b>315 MB</b></span>
+          <span>report: <b>report.html</b></span>
+        </div>
+      </div>
     </div>
   </section>
 
   <!-- STATS -->
   <div class="wrap">
     <div class="stats">
-      <div class="stat"><b>98.2%</b><span>storefront site copy: 1,609 of 1,638 URLs</span></div>
-      <div class="stat"><b>9,476</b><span>archive snapshots, 2016–2026</span></div>
-      <div class="stat"><b>24</b><span>download workers at peak</span></div>
-      <div class="stat"><b>0</b><span>dependencies or installs — one exe</span></div>
+      <div class="stat"><b>98.2 %</b><span>of a storefront site: 1,609 of 1,638 addresses</span></div>
+      <div class="stat"><b>9,476</b><span>snapshots in the archive, 2016–2026</span></div>
+      <div class="stat"><b>24</b><span>download threads at peak</span></div>
+      <div class="stat"><b>0</b><span>dependencies, no install — a single exe</span></div>
     </div>
   </div>
 
-  <!-- WHY -->
-  <section class="section" id="why">
+  <!-- ADVANTAGES -->
+  <section class="section" id="advantages">
     <div class="wrap">
       <div class="section-head">
-        <p class="eyebrow">Background</p>
-        <h2>Born out of an outage, not out of an idea</h2>
-      </div>
-      <div class="grid-2">
-        <div class="prose">
-          <p>On the night of 1–2 November 2026, the hosting provider <strong>Beget</strong> suffered an attack on its infrastructure management plane. The provider confirmed the loss of customer data: virtual server contents, S3 object storage and Kubernetes clusters, with VPS binary backups lost as well.</p>
-          <p>The site this project started with was hosted there: the domain still resolved, the server did not respond, and no backups existed. The only remaining source was the web archive — 1,638 URLs and 9,476 snapshots spanning ten years.</p>
-          <p class="small muted">Coverage: <a href="https://3dnews.ru/1150814/hostingprovayder-beget-podtverdil-poteryu-dannih-klientov-posle-ataki" rel="noopener">3DNews</a>, <a href="https://habr.com/ru/news/1102974/" rel="noopener">Habr</a>, <a href="https://www.dw.com/ru/hostingprovajder-beget-ustranaet-masstabnyj-sboj-inzenery-vrucnuu-vosstanavlivaut-infrastrukturu-klienty-zaluutsa-na-nedostupnost-sajtov/a-79828347" rel="noopener">DW</a>.</p>
-        </div>
-        <div class="callout">
-          <strong>If your site was affected by the same outage, start with the archive — not with panic.</strong><br>
-          Text and structure usually survive in full: pages, articles, the whole catalogue. What tends to be missing is product imagery and anything dynamic.
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- FEATURES -->
-  <section class="section" id="features">
-    <div class="wrap">
-      <div class="section-head">
-        <p class="eyebrow">Features</p>
-        <h2>Everything between a domain name and a working copy</h2>
-        <p class="lead">The app does four things: finds out what the archive kept, downloads it, assembles an offline copy and verifies the result.</p>
+        <p class="eyebrow">Advantages</p>
+        <h2>Six things that decide whether a copy works out</h2>
+        <p class="lead">Not a feature list, but what you notice in the first half hour: speed, intact markup, honest numbers, archive completeness, the ability to continue later, and readable text in the files.</p>
       </div>
 
-      <div class="grid-3">
-        <article class="card">
-          <span class="icon-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg></span>
-          <h3>Archive inventory</h3>
-          <p>The CDX index of the Internet Archive: every captured URL of the domain. Paged crawl for large sites, up to 50,000 URLs per run.</p>
+      <div class="adv-grid">
+        <article class="adv">
+          <span class="adv-num">01 · SPEED</span>
+          <h3>Multithreaded download</h3>
+          <p>Pages, styles, scripts and images are fetched at the same time, and the thread count adapts to the archive's response: it grows while speed holds and drops when the server starts to slow down.</p>
+          <ul>
+            <li>starts with two threads, working ceiling is 24</li>
+            <li>HTTP 429 means a pause as the server asks, not a failed file</li>
+            <li>optional rate limit when the link is shared</li>
+          </ul>
+          <span class="adv-fact">1,200 files ≈ 4 minutes</span>
         </article>
 
-        <article class="card">
-          <span class="icon-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M8 10l4 4 4-4"/><path d="M4 18v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1"/></svg></span>
-          <h3>Parallel downloading</h3>
-          <p>HTML, CSS, scripts and images are fetched concurrently. Concurrency adapts by AIMD: 2 → 24 workers, backing off on HTTP 429.</p>
+        <article class="adv">
+          <span class="adv-num">02 · RESULT</span>
+          <h3>Automatic local assembly</h3>
+          <p>What you get is not a folder of downloaded files but a working site: links are rewritten to relative paths, so the copy opens without the original domain and without the internet.</p>
+          <ul>
+            <li>attributes, image source sets, URLs inside styles and scripts</li>
+            <li>CMS cache files with a hash in the name, thumbnails instead of originals</li>
+            <li>the base tag is removed so paths resolve from the file</li>
+          </ul>
+          <span class="adv-fact">75,387 links rewritten</span>
         </article>
 
-        <article class="card">
-          <span class="icon-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg></span>
-          <h3>Resume and resilience</h3>
-          <p>Nothing already downloaded is requested twice. An interrupted run continues where it stopped, and archive rate limits are handled with backoff rather than errors.</p>
+        <article class="adv">
+          <span class="adv-num">03 · TRUST</span>
+          <h3>Honest completeness report</h3>
+          <p>The report counts separately what came back, what the archive never stored, and what failed to download. Those are three different numbers and must not be mixed.</p>
+          <ul>
+            <li>coverage by file type and size from the actual files</li>
+            <li>broken links found by walking the finished pages</li>
+            <li>an explicit warning that the copy is static</li>
+          </ul>
+          <span class="adv-fact">report.html works offline</span>
         </article>
 
-        <article class="card">
-          <span class="icon-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.1 0l2.4-2.4a5 5 0 0 0-7.1-7.1L11 5"/><path d="M14 11a5 5 0 0 0-7.1 0l-2.4 2.4a5 5 0 0 0 7.1 7.1L13 19"/></svg></span>
-          <h3>Offline build</h3>
-          <p>Absolute links are rewritten to relative ones. CMS caches with hashes in filenames and image thumbnails are handled heuristically, so styles and pictures do not break.</p>
+        <article class="adv">
+          <span class="adv-num">04 · COMPLETENESS</span>
+          <h3>Addresses from every archived year</h3>
+          <p>The index returns everything the crawler stored over ten years, not just the latest snapshot. When there is no snapshot for the chosen date, neighbouring years are tried.</p>
+          <ul>
+            <li>up to 50,000 addresses and 200 index pages per run</li>
+            <li>the index response is streamed: size and record count are visible</li>
+            <li>truncation is not hidden — the log says so</li>
+          </ul>
+          <span class="adv-fact">9,476 snapshots in one run</span>
         </article>
 
-        <article class="card">
-          <span class="icon-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
-          <h3>Verification and report</h3>
-          <p>Every built page is scanned; internal and broken links are counted. <code>report.html</code> shows coverage by file type, total size and the list of errors.</p>
+        <article class="adv">
+          <span class="adv-num">05 · CONTINUATION</span>
+          <h3>Resume and re-run</h3>
+          <p>A large site takes hours. You can stop the run, close the program and come back later: finished files are not requested again and work continues from where it stopped.</p>
+          <ul>
+            <li>a file counts as done only if it exists and is not empty</li>
+            <li>an unfinished file stays under a temporary name</li>
+            <li>folder structure and inventory are read by newer versions</li>
+          </ul>
+          <span class="adv-fact">re-run without re-downloading</span>
         </article>
 
-        <article class="card">
-          <span class="icon-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/></svg></span>
-          <h3>Any address, any CMS</h3>
-          <p>A link from an email, a search result or the archive itself; wrong keyboard layout; IDN domains. Tested on Bitrix, WordPress, MODX, Craft CMS and Laravel.</p>
+        <article class="adv">
+          <span class="adv-num">06 · READABILITY</span>
+          <h3>Encodings and file integrity</h3>
+          <p>Older sites were written in windows-1251 and KOI8-R. The program converts text to UTF-8 based on the content rather than the declaration, so Cyrillic does not turn into garbage.</p>
+          <ul>
+            <li>byte order mark, declared charset, statistical assessment</li>
+            <li>double-encoded text is repaired</li>
+            <li>binary files behind a page address are copied as-is</li>
+          </ul>
+          <span class="adv-fact">7 encodings → UTF-8</span>
         </article>
       </div>
 
-      <div class="output">
-        <div class="code-panel">
-          <div class="code-head">
-            <span class="code-lang">PowerShell</span>
-            <button class="copy-btn" type="button" data-copy="cli-cmd" data-copied-text="Copied" data-fail-text="Failed" aria-label="Copy command">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-              <span data-copy-label>Copy</span>
-            </button>
-          </div>
-          <pre class="code-body"><code id="cli-cmd">SiteRestorer-windows-x64.exe --cli --site example.com --out D:\mirror</code></pre>
-        </div>
-        <div class="folder-tree" aria-label="Output structure">
-          <div class="ft-row"><code>site\</code><span>the browsable copy, serve it locally</span></div>
-          <div class="ft-row"><code>mirror\</code><span>raw files from the archive</span></div>
-          <div class="ft-row"><code>data\</code><span>inventory.jsonl — the URL list</span></div>
-          <div class="ft-row"><code>report.html</code><span>coverage report</span></div>
-        </div>
+      <div class="support-strip">
+        <p><strong>Support the project.</strong> Site Restorer is free: no ads, no subscriptions, no telemetry. If it brought your site back, you can thank the author.</p>
+        <a class="btn btn-secondary btn-small" href="https://boosty.to/explosion/donate" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 1 0-7.1 7.1L12 21l8.8-8.3a5 5 0 0 0 0-7.1Z"/></svg>
+          Support
+        </a>
       </div>
-      <p class="small muted" style="margin-top:14px">For scripting there is a CLI: <code>--site</code>, <code>--out</code>, <code>--workers</code>, <code>--rate</code>, <code>--limit</code>, <code>--lang</code>. Details in the <a href="https://github.com/azxasd69/site-restorer/blob/main/README.md" rel="noopener">README</a>.</p>
     </div>
   </section>
 
@@ -301,32 +327,52 @@
     <div class="wrap">
       <div class="section-head">
         <p class="eyebrow">How it works</p>
-        <h2>Four steps, no configuration</h2>
+        <h2>Four steps and the copy is on disk</h2>
+        <p class="lead">Five stages inside: inventory, download, assembly, verification, report. The window shows the step, the stage and a log line with a timestamp for every request.</p>
       </div>
 
       <ol class="steps">
         <li>
-          <h3>Paste an address</h3>
-          <p>A domain, a link with tracking parameters or an archive URL. The input is cleaned automatically, including wrong keyboard layout and IDN.</p>
+          <h3>Paste the address</h3>
+          <p>A domain, a link with tracking parameters or an archive URL. The input is cleaned automatically, including a wrong keyboard layout and IDN domains.</p>
         </li>
         <li>
-          <h3>Pick a folder</h3>
-          <p>Defaults to <code>Documents\SiteRestore\site</code>. Any drive and directory will do.</p>
+          <h3>Choose a folder</h3>
+          <p><code>Documents\SiteRestore\site</code> by default. Any drive and directory will do.</p>
         </li>
         <li>
           <h3>Press “Start”</h3>
-          <p>Downloading runs in the background: progress by file type, a request log, and a “Stop” button at any moment.</p>
+          <p>The run continues in the background: progress by file type, request log, a stop button at any moment.</p>
         </li>
         <li>
           <h3>Open the report</h3>
-          <p><code>report.html</code> shows coverage, size and broken links. Serve the copy with a local web server.</p>
+          <p><code>report.html</code> shows coverage, size and broken links. The copy is opened through a local server.</p>
         </li>
       </ol>
 
-      <div class="output" style="margin-top:32px">
+      <div class="output">
         <div class="code-panel">
           <div class="code-head">
-            <span class="code-lang">PowerShell</span>
+            <span class="code-lang">PowerShell · command line</span>
+            <button class="copy-btn" type="button" data-copy="cli-cmd" data-copied-text="Copied" data-fail-text="Failed" aria-label="Copy command">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              <span data-copy-label>Copy</span>
+            </button>
+          </div>
+          <pre class="code-body"><code id="cli-cmd">SiteRestorer-windows-x64-cli.exe --site yoursite.ru --out D:\mirror --lang en</code></pre>
+        </div>
+        <div class="folder-tree" aria-label="Result structure">
+          <div class="ft-row"><code>site\</code><span>the finished copy, open it with a local server</span></div>
+          <div class="ft-row"><code>mirror\</code><span>raw files from the archive</span></div>
+          <div class="ft-row"><code>data\</code><span>inventory.jsonl — what was fetched and when</span></div>
+          <div class="ft-row"><code>report.html</code><span>coverage and losses</span></div>
+        </div>
+      </div>
+
+      <div class="output" style="margin-top:18px">
+        <div class="code-panel">
+          <div class="code-head">
+            <span class="code-lang">PowerShell · local server</span>
             <button class="copy-btn" type="button" data-copy="srv-cmd" data-copied-text="Copied" data-fail-text="Failed" aria-label="Copy command">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
               <span data-copy-label>Copy</span>
@@ -336,7 +382,8 @@
 python -m http.server 8080</code></pre>
         </div>
         <div class="prose small">
-          <p><strong>Why a server.</strong> The copy is plain HTML, but links like <code>/catalog/</code> will not resolve when the file is opened by double-click. Any local static server works; if Python is installed, the two lines on the left are enough.</p>
+          <p><strong>Why a server is needed.</strong> The copy is plain HTML files, but links like <code>/catalog/</code> will not open by double-click. Any local static server works; if Python is installed, the two lines on the left are enough.</p>
+          <p class="muted" style="margin-top:10px">For scripts and schedulers there is a command line mode: <code>--site</code>, <code>--out</code>, <code>--workers</code>, <code>--rate</code>, <code>--limit</code>, <code>--lang</code>, and at the end a <code>RESULT {…}</code> line with a JSON summary.</p>
         </div>
       </div>
     </div>
@@ -346,85 +393,110 @@ python -m http.server 8080</code></pre>
   <section class="section" id="case">
     <div class="wrap">
       <div class="section-head">
-        <p class="eyebrow">Case study</p>
-        <h2>A trading company's storefront: 98.2% of the site rebuilt</h2>
+        <p class="eyebrow">Case</p>
+        <h2>A trading company storefront: 98.2 % of the site from the archive</h2>
         <p class="lead">The project started with this site: a product catalogue, a blog and PDF catalogues. No files, no backups, no hosting access.</p>
       </div>
 
       <div class="case-grid">
         <div>
           <div class="case-figures">
-            <div><b>1,638</b><span>unique URLs in the CDX index</span></div>
+            <div><b>1,638</b><span>unique addresses in the index</span></div>
             <div><b>9,476</b><span>snapshots, 2016–2026</span></div>
-            <div><b>1,609</b><span>downloaded (98.2%)</span></div>
+            <div><b>1,609</b><span>downloaded — 98.2 %</span></div>
             <div><b>315 MB</b><span>size of the finished copy</span></div>
-            <div><b>1,164 / 1,168</b><span>HTML pages</span></div>
+            <div><b>1,164 / 1,168</b><span>html pages</span></div>
             <div><b>1,042 / 1,044</b><span>catalogue pages</span></div>
           </div>
-          <p class="small muted" style="margin-top:14px">Full write-up with the numbers — in the <a href="https://github.com/azxasd69/site-restorer/tree/main/docs" rel="noopener">project docs</a>.</p>
+          <p class="small muted" style="margin-top:14px">The detailed breakdown is in the project <a href="https://github.com/azxasd69/site-restorer/tree/main/docs" rel="noopener">documentation</a>. Running the same job on your own domain takes a couple of minutes.</p>
         </div>
 
         <div>
-          <h3 style="font-size:1.02rem;margin-bottom:6px">What did not come back, and why</h3>
+          <h3 style="font-size:1rem;margin-bottom:8px">What did not come back, and why</h3>
           <ul class="case-list">
             <li>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
-              <span><strong>Product images.</strong> 2,510 images were never captured: the CDX index has no records and replay returns 404 for every year. That is an archive loss, not an app failure.</span>
+              <span><strong>Product images.</strong> 2,510 images were never stored by the archive: no index record, a 404 for any year. That is an archive loss, not a program failure.</span>
             </li>
             <li>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
-              <span><strong>CMS dynamics.</strong> Cart, sign-in, search and AJAX catalogue filters do not work in a static copy — they need a backend and a database.</span>
+              <span><strong>CMS dynamics.</strong> Cart, login, search and AJAX catalogue filters do not work in a static copy — they need a backend and a database.</span>
             </li>
             <li>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
-              <span><strong>Template cache.</strong> Asset filenames carry a build hash. The app substitutes a file of the same type: styles survive, the exact version may differ.</span>
+              <span><strong>Template cache.</strong> File names carry a build hash. A file of the same type is substituted — styles survive, the version may differ.</span>
             </li>
           </ul>
         </div>
       </div>
 
-      <h3 style="font-size:1.02rem;margin:38px 0 14px">When this helps</h3>
+      <h3 style="font-size:1rem;margin:38px 0 14px">When this helps</h3>
       <div class="grid-3">
         <article class="card">
-          <h3 style="margin-top:0">Hosting lost your data</h3>
-          <p>The domain resolves, the server is gone, no backups exist. The archive is the only source left: pages, articles, the catalogue.</p>
+          <h3 style="margin-top:0">The host lost the data</h3>
+          <p>The domain resolves, the server is silent, there are no backups. The archive is the only source of content: pages, articles, catalogue.</p>
         </article>
         <article class="card">
-          <h3 style="margin-top:0">A site was closed or abandoned</h3>
-          <p>You need a copy for the record, a migration or a client handover — without admin access and with the old CMS gone.</p>
+          <h3 style="margin-top:0">The site was closed or abandoned</h3>
+          <p>You need a copy for the record, for a migration or to hand over to a client — without admin access and without the old CMS.</p>
         </article>
         <article class="card">
           <h3 style="margin-top:0">You need an older version</h3>
-          <p>Compare what the site looked like a year ago, or bring back a deleted section or a page that vanished.</p>
+          <p>Compare what the site looked like a year ago, restore a removed section or a lost page.</p>
         </article>
       </div>
     </div>
   </section>
+
+  <!-- LIMITS -->
   <section class="section" id="limits">
     <div class="wrap">
       <div class="section-head">
         <p class="eyebrow">Limits</p>
-        <h2>What to know before you start</h2>
-        <p class="lead">No promises of magic: the tool carefully extracts what the archive actually preserved.</p>
+        <h2>What to understand before the first run</h2>
+        <p class="lead">The tool promises no miracles: it carefully extracts what the archive actually kept and states what will not be there.</p>
       </div>
 
-      <div class="grid-3">
-        <article class="card">
-          <h3>Only what was saved</h3>
-          <p>If the Internet Archive crawler never fetched a file, it is missing from every snapshot. The report says so instead of substituting a placeholder.</p>
-        </article>
-        <article class="card">
-          <h3>Static, not a CMS</h3>
-          <p>The copy is pages and assets. Forms, sign-in, cart, search and AJAX will not work: content and structure are what comes back.</p>
-        </article>
-        <article class="card">
-          <h3>Archive speed</h3>
-          <p>The Internet Archive throttles requests from a single IP. Large sites take hours, which is normal — resuming makes it survivable.</p>
-        </article>
+      <div class="compare">
+        <div class="keep">
+          <h3>comes back</h3>
+          <ul>
+            <li>pages and the section structure</li>
+            <li>styles, fonts and page scripts</li>
+            <li>images the crawler stored</li>
+            <li>documents and PDF files</li>
+            <li>addresses from every snapshot</li>
+          </ul>
+        </div>
+        <div>
+          <h3>does not come back</h3>
+          <ul>
+            <li>the database: products, orders, CMS articles</li>
+            <li>cart, account login, search, AJAX filters</li>
+            <li>images the archive never kept</li>
+            <li>dynamic requests and APIs</li>
+            <li>wishes instead of evidence: no placeholders</li>
+          </ul>
+        </div>
       </div>
 
       <div class="callout" style="margin-top:22px">
-        <strong>Ethics and law.</strong> The tool is meant for archiving and restoring <em>your own</em> sites. It does not bypass protection, spoof the User-Agent or disguise itself as a browser. A copy of someone else's site is not a licence to publish it; respect the Internet Archive terms and the rights of content owners.
+        <strong>Ethics and law.</strong> The tool is meant for personal archiving and recovery of <em>your own</em> sites. It does not bypass protection, does not spoof a browser, only reads the archive and never sends your data anywhere. A copy of someone else's site is not a licence to publish it.
+      </div>
+
+      <div class="grid-3" style="margin-top:22px">
+        <article class="card">
+          <h3 style="margin-top:0">Only what was stored</h3>
+          <p>If the Internet Archive crawler never fetched a file, it is in no snapshot. The report will say so instead of substituting a placeholder.</p>
+        </article>
+        <article class="card">
+          <h3 style="margin-top:0">Static instead of CMS</h3>
+          <p>The copy is pages and files. Forms, login, cart, search and AJAX will not work: content and structure are what gets restored.</p>
+        </article>
+        <article class="card">
+          <h3 style="margin-top:0">The archive sets the pace</h3>
+          <p>The Internet Archive limits request rates per IP. Large sites take hours — that is normal, and resuming saves the day.</p>
+        </article>
       </div>
     </div>
   </section>
@@ -435,45 +507,44 @@ python -m http.server 8080</code></pre>
       <div class="section-head">
         <p class="eyebrow">Download</p>
         <h2>One file, no installation</h2>
-        <p class="lead">Links point to the latest build in GitHub Releases. It is a single self-contained binary: no interpreter or libraries to install.</p>
+        <p class="lead">The links point to the latest build on GitHub Releases. It is a single self-contained binary: no interpreter, no libraries to install.</p>
       </div>
 
       <div class="dl-grid">
         <article class="dl-card">
           <h3>Site Restorer <span class="chip">x64</span></h3>
-          <p class="dl-meta">Windows 10/11 · 6.2 MB · Rust + egui, recommended</p>
+          <p class="dl-meta">Windows 10/11 · 6.2 MB · the main build</p>
           <ul>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>For 64-bit Windows 10 (1809+) and Windows 11</span></li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Portable: unzip into a folder and run</span></li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>RU / EN interface, switchable on the fly</span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Portable: unpack into a folder and run</span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>RU / EN interface, switched on the fly</span></li>
           </ul>
           <a class="btn btn-primary btn-block" href="https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64.exe">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v10"/><path d="M8 11l4 4 4-4"/><path d="M5 19h14"/></svg>
-            Download SiteRestorer-windows-x64.exe
+            Download x64
           </a>
         </article>
 
         <article class="dl-card">
           <h3>Site Restorer <span class="chip">x86</span></h3>
-          <p class="dl-meta">Windows 10/11 · 5.6 MB · Rust + egui, 32-bit build</p>
+          <p class="dl-meta">Windows 10/11 · 5.6 MB · 32-bit build</p>
           <ul>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>For 32-bit systems and older machines</span></li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Same features, lower memory footprint</span></li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Built and verified by CI on every tag</span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Same features, less memory</span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Every tag is verified in CI</span></li>
           </ul>
           <a class="btn btn-secondary btn-block" href="https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x86.exe">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v10"/><path d="M8 11l4 4 4-4"/><path d="M5 19h14"/></svg>
-            Download SiteRestorer-windows-x86.exe
+            Download x86
           </a>
         </article>
-      </div>
 
         <article class="dl-card">
           <h3>Site Restorer <span class="chip">Linux</span></h3>
-          <p class="dl-meta">Ubuntu / Debian · 4.5 MB · GUI + CLI, tar.gz</p>
+          <p class="dl-meta">Ubuntu / Debian · 4.5 MB · GUI + CLI</p>
           <ul>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Static CLI build and GUI in one archive</span></li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>install.sh, .desktop and icon — installs into ~/.local</span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Static CLI build and the GUI in one archive</span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>install.sh, .desktop and icon — installs to ~/.local</span></li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>The GUI needs libxkbcommon-x11-0 and libgl1</span></li>
           </ul>
           <a class="btn btn-secondary btn-block" href="https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64.tar.gz">
@@ -481,19 +552,29 @@ python -m http.server 8080</code></pre>
             Download tar.gz
           </a>
         </article>
+      </div>
 
       <div class="req-grid">
         <div class="req"><b>System</b><span>Windows 10 (1809+) or Windows 11, x64 / x86</span></div>
-        <div class="req"><b>Installation</b><span>None — portable executable, settings stay local</span></div>
-        <div class="req"><b>License</b><span>MIT: use it, study it, fork it</span></div>
+        <div class="req"><b>Installation</b><span>None — a portable exe, settings live in your profile</span></div>
+        <div class="req"><b>Licence</b><span>MIT: use it, read it, fork it</span></div>
       </div>
 
-      <div class="callout callout-warn" style="margin-top:24px">
-        <strong>SmartScreen may warn you.</strong> The build is not signed with a paid certificate, so Windows shows “Windows protected your PC”. Choose “More info” → “Run anyway” (or run <code>Unblock.cmd</code> from the archive). The source code and CI builds are public — you can compile it yourself.
+      <div class="callout callout-warn" style="margin-top:20px">
+        <strong>SmartScreen may warn you.</strong> The build is not signed with a paid certificate, so Windows shows “Windows protected your PC”. Choose “More info” → “Run anyway”. The source and the CI build are open — you can build it yourself.
       </div>
 
-                        <p class="small muted" style="margin-top:16px">Earlier stacks are archived in the repository: the Python build (<code>legacy/python</code>) and the Go port (<code>ports/go</code>) are no longer built or released. Current builds are Rust for Windows x64/x86 and Linux x64. Size matrix and build commands are in <a href="https://github.com/azxasd69/site-restorer/blob/main/BUILD.md" rel="noopener">BUILD.md</a>.</p>
-<p class="small muted" style="margin-top:16px">All versions, checksums and release notes live on the <a href="https://github.com/azxasd69/site-restorer/releases" rel="noopener">Releases</a> page.</p>
+      <!-- Support: QR -->
+      <div class="qr-box">
+        <img class="qr-img" src="../assets/img/qr-support.png" width="128" height="128" alt="QR code linking to the project support page on Boosty">
+        <div class="qr-text">
+          <h3>Say thanks</h3>
+          <p>Point your phone camera at the code or open the link on your computer. The support page opens in the browser on click — the program itself never contacts it.</p>
+          <a class="qr-link" href="https://boosty.to/explosion/donate" rel="noopener">https://boosty.to/explosion/donate</a>
+        </div>
+      </div>
+
+      <p class="small muted" style="margin-top:16px">The Python version and the Go port stay in the repository as archive material: the 3.x releases do not build them. Size matrix and build commands are in <a href="https://github.com/azxasd69/site-restorer/blob/main/BUILD.md" rel="noopener">BUILD.md</a>. All versions and checksums are on the <a href="https://github.com/azxasd69/site-restorer/releases" rel="noopener">Releases</a> page.</p>
     </div>
   </section>
 
@@ -502,12 +583,17 @@ python -m http.server 8080</code></pre>
     <div class="wrap">
       <div class="support">
         <div>
-          <h2>Support the author</h2>
-          <p>The project runs without ads, subscriptions or telemetry. If Site Restorer brought your site back or saved you a night's work, you can thank the author on Boosty. It is the most direct way to speed up new releases.</p>
+          <h2>Support the developer</h2>
+          <p>The project grows without ads, subscriptions or telemetry: one program, open source, no server side. If Site Restorer brought your site back or saved you a night, you can support the project on Boosty. It is the best way to speed up new releases.</p>
+          <p class="support-links">
+            <a href="https://boosty.to/explosion/donate" rel="noopener">Boosty — support</a>
+            <a href="https://github.com/azxasd69/site-restorer" rel="noopener">GitHub — star</a>
+            <a href="https://github.com/azxasd69/site-restorer/issues" rel="noopener">Issue — report a problem</a>
+          </p>
         </div>
         <a class="btn btn-primary" href="https://boosty.to/explosion/donate" rel="noopener">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 1 0-7.1 7.1L12 21l8.8-8.3a5 5 0 0 0 0-7.1Z"/></svg>
-          Donate on Boosty
+          Say thanks
         </a>
       </div>
     </div>
@@ -518,34 +604,55 @@ python -m http.server 8080</code></pre>
     <div class="wrap">
       <div class="section-head">
         <p class="eyebrow">FAQ</p>
-        <h2>The short answers</h2>
+        <h2>Short answers to the usual questions</h2>
       </div>
 
       <div class="faq">
         <details>
-          <summary>Do I need Python or anything else?</summary>
-          <div class="answer">No. The main build is a single Rust binary with no interpreter, so it runs on a clean Windows install. Python is only useful if you want to serve the copy with <code>python -m http.server</code> — any other static server will do as well.</div>
+          <summary>Do I need Python or other software?</summary>
+          <div class="answer">No. The main build is a Rust binary with no interpreter: the application starts on a clean Windows install. Python is only needed if you choose <code>python -m http.server</code> as your local server — any other static server works too.</div>
         </details>
         <details>
-          <summary>What if the archive saved nothing?</summary>
-          <div class="answer">The report will say so, and the app will not invent content. It is still worth trying domain variants (with and without <code>www</code>) and nearby years: for every URL the closest snapshots are probed.</div>
+          <summary>What if the archive kept nothing?</summary>
+          <div class="answer">The report will say so and nothing will be invented. Try the domain with and without <code>www</code>, and neighbouring years: the closest snapshots are tried for every address.</div>
         </details>
         <details>
-          <summary>How long does a restore take?</summary>
-          <div class="answer">It depends on the site and on archive limits. A small site takes minutes; thousands of URLs take hours, because the Internet Archive throttles requests from one IP. Progress, size and elapsed time are shown in the window, and resuming lets you stop and continue later.</div>
+          <summary>How long does a recovery take?</summary>
+          <div class="answer">It depends on the site size and the archive limits. A small site takes minutes, thousands of addresses take hours: the Internet Archive limits request rates per IP. Progress, size and remaining time are visible in the window, and resuming lets you stop and continue later.</div>
         </details>
         <details>
           <summary>Will product images and photos come back?</summary>
-          <div class="answer">Only if the archive captured them. Internet Archive crawlers often save pages but not every image: in one case 2,510 product images were missing from the archive entirely, while the text content survived.</div>
+          <div class="answer">Only if the archive stored them. Internet Archive crawlers often capture pages but not every image: in one case 2,510 product images were absent from the archive entirely while the text part survived.</div>
         </details>
         <details>
-          <summary>Will the cart, sign-in and search work?</summary>
-          <div class="answer">No. The copy is static: pages, styles, scripts and files are restored. Anything that needs server-side logic and a database — cart, authentication, AJAX filters — will not work.</div>
+          <summary>Will the cart, login and search work?</summary>
+          <div class="answer">No. The copy is static: pages, styles, scripts and files are restored. Anything that needs server logic and a database (cart, login, AJAX filters) will not work.</div>
         </details>
         <details>
           <summary>Is this legal?</summary>
-          <div class="answer">The tool is built for restoring your own sites. It does not bypass protection, spoof the User-Agent or hide itself. Publishing a copy of someone else's site is not allowed; the Internet Archive terms and content owners' rights must be respected. The app itself is MIT licensed.</div>
+          <div class="answer">The tool is meant for recovering your own sites. It does not bypass protection, does not spoof a browser and does not hide. Publishing a copy of someone else's site is not allowed; respect the Internet Archive terms and the copyright of content owners. The application itself is MIT licensed.</div>
         </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- GUIDES -->
+  <section class="section" id="guides">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Guides</p>
+        <h2>More on recovery</h2>
+        <p class="lead">Two practical write-ups (in Russian) for those who want the exact order of steps.</p>
+      </div>
+      <div class="grid-2">
+        <article class="card">
+          <h3 style="margin-top:0"><a href="/guide/vosstanovit-sajt-iz-veb-arhiva/" hreflang="ru" lang="ru">Как восстановить сайт из веб-архива</a></h3>
+          <p>CDX index, the id_ mode, assembling the copy, encodings, link checking and a checklist.</p>
+        </article>
+        <article class="card">
+          <h3 style="margin-top:0"><a href="/guide/chto-delat-esli-hosting-poteryal-dannye/" hreflang="ru" lang="ru">Хостинг потерял данные: первые часы</a></h3>
+          <p>What to freeze, where to look for backups, how to save the domain and email, and not lose traffic.</p>
+        </article>
       </div>
     </div>
   </section>
@@ -558,11 +665,25 @@ python -m http.server 8080</code></pre>
       <div>
         <div class="footer-brand">
           <span class="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v9"/><path d="M8 10l4 4 4-4"/><path d="M5 17h14"/></svg>
+            <svg viewBox="0 0 32 32">
+              <rect x="3" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/>
+              <rect x="16.5" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/>
+              <rect x="3" y="16.5" width="11" height="11" rx="1.2" fill="#ffffff"/>
+              <rect x="17.2" y="17.2" width="9.6" height="9.6" rx="1" fill="none" stroke="#9FB0C2" stroke-width="1.5" stroke-dasharray="2.2 2"/>
+            </svg>
           </span>
           Site Restorer
         </div>
-        <p class="small">Rebuild a website from the web archive.<br>Windows 10/11 · MIT · 2026</p>
+        <p class="small">Website recovery from the Internet Archive.<br>Windows 10/11 · MIT · 2026</p>
+      </div>
+      <div class="footer-col">
+        <h4>Product</h4>
+        <ul>
+          <li><a href="#advantages">Advantages</a></li>
+          <li><a href="#how">How it works</a></li>
+          <li><a href="#case">Case</a></li>
+          <li><a href="#download">Download</a></li>
+        </ul>
       </div>
       <div class="footer-col">
         <h4>Project</h4>
@@ -570,27 +691,26 @@ python -m http.server 8080</code></pre>
           <li><a href="https://github.com/azxasd69/site-restorer" rel="noopener">GitHub</a></li>
           <li><a href="https://github.com/azxasd69/site-restorer/releases" rel="noopener">Releases</a></li>
           <li><a href="https://github.com/azxasd69/site-restorer/issues" rel="noopener">Issues</a></li>
-          <li><a href="https://github.com/azxasd69/site-restorer/blob/main/LICENSE" rel="noopener">MIT license</a></li>
+          <li><a href="https://github.com/azxasd69/site-restorer/blob/main/LICENSE" rel="noopener">MIT licence</a></li>
         </ul>
       </div>
       <div class="footer-col">
         <h4>Support</h4>
         <ul>
-          <li><a href="https://boosty.to/explosion/donate" rel="noopener">Boosty</a></li>
+          <li><a class="is-support" href="https://boosty.to/explosion/donate" rel="noopener">Support the project</a></li>
           <li><a href="#faq">FAQ</a></li>
           <li><a href="../" hreflang="ru" lang="ru">Русская версия</a></li>
         </ul>
       </div>
     </div>
     <div class="footer-bottom">
-      <span class="footer-note">Visit statistics by Yandex Metrica; can be turned off in the notice or in your browser.</span>
+      <span class="footer-note">Visit statistics — Yandex Metrica; can be turned off in the notice or in the browser.</span>
       <span>© <span data-year>2026</span> Site Restorer. Open source under MIT.</span>
       <span>Built after the Beget outage of 2 November 2026.</span>
       <span><a href="/en/privacy/">Privacy policy</a> · <a href="#" data-consent-open>Cookie settings</a></span>
     </div>
   </div>
 </footer>
-
 
 </body>
 </html>

@@ -4,15 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Site Restorer — восстановление сайта из веб-архива</title>
-<meta name="description" content="Восстанавливает сайт из Internet Archive: инвентаризация адресов, параллельная загрузка, локальная копия и отчёт о полноте. Один exe, без установки.">
-<meta name="theme-color" content="#f7f5f1" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#131519" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Скачивает копию сайта из Internet Archive, собирает её локально и показывает, что удалось вернуть, а что потеряно. Один exe, без установки.">
+<meta name="theme-color" content="#f3f4f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15181c" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Site Restorer">
 <meta property="og:title" content="Site Restorer — восстановление сайта из веб-архива">
-<meta property="og:description" content="Скачивает копию сайта из Internet Archive, собирает её локально и показывает, что удалось вернуть. Один exe для Windows, без установки.">
+<meta property="og:description" content="Скачивает копию сайта из Internet Archive, собирает её локально и показывает, что удалось вернуть, а что потеряно. Один exe для Windows.">
 <meta property="og:locale" content="ru_RU">
 <meta property="og:locale:alternate" content="en_US">
 <link rel="canonical" href="https://lastcopy.ru/">
@@ -30,11 +30,11 @@
 
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/img/touch-icon.png">
-<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/style.css?v=2">
 <link rel="describedby" href="llms.txt">
 <link rel="alternate" type="text/markdown" href="index.md" title="Markdown-версия страницы">
-<script src="assets/app.js" defer></script>
-<script src="assets/consent.js?v=4" defer></script>
+<script src="assets/app.js?v=2" defer></script>
+<script src="assets/consent.js?v=5" defer></script>
 <script src="assets/goals.js?v=2" defer></script>
 <script type="application/ld+json">
 {
@@ -128,21 +128,27 @@
 
 <header class="site-header">
   <div class="wrap header-inner">
-    <a class="brand" href="#top" aria-label="Site Restorer — на главную">
+    <a class="brand" href="index.html" aria-label="Site Restorer — на главную">
       <span class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v9"/><path d="M8 10l4 4 4-4"/><path d="M5 17h14"/></svg>
+        <svg viewBox="0 0 32 32">
+          <rect x="3" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/>
+          <rect x="16.5" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/>
+          <rect x="3" y="16.5" width="11" height="11" rx="1.2" fill="#ffffff"/>
+          <rect x="17.2" y="17.2" width="9.6" height="9.6" rx="1" fill="none" stroke="#9FB0C2" stroke-width="1.5" stroke-dasharray="2.2 2"/>
+        </svg>
       </span>
       <span class="brand-name">Site Restorer</span>
     </a>
 
     <nav class="nav" id="site-nav" aria-label="Основная навигация">
-      <a href="#features">Возможности</a>
+      <a href="#advantages">Преимущества</a>
       <a href="#how">Как работает</a>
       <a href="#case">Кейс</a>
       <a href="#faq">Вопросы</a>
     </nav>
 
     <div class="header-actions">
+      <a class="header-support" href="#support">Поддержать</a>
       <span class="lang" aria-label="Язык">
         <a href="./" aria-current="true" hreflang="ru" lang="ru">RU</a>
         <span class="sep" aria-hidden="true">/</span>
@@ -164,9 +170,9 @@
   <!-- HERO -->
   <section class="hero">
     <div class="wrap hero-grid">
-      <div>
-        <p class="eyebrow">Windows 10/11 · MIT · без установки</p>
-        <h1>Вернуть сайт, у которого не осталось копии</h1>
+      <div class="hero-copy">
+        <p class="eyebrow">windows 10/11 · mit · без установки</p>
+        <h1>Вернуть сайт, у&nbsp;которого не осталось копии</h1>
         <p class="lead">Site Restorer достаёт сохранённую версию сайта из Internet Archive, собирает её в локальную копию и честно показывает, что удалось вернуть, а что потеряно.</p>
 
         <div class="hero-actions">
@@ -181,18 +187,36 @@
         </div>
 
         <p class="hero-note">
-          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Python не нужен</span>
-          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Портативный exe</span>
-          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Любая CMS</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Python не нужен</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Портативный exe</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Любая CMS</span>
         </p>
       </div>
 
-      <figure class="hero-media">
-        <div class="shot">
-          <img src="assets/img/screenshot-running.png" width="968" height="742" alt="Окно Site Restorer: скачивание архива, плитки прогресса, полосы по типам файлов и журнал запросов с метками времени" fetchpriority="high">
+      <div class="report">
+        <div class="report-head">
+          <span class="dot" aria-hidden="true"></span>
+          отчёт о спасении
+          <span class="meta">yoursite.ru · 2026-11-10</span>
         </div>
-        <figcaption class="shot-caption">Программа в работе: скачивание архива, скорость, потоки и журнал каждого запроса.</figcaption>
-      </figure>
+        <table>
+          <thead>
+            <tr><th scope="col">тип</th><th scope="col" style="text-align:right">вернулось</th><th scope="col" style="text-align:right">потеряно</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>адреса сайта</td><td class="n ok">1 609</td><td class="n">29</td></tr>
+            <tr><td>страницы каталога</td><td class="n ok">1 042</td><td class="n">2</td></tr>
+            <tr><td>html-страницы</td><td class="n ok">1 164</td><td class="n">4</td></tr>
+            <tr class="is-lost"><td>изображения товаров</td><td class="n"><span class="dash">—</span></td><td class="n">2 510</td></tr>
+            <tr class="is-lost"><td>база данных, корзина, вход</td><td class="n"><span class="dash">—</span></td><td class="n">вне копии</td></tr>
+          </tbody>
+        </table>
+        <div class="report-foot">
+          <span>полнота: <b>98,2 %</b></span>
+          <span>объём: <b>315 МБ</b></span>
+          <span>отчёт: <b>report.html</b></span>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -206,93 +230,96 @@
     </div>
   </div>
 
-  <!-- WHY -->
-  <section class="section" id="why">
+  <!-- ADVANTAGES -->
+  <section class="section" id="advantages">
     <div class="wrap">
       <div class="section-head">
-        <p class="eyebrow">Контекст</p>
-        <h2>Проект появился после аварии, а не из идеи</h2>
-      </div>
-      <div class="grid-2">
-        <div class="prose">
-          <p>В ночь с 1 на 2 ноября 2026 года хостинг <strong>Beget</strong> пережил атаку на управляющий контур инфраструктуры. Провайдер подтвердил потерю содержимого виртуальных серверов, объектного хранилища S3 и кластеров Kubernetes; резервные копии VPS также оказались утрачены.</p>
-          <p>Сайт, с которого начался этот проект, размещался там же: домен резолвился, сервер не отвечал, собственных бэкапов не осталось. Единственным источником контента был веб-архив — 1&nbsp;638 адресов и 9&nbsp;476 снимков за десять лет.</p>
-          <p class="small muted">Публикации: <a href="https://3dnews.ru/1150814/hostingprovayder-beget-podtverdil-poteryu-dannih-klientov-posle-ataki" rel="noopener">3DNews</a>, <a href="https://habr.com/ru/news/1102974/" rel="noopener">Habr</a>, <a href="https://www.dw.com/ru/hostingprovajder-beget-ustranaet-masstabnyj-sboj-inzenery-vrucnuu-vosstanavlivaut-infrastrukturu-klienty-zaluutsa-na-nedostupnost-sajtov/a-79828347" rel="noopener">DW</a>.</p>
-        </div>
-        <div class="callout">
-          <strong>Если ваш сайт пострадал в той же аварии — начните с архива, а не с паники.</strong><br>
-          У большинства «погибших» сайтов текстовая часть и структура сохраняются полностью: страницы, статьи, каталог. Терять обычно приходится картинки товаров и динамические разделы.
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- FEATURES -->
-  <section class="section" id="features">
-    <div class="wrap">
-      <div class="section-head">
-        <p class="eyebrow">Возможности</p>
-        <h2>Всё, что нужно, чтобы пройти путь от адреса до готовой копии</h2>
-        <p class="lead">Программа делает четыре вещи: узнаёт, что сохранил архив, скачивает это, собирает в оффлайн-копию и проверяет результат.</p>
+        <p class="eyebrow">Преимущества</p>
+        <h2>Шесть вещей, от которых зависит, получится ли копия</h2>
+        <p class="lead">Не список возможностей, а то, что человек замечает в первые полчаса работы: скорость, целая разметка, честные цифры, полнота архива, возможность продолжить позже и читаемый текст в файлах.</p>
       </div>
 
-      <div class="grid-3">
-        <article class="card">
-          <span class="icon-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg></span>
-          <h3>Инвентаризация архива</h3>
-          <p>CDX-индекс Internet Archive: все сохранённые адреса домена. Постраничный обход для больших сайтов, до 50&nbsp;000 URL за прогон.</p>
+      <div class="adv-grid">
+        <article class="adv">
+          <span class="adv-num">01 · СКОРОСТЬ</span>
+          <h3>Многопоточная загрузка</h3>
+          <p>Страницы, стили, скрипты и картинки качаются одновременно, а число потоков подстраивается под ответ архива: растёт, пока скорость держится, и снижается, когда сервер начинает притормаживать.</p>
+          <ul>
+            <li>старт с двух потоков, рабочий предел — 24</li>
+            <li>отказ 429 — пауза по указанию сервера, а не ошибка файла</li>
+            <li>ограничение темпа, если канал общий</li>
+          </ul>
+          <span class="adv-fact">1 200 файлов ≈ 4 минуты</span>
         </article>
 
-        <article class="card">
-          <span class="icon-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M8 10l4 4 4-4"/><path d="M4 18v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1"/></svg></span>
-          <h3>Параллельная загрузка</h3>
-          <p>HTML, стили, скрипты и изображения качаются одновременно. Конкурентность подстраивается: 2 → 24 потока по AIMD, срез при ошибках 429.</p>
+        <article class="adv">
+          <span class="adv-num">02 · РЕЗУЛЬТАТ</span>
+          <h3>Автосборка локальной копии</h3>
+          <p>На выходе не папка скачанных файлов, а рабочий сайт: ссылки переписаны в относительные, поэтому копия открывается без исходного домена и без интернета.</p>
+          <ul>
+            <li>атрибуты, наборы источников изображений, адреса в стилях и скриптах</li>
+            <li>кэш CMS с хэшем в имени и миниатюры вместо оригинала</li>
+            <li>тег базового адреса удаляется, чтобы пути считались от файла</li>
+          </ul>
+          <span class="adv-fact">75 387 ссылок переписано</span>
         </article>
 
-        <article class="card">
-          <span class="icon-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg></span>
-          <h3>Докачка и устойчивость</h3>
-          <p>Уже скачанное не запрашивается повторно. Прерванный прогон продолжается с места остановки, а лимиты архива обрабатываются паузами, а не ошибками.</p>
+        <article class="adv">
+          <span class="adv-num">03 · ДОВЕРИЕ</span>
+          <h3>Честный отчёт о полноте</h3>
+          <p>Отчёт отдельно считает то, что вернулось, то, чего в архиве не было ни разу, и то, что не скачалось из-за ошибки. Это три разных числа, и путать их нельзя.</p>
+          <ul>
+            <li>покрытие по типам файлов и объём копии по фактическим файлам</li>
+            <li>битые ссылки, найденные обходом готовых страниц</li>
+            <li>явное предупреждение, что копия статическая</li>
+          </ul>
+          <span class="adv-fact">report.html без сети</span>
         </article>
 
-        <article class="card">
-          <span class="icon-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.1 0l2.4-2.4a5 5 0 0 0-7.1-7.1L11 5"/><path d="M14 11a5 5 0 0 0-7.1 0l-2.4 2.4a5 5 0 0 0 7.1 7.1L13 19"/></svg></span>
-          <h3>Сборка локальной копии</h3>
-          <p>Ссылки переписываются в относительные. Кэш CMS с хэшем в имени и миниатюры обрабатываются эвристиками — стили и картинки не отваливаются.</p>
+        <article class="adv">
+          <span class="adv-num">04 · ПОЛНОТА</span>
+          <h3>Адреса со всех лет архива</h3>
+          <p>Индекс отдаёт всё, что краулер сохранял за десять лет, а не только последний снимок. Если на нужную дату снимка нет, программа перебирает соседние годы.</p>
+          <ul>
+            <li>до 50 000 адресов и 200 страниц индекса за прогон</li>
+            <li>ответ индекса читается потоково: видно объём и число записей</li>
+            <li>усечение не скрывается — в журнале есть предупреждение</li>
+          </ul>
+          <span class="adv-fact">9 476 снимков в одном прогоне</span>
         </article>
 
-        <article class="card">
-          <span class="icon-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
-          <h3>Проверка и отчёт</h3>
-          <p>Обход готовых страниц, подсчёт внутренних и битых ссылок, <code>report.html</code>: покрытие по типам файлов, объём копии, список ошибок.</p>
+        <article class="adv">
+          <span class="adv-num">05 · ПРОДОЛЖЕНИЕ</span>
+          <h3>Докачка и повторный запуск</h3>
+          <p>Большой сайт качается часами. Можно остановить прогон, закрыть программу и вернуться позже: готовые файлы не запрашиваются заново, работа идёт с места остановки.</p>
+          <ul>
+            <li>файл считается готовым, только если он есть и непуст</li>
+            <li>недокачанный файл остаётся под временным именем</li>
+            <li>структура папки и инвентарь читаются новой версией</li>
+          </ul>
+          <span class="adv-fact">повтор без перекачки</span>
         </article>
 
-        <article class="card">
-          <span class="icon-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/></svg></span>
-          <h3>Любой адрес и любая CMS</h3>
-          <p>Ссылка из письма, поиска или архива, русская раскладка, IDN-домены. Проверено на Bitrix, WordPress, MODX, Craft CMS и Laravel.</p>
+        <article class="adv">
+          <span class="adv-num">06 · ЧИТАЕМОСТЬ</span>
+          <h3>Кодировки и целостность файлов</h3>
+          <p>Старые сайты писали в windows-1251 и KOI8-R. Программа приводит текст к UTF-8 по содержимому, а не по объявлению, поэтому кириллица не превращается в мусор.</p>
+          <ul>
+            <li>метка порядка байтов, объявление, статистическая оценка</li>
+            <li>исправление двойного кодирования</li>
+            <li>двоичные файлы под адресом страницы копируются как есть</li>
+          </ul>
+          <span class="adv-fact">7 кодировок → UTF-8</span>
         </article>
       </div>
 
-      <div class="output">
-        <div class="code-panel">
-          <div class="code-head">
-            <span class="code-lang">PowerShell</span>
-            <button class="copy-btn" type="button" data-copy="cli-cmd" data-copied-text="Скопировано" data-fail-text="Не вышло" aria-label="Скопировать команду">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-              <span data-copy-label>Копировать</span>
-            </button>
-          </div>
-          <pre class="code-body"><code id="cli-cmd">SiteRestorer-windows-x64.exe --cli --site example.com --out D:\mirror</code></pre>
-        </div>
-        <div class="folder-tree" aria-label="Структура результата">
-          <div class="ft-row"><code>site\</code><span>готовая копия, открывать локальным сервером</span></div>
-          <div class="ft-row"><code>mirror\</code><span>сырые файлы из архива</span></div>
-          <div class="ft-row"><code>data\</code><span>inventory.jsonl — список адресов</span></div>
-          <div class="ft-row"><code>report.html</code><span>отчёт о покрытии</span></div>
-        </div>
+      <div class="support-strip">
+        <p><strong>Поддержать проект.</strong> Site Restorer бесплатный, без рекламы, подписок и телеметрии. Если он вернул вам сайт — можно сказать спасибо автору.</p>
+        <a class="btn btn-secondary btn-small" href="https://boosty.to/explosion/donate" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 1 0-7.1 7.1L12 21l8.8-8.3a5 5 0 0 0 0-7.1Z"/></svg>
+          Поддержать
+        </a>
       </div>
-      <p class="small muted" style="margin-top:14px">Для скриптов есть командная строка: <code>--site</code>, <code>--out</code>, <code>--workers</code>, <code>--rate</code>, <code>--limit</code>, <code>--lang</code>. Подробности — в <a href="https://github.com/azxasd69/site-restorer/blob/main/README.md" rel="noopener">README</a>.</p>
     </div>
   </section>
 
@@ -301,7 +328,8 @@
     <div class="wrap">
       <div class="section-head">
         <p class="eyebrow">Как это работает</p>
-        <h2>Четыре шага и никакой настройки</h2>
+        <h2>Четыре шага, и копия на диске</h2>
+        <p class="lead">Внутри — пять стадий: инвентаризация, скачивание, сборка, проверка, отчёт. В окне видно и шаг, и этап, и журнал каждого запроса с меткой времени.</p>
       </div>
 
       <ol class="steps">
@@ -323,10 +351,29 @@
         </li>
       </ol>
 
-      <div class="output" style="margin-top:32px">
+      <div class="output">
         <div class="code-panel">
           <div class="code-head">
-            <span class="code-lang">PowerShell</span>
+            <span class="code-lang">PowerShell · командная строка</span>
+            <button class="copy-btn" type="button" data-copy="cli-cmd" data-copied-text="Скопировано" data-fail-text="Не вышло" aria-label="Скопировать команду">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              <span data-copy-label>Копировать</span>
+            </button>
+          </div>
+          <pre class="code-body"><code id="cli-cmd">SiteRestorer-windows-x64-cli.exe --site yoursite.ru --out D:\mirror</code></pre>
+        </div>
+        <div class="folder-tree" aria-label="Структура результата">
+          <div class="ft-row"><code>site\</code><span>готовая копия, открывать локальным сервером</span></div>
+          <div class="ft-row"><code>mirror\</code><span>сырые файлы из архива</span></div>
+          <div class="ft-row"><code>data\</code><span>inventory.jsonl — что и когда скачано</span></div>
+          <div class="ft-row"><code>report.html</code><span>отчёт о покрытии и потерях</span></div>
+        </div>
+      </div>
+
+      <div class="output" style="margin-top:18px">
+        <div class="code-panel">
+          <div class="code-head">
+            <span class="code-lang">PowerShell · локальный сервер</span>
             <button class="copy-btn" type="button" data-copy="srv-cmd" data-copied-text="Скопировано" data-fail-text="Не вышло" aria-label="Скопировать команду">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
               <span data-copy-label>Копировать</span>
@@ -337,6 +384,7 @@ python -m http.server 8080</code></pre>
         </div>
         <div class="prose small">
           <p><strong>Почему нужен сервер.</strong> Копия — это обычные HTML-файлы, но ссылки вида <code>/catalog/</code> браузер по двойному клику не откроет. Достаточно любого локального статического сервера; если установлен Python — хватит двух строк слева.</p>
+          <p class="muted" style="margin-top:10px">Для скриптов и планировщика есть режим командной строки: <code>--site</code>, <code>--out</code>, <code>--workers</code>, <code>--rate</code>, <code>--limit</code>, <code>--lang</code>, а по завершении печатается строка <code>RESULT {…}</code> с итогом в JSON.</p>
         </div>
       </div>
     </div>
@@ -354,22 +402,22 @@ python -m http.server 8080</code></pre>
       <div class="case-grid">
         <div>
           <div class="case-figures">
-            <div><b>1&nbsp;638</b><span>уникальных адресов в CDX</span></div>
+            <div><b>1&nbsp;638</b><span>уникальных адресов в индексе</span></div>
             <div><b>9&nbsp;476</b><span>снимков, 2016–2026</span></div>
-            <div><b>1&nbsp;609</b><span>скачано (98,2 %)</span></div>
+            <div><b>1&nbsp;609</b><span>скачано — 98,2 %</span></div>
             <div><b>315 МБ</b><span>объём готовой копии</span></div>
-            <div><b>1&nbsp;164 / 1&nbsp;168</b><span>HTML-страниц</span></div>
+            <div><b>1&nbsp;164 / 1&nbsp;168</b><span>html-страниц</span></div>
             <div><b>1&nbsp;042 / 1&nbsp;044</b><span>страниц каталога</span></div>
           </div>
-          <p class="small muted" style="margin-top:14px">Подробный разбор с цифрами — в <a href="https://github.com/azxasd69/site-restorer/tree/main/docs" rel="noopener">документации проекта</a>.</p>
+          <p class="small muted" style="margin-top:14px">Подробный разбор с цифрами — в <a href="https://github.com/azxasd69/site-restorer/tree/main/docs" rel="noopener">документации проекта</a>. Запустить такой же прогон на своём домене можно за пару минут.</p>
         </div>
 
         <div>
-          <h3 style="font-size:1.02rem;margin-bottom:6px">Что не восстановилось и почему</h3>
+          <h3 style="font-size:1rem;margin-bottom:8px">Что не восстановилось и почему</h3>
           <ul class="case-list">
             <li>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
-              <span><strong>Картинки товаров.</strong> 2&nbsp;510 изображений не сохранялись в архиве ни разу: CDX не содержит записей, replay отдаёт 404 за любой год. Это потеря архива, а не программы.</span>
+              <span><strong>Картинки товаров.</strong> 2&nbsp;510 изображений не сохранялись в архиве ни разу: индекса нет, архив отдаёт 404 за любой год. Это потеря архива, а не программы.</span>
             </li>
             <li>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
@@ -383,7 +431,7 @@ python -m http.server 8080</code></pre>
         </div>
       </div>
 
-      <h3 style="font-size:1.02rem;margin:38px 0 14px">Когда это пригодится</h3>
+      <h3 style="font-size:1rem;margin:38px 0 14px">Когда это пригодится</h3>
       <div class="grid-3">
         <article class="card">
           <h3 style="margin-top:0">Хостинг потерял данные</h3>
@@ -400,31 +448,56 @@ python -m http.server 8080</code></pre>
       </div>
     </div>
   </section>
+
+  <!-- LIMITS -->
   <section class="section" id="limits">
     <div class="wrap">
       <div class="section-head">
         <p class="eyebrow">Границы</p>
         <h2>Что важно понимать до запуска</h2>
-        <p class="lead">Инструмент не обещает чудес: он аккуратно вытаскивает то, что архив действительно сохранил.</p>
+        <p class="lead">Инструмент не обещает чудес: он аккуратно вытаскивает то, что архив действительно сохранил, и говорит, чего не будет.</p>
       </div>
 
-      <div class="grid-3">
-        <article class="card">
-          <h3>Только сохранённое</h3>
-          <p>Если краулер Internet Archive ни разу не забирал файл, его нет ни в одном снимке. Программа покажет это в отчёте, а не подставит заглушку.</p>
-        </article>
-        <article class="card">
-          <h3>Статика вместо CMS</h3>
-          <p>Копия — это страницы и файлы. Формы, вход, корзина, поиск и AJAX работать не будут: восстанавливается контент и структура.</p>
-        </article>
-        <article class="card">
-          <h3>Скорость архива</h3>
-          <p>Internet Archive ограничивает частоту запросов с одного IP. Большие сайты качаются часами — это нормально, докачка спасает.</p>
-        </article>
+      <div class="compare">
+        <div class="keep">
+          <h3>вернётся</h3>
+          <ul>
+            <li>страницы и структура разделов</li>
+            <li>стили, шрифты и скрипты страницы</li>
+            <li>изображения, которые сохранил краулер</li>
+            <li>документы и PDF-файлы</li>
+            <li>адреса со всех снимков архива</li>
+          </ul>
+        </div>
+        <div>
+          <h3>не вернётся</h3>
+          <ul>
+            <li>база данных: товары, заказы, статьи из CMS</li>
+            <li>корзина, вход в кабинет, поиск, AJAX-фильтры</li>
+            <li>изображения, которых архив не сохранял</li>
+            <li>динамические запросы и API</li>
+            <li>желаемое вместо сохранённого: заглушек не будет</li>
+          </ul>
+        </div>
       </div>
 
       <div class="callout" style="margin-top:22px">
-        <strong>Этика и право.</strong> Инструмент предназначен для личного архивирования и восстановления <em>своих</em> сайтов. Он не обходит защиту, не подменяет User-Agent и не маскируется под браузер. Копия чужого сайта — не основание для её публикации; уважайте условия Internet Archive и права владельцев контента.
+        <strong>Этика и право.</strong> Инструмент предназначен для личного архивирования и восстановления <em>своих</em> сайтов. Он не обходит защиту, не подменяет User-Agent и не маскируется под браузер, работает только на чтение архива и никуда не отправляет ваши данные. Копия чужого сайта — не основание для её публикации.
+      </div>
+
+      <div class="grid-3" style="margin-top:22px">
+        <article class="card">
+          <h3 style="margin-top:0">Только сохранённое</h3>
+          <p>Если краулер Internet Archive ни разу не забирал файл, его нет ни в одном снимке. Программа покажет это в отчёте, а не подставит заглушку.</p>
+        </article>
+        <article class="card">
+          <h3 style="margin-top:0">Статика вместо CMS</h3>
+          <p>Копия — это страницы и файлы. Формы, вход, корзина, поиск и AJAX работать не будут: восстанавливается контент и структура.</p>
+        </article>
+        <article class="card">
+          <h3 style="margin-top:0">Скорость архива</h3>
+          <p>Internet Archive ограничивает частоту запросов с одного IP. Большие сайты качаются часами — это нормально, докачка спасает.</p>
+        </article>
       </div>
     </div>
   </section>
@@ -441,7 +514,7 @@ python -m http.server 8080</code></pre>
       <div class="dl-grid">
         <article class="dl-card">
           <h3>Site Restorer <span class="chip">x64</span></h3>
-          <p class="dl-meta">Windows 10/11 · 6,2 МБ · Rust + egui, основной вариант</p>
+          <p class="dl-meta">Windows 10/11 · 6,2 МБ · основной вариант</p>
           <ul>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Для 64-битных Windows 10 (1809+) и Windows 11</span></li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Портативно: распаковать в папку и запустить</span></li>
@@ -449,13 +522,13 @@ python -m http.server 8080</code></pre>
           </ul>
           <a class="btn btn-primary btn-block" href="https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64.exe">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v10"/><path d="M8 11l4 4 4-4"/><path d="M5 19h14"/></svg>
-            Скачать SiteRestorer-windows-x64.exe
+            Скачать x64
           </a>
         </article>
 
         <article class="dl-card">
           <h3>Site Restorer <span class="chip">x86</span></h3>
-          <p class="dl-meta">Windows 10/11 · 5,6 МБ · Rust + egui, 32-битная сборка</p>
+          <p class="dl-meta">Windows 10/11 · 5,6 МБ · 32-битная сборка</p>
           <ul>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Для 32-битных систем и старых машин</span></li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Тот же функционал, меньше памяти</span></li>
@@ -463,37 +536,46 @@ python -m http.server 8080</code></pre>
           </ul>
           <a class="btn btn-secondary btn-block" href="https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x86.exe">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v10"/><path d="M8 11l4 4 4-4"/><path d="M5 19h14"/></svg>
-            Скачать SiteRestorer-windows-x86.exe
+            Скачать x86
           </a>
         </article>
-      </div>
 
         <article class="dl-card">
           <h3>Site Restorer <span class="chip">Linux</span></h3>
-          <p class="dl-meta">Ubuntu / Debian · 4,5 МБ · окно + консоль, tar.gz</p>
+          <p class="dl-meta">Ubuntu / Debian · 4,5 МБ · окно + консоль</p>
           <ul>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Консольная сборка (статическая) и окно в одном архиве</span></li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>install.sh, .desktop и иконка — установка в ~/.local</span></li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Окну нужны libxkbcommon-x11-0, libgl1</span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Окну нужны libxkbcommon-x11-0 и libgl1</span></li>
           </ul>
           <a class="btn btn-secondary btn-block" href="https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64.tar.gz">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v10"/><path d="M8 11l4 4 4-4"/><path d="M5 19h14"/></svg>
             Скачать tar.gz
           </a>
         </article>
+      </div>
 
       <div class="req-grid">
         <div class="req"><b>Система</b><span>Windows 10 (1809+) или Windows 11, x64 / x86</span></div>
-        <div class="req"><b>Установка</b><span>Не требуется — портативный exe, настройки рядом</span></div>
+        <div class="req"><b>Установка</b><span>Не требуется — портативный exe; настройки в профиле</span></div>
         <div class="req"><b>Лицензия</b><span>MIT: используйте, изучайте, форкайте</span></div>
       </div>
 
-      <div class="callout callout-warn" style="margin-top:24px">
-        <strong>SmartScreen может предупредить.</strong> Сборка не подписана платным сертификатом, поэтому Windows покажет «Windows защитила ваш компьютер». Нажмите «Подробнее» → «Выполнить всё равно» (или запустите <code>Unblock.cmd</code> из архива). Исходный код и CI-сборка открыты — можно собрать самому.
+      <div class="callout callout-warn" style="margin-top:20px">
+        <strong>SmartScreen может предупредить.</strong> Сборка не подписана платным сертификатом, поэтому Windows покажет «Windows защитила ваш компьютер». Нажмите «Подробнее» → «Выполнить всё равно». Исходный код и CI-сборка открыты — можно собрать самому.
       </div>
 
-            <p class="small muted" style="margin-top:16px">Python-версия (12,6 МБ) и порт на Go (7,9&ndash;8,3 МБ) остаются в репозитории как архив: в релизах 3.x они не собираются. Матрица размеров и команды сборки &mdash; в <a href="https://github.com/azxasd69/site-restorer/blob/main/BUILD.md" rel="noopener">BUILD.md</a>.</p>
-<p class="small muted" style="margin-top:16px">Все версии, контрольные суммы и история изменений — на странице <a href="https://github.com/azxasd69/site-restorer/releases" rel="noopener">Releases</a>.</p>
+      <!-- Поддержка: QR -->
+      <div class="qr-box">
+        <img class="qr-img" src="assets/img/qr-support.png" width="128" height="128" alt="QR-код со ссылкой на страницу поддержки проекта на Boosty">
+        <div class="qr-text">
+          <h3>Сказать спасибо</h3>
+          <p>Наведите камеру телефона или откройте ссылку на компьютере. Страница поддержки открывается в браузере по клику — сама программа к ней не обращается.</p>
+          <a class="qr-link" href="https://boosty.to/explosion/donate" rel="noopener">https://boosty.to/explosion/donate</a>
+        </div>
+      </div>
+
+      <p class="small muted" style="margin-top:16px">Python-версия и порт на Go остаются в репозитории как архив: в релизах 3.x они не собираются. Матрица размеров и команды сборки — в <a href="https://github.com/azxasd69/site-restorer/blob/main/BUILD.md" rel="noopener">BUILD.md</a>. Все версии и контрольные суммы — на странице <a href="https://github.com/azxasd69/site-restorer/releases" rel="noopener">Releases</a>.</p>
     </div>
   </section>
 
@@ -502,12 +584,17 @@ python -m http.server 8080</code></pre>
     <div class="wrap">
       <div class="support">
         <div>
-          <h2>Поддержать автора</h2>
-          <p>Проект развивается без рекламы, подписок и телеметрии. Если Site Restorer вернул вам сайт или сэкономил ночь — можно отблагодарить автора на Boosty. Это лучший способ ускорить новые версии.</p>
+          <h2>Поддержать разработчика</h2>
+          <p>Проект развивается без рекламы, подписок и телеметрии: одна программа, открытый код, никакой серверной части. Если Site Restorer вернул вам сайт или сэкономил ночь — можно поддержать проект на Boosty. Это лучший способ ускорить новые версии.</p>
+          <p class="support-links">
+            <a href="https://boosty.to/explosion/donate" rel="noopener">Boosty — поддержать</a>
+            <a href="https://github.com/azxasd69/site-restorer" rel="noopener">GitHub — звезда</a>
+            <a href="https://github.com/azxasd69/site-restorer/issues" rel="noopener">Issue — сообщить о проблеме</a>
+          </p>
         </div>
         <a class="btn btn-primary" href="https://boosty.to/explosion/donate" rel="noopener">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 1 0-7.1 7.1L12 21l8.8-8.3a5 5 0 0 0 0-7.1Z"/></svg>
-          Поддержать на Boosty
+          Сказать спасибо
         </a>
       </div>
     </div>
@@ -550,7 +637,7 @@ python -m http.server 8080</code></pre>
     </div>
   </section>
 
-
+  <!-- GUIDES -->
   <section class="section" id="guides">
     <div class="wrap">
       <div class="section-head">
@@ -579,11 +666,25 @@ python -m http.server 8080</code></pre>
       <div>
         <div class="footer-brand">
           <span class="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v9"/><path d="M8 10l4 4 4-4"/><path d="M5 17h14"/></svg>
+            <svg viewBox="0 0 32 32">
+              <rect x="3" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/>
+              <rect x="16.5" y="3" width="11" height="11" rx="1.2" fill="#ffffff"/>
+              <rect x="3" y="16.5" width="11" height="11" rx="1.2" fill="#ffffff"/>
+              <rect x="17.2" y="17.2" width="9.6" height="9.6" rx="1" fill="none" stroke="#9FB0C2" stroke-width="1.5" stroke-dasharray="2.2 2"/>
+            </svg>
           </span>
           Site Restorer
         </div>
         <p class="small">Восстановление сайта из веб-архива.<br>Windows 10/11 · MIT · 2026</p>
+      </div>
+      <div class="footer-col">
+        <h4>Продукт</h4>
+        <ul>
+          <li><a href="#advantages">Преимущества</a></li>
+          <li><a href="#how">Как работает</a></li>
+          <li><a href="#case">Кейс</a></li>
+          <li><a href="#download">Скачать</a></li>
+        </ul>
       </div>
       <div class="footer-col">
         <h4>Проект</h4>
@@ -597,7 +698,7 @@ python -m http.server 8080</code></pre>
       <div class="footer-col">
         <h4>Поддержка</h4>
         <ul>
-          <li><a href="https://boosty.to/explosion/donate" rel="noopener">Boosty</a></li>
+          <li><a class="is-support" href="https://boosty.to/explosion/donate" rel="noopener">Поддержать проект</a></li>
           <li><a href="#faq">Частые вопросы</a></li>
           <li><a href="en/" hreflang="en" lang="en">English version</a></li>
         </ul>
@@ -611,7 +712,6 @@ python -m http.server 8080</code></pre>
     </div>
   </div>
 </footer>
-
 
 </body>
 </html>
