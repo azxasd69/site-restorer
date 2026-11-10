@@ -37,7 +37,11 @@ fn adapt(mut delta: u32, numpoints: u32, first: bool) -> u32 {
 fn encode_label(input: &str) -> Option<String> {
     let chars: Vec<char> = input.chars().collect();
     let mut out = String::new();
-    let basic: Vec<char> = chars.iter().copied().filter(|c| (*c as u32) < 0x80).collect();
+    let basic: Vec<char> = chars
+        .iter()
+        .copied()
+        .filter(|c| (*c as u32) < 0x80)
+        .collect();
     let handled_basic = basic.len() as u32;
     if handled_basic > 0 {
         out.extend(basic.iter());
@@ -165,7 +169,10 @@ mod tests {
 
     #[test]
     fn ascii_passes_through() {
-        assert_eq!(domain_to_ascii("Example.COM").as_deref(), Some("example.com"));
+        assert_eq!(
+            domain_to_ascii("Example.COM").as_deref(),
+            Some("example.com")
+        );
         assert_eq!(domain_to_ascii("rdbzh.ru").as_deref(), Some("rdbzh.ru"));
         assert_eq!(
             domain_to_ascii("xn--e1afmkfd.xn--p1ai").as_deref(),

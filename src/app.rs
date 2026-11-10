@@ -3,15 +3,16 @@
 use crate::core::{Engine, Progress};
 use crate::i18n::Lang;
 use crate::paths;
-use crate::sanitize::{sanitize_site, Note};
+use crate::sanitize::{Note, sanitize_site};
 use eframe::egui;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
-use std::sync::Arc;
 
 #[derive(Clone, Copy)]
 enum Level {
+    Info,
     Ok,
     Warn,
     Err,
@@ -22,7 +23,7 @@ enum Msg {
     Done(Result<String, String>),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Stage {
     Idle,
     Inventory,
@@ -61,19 +62,50 @@ pub struct App {
     pending_start: bool,
 }
 
+/// Светлая тема одним местом: границы полей, фон всплывающих окон, скругления.
+fn theme() -> egui::Visuals {
+    let mut v = egui::Visuals::light();
+    v.panel_fill = WHITE;
+    v.window_fill = WHITE;
+    v.extreme_bg_color = WHITE;
+    v.faint_bg_color = PAGE;
+    v.window_stroke = egui::Stroke::new(1.0, BORDER);
+    v.window_corner_radius = egui::CornerRadius::same(10);
+    v.menu_corner_radius = egui::CornerRadius::same(8);
+    v.selection.bg_fill = egui::Color32::from_rgb(191, 219, 254);
+    v.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, BORDER);
+    v.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, BORDER);
+    v.widgets.inactive.weak_bg_fill = WHITE;
+    v.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(148, 163, 184));
+    v.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(248, 250, 252);
+    v.widgets.active.bg_stroke = egui::Stroke::new(1.0, ACCENT);
+    v.widgets.active.weak_bg_fill = egui::Color32::from_rgb(239, 246, 255);
+    v
+}
+
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        cc.egui_ctx.set_visuals(egui::Visuals::light());
+        cc.egui_ctx.set_visuals(theme());
+        if let Some(mon) = cc.egui_ctx.input(|i| i.viewport().monitor_size) {
+            if mon.x > 400.0 && mon.y > 400.0 {
+                let size = egui::vec2(900.0, 660.0);
+                let pos = egui::pos2(
+                    ((mon.x - size.x) / 2.0).max(0.0),
+                    ((mon.y - 48.0 - size.y) / 2.0).max(0.0),
+                );
+                cc.egui_ctx
+                    .send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
+            }
+        }
         let lang = match std::env::var("SR_LANG").as_deref() {
             Ok("en") => Lang::En,
             _ => Lang::Ru,
         };
         Self {
             site: std::env::var("SR_AUTOSTART").unwrap_or_default(),
-            out: std::env::var("SR_OUT")
-                .unwrap_or_else(|_| default_out()),
+            out: std::env::var("SR_OUT").unwrap_or_else(|_| default_out()),
             note: lang.t().hint.to_string(),
-            log: vec![(format!("Site Restorer {}", crate::APP_VERSION), Level::Warn)],
+            log: vec![(format!("Site Restorer {}", crate::APP_VERSION), Level::Info)],
             lang,
             show_help: false,
             running: false,
@@ -213,7 +245,7 @@ impl App {
                 Ok(Msg::Progress(p)) => {
                     changed = true;
                     if p.stage == "log" {
-                        self.push_log(p.text.clone(), Level::Warn);
+                        self.push_log(p.text.clone(), Level::Info);
                         continue;
                     }
                     self.overall = p.overall;
@@ -311,6 +343,108 @@ fn bar(ui: &mut egui::Ui, frac: f32, height: f32, width: f32) {
     }
 }
 
+// ---------- оформление ----------
+const WHITE: egui::Color32 = egui::Color32::from_rgb(255, 255, 255);
+const PAGE: egui::Color32 = egui::Color32::from_rgb(244, 246, 250);
+const CARD: egui::Color32 = egui::Color32::WHITE;
+const TILE: egui::Color32 = egui::Color32::from_rgb(247, 249, 252);
+const BORDER: egui::Color32 = egui::Color32::from_rgb(226, 232, 240);
+const TRACK: egui::Color32 = egui::Color32::from_rgb(226, 232, 240);
+const TEXT: egui::Color32 = egui::Color32::from_rgb(15, 23, 42);
+const MUTED: egui::Color32 = egui::Color32::from_rgb(100, 116, 139);
+const ACCENT: egui::Color32 = egui::Color32::from_rgb(37, 99, 235);
+const ACCENT_SOFT: egui::Color32 = egui::Color32::from_rgb(219, 234, 254);
+const OK: egui::Color32 = egui::Color32::from_rgb(22, 163, 74);
+const WARN: egui::Color32 = egui::Color32::from_rgb(217, 119, 6);
+const ERR: egui::Color32 = egui::Color32::from_rgb(220, 38, 38);
+const DARK: egui::Color32 = egui::Color32::from_rgb(15, 23, 42);
+
+/// Шаг конвейера, подсвеченный в «степпере».
+fn step_index(stage: Stage) -> Option<usize> {
+    match stage {
+        Stage::Inventory => Some(0),
+        Stage::Download => Some(1),
+        Stage::Build => Some(2),
+        Stage::Verify => Some(3),
+        Stage::Report => Some(4),
+        _ => None,
+    }
+}
+
+fn tile(ui: &mut egui::Ui, width: f32, label: &str, value: String, tone: egui::Color32) {
+    egui::Frame::new()
+        .fill(TILE)
+        .stroke(egui::Stroke::new(1.0, BORDER))
+        .corner_radius(8)
+        .inner_margin(egui::Margin::symmetric(12, 7))
+        .show(ui, |ui| {
+            ui.set_width(width - 26.0);
+            ui.vertical(|ui| {
+                ui.label(egui::RichText::new(label).size(11.5).color(MUTED));
+                ui.add_space(2.0);
+                ui.label(egui::RichText::new(value).size(15.0).strong().color(tone));
+            });
+        });
+}
+
+/// Кнопка с явным весом: главная (заливка), вторичная (контур), тихая (текст).
+fn action_button(
+    ui: &mut egui::Ui,
+    label: &str,
+    kind: u8,
+    enabled: bool,
+    width: f32,
+    tone: egui::Color32,
+) -> bool {
+    let text = match kind {
+        0 => egui::RichText::new(label)
+            .size(13.5)
+            .strong()
+            .color(if enabled { WHITE } else { MUTED }),
+        1 => egui::RichText::new(label)
+            .size(13.5)
+            .color(if enabled { tone } else { MUTED }),
+        _ => egui::RichText::new(label).size(13.0).color(if enabled {
+            MUTED
+        } else {
+            egui::Color32::from_rgb(170, 180, 195)
+        }),
+    };
+    let mut button = egui::Button::new(text)
+        .min_size(egui::vec2(width, 30.0))
+        .corner_radius(7);
+    button = match kind {
+        0 => button
+            .fill(if enabled {
+                tone
+            } else {
+                egui::Color32::from_rgb(226, 232, 240)
+            })
+            .stroke(egui::Stroke::NONE),
+        1 => button
+            .fill(WHITE)
+            .stroke(egui::Stroke::new(1.0, if enabled { tone } else { BORDER })),
+        _ => button.fill(WHITE).stroke(egui::Stroke::new(1.0, BORDER)),
+    };
+    let resp = ui.add(button);
+    if enabled { resp.clicked() } else { false }
+}
+
+fn stage_chip(ui: &mut egui::Ui, text: &str, state: u8) {
+    let (fill, fg) = match state {
+        2 => (ACCENT, WHITE),
+        1 => (ACCENT_SOFT, ACCENT),
+        _ => (egui::Color32::from_rgb(241, 245, 249), MUTED),
+    };
+    egui::Frame::new()
+        .fill(fill)
+        .corner_radius(6)
+        .inner_margin(egui::Margin::symmetric(9, 4))
+        .show(ui, |ui| {
+            ui.label(egui::RichText::new(text).size(11.5).color(fg));
+        });
+}
+
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.poll(ui.ctx());
@@ -323,192 +457,429 @@ impl eframe::App for App {
                 .request_repaint_after(std::time::Duration::from_millis(200));
         }
         let t = self.lang.t();
+        ui.style_mut().spacing.item_spacing = egui::vec2(8.0, 8.0);
 
-        egui::Panel::top("header").show(ui, |ui| {
-            ui.add_space(10.0);
-            ui.horizontal(|ui| {
-                ui.vertical(|ui| {
-                    ui.heading(t.heading);
-                    ui.label(egui::RichText::new(t.subtitle).weak());
-                });
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-                    if ui.button(self.lang.other().label()).clicked() {
-                        self.lang = self.lang.other();
-                        self.refresh_note();
-                    }
-                });
-            });
-            ui.add_space(10.0);
-
-            egui::Grid::new("form")
-                .num_columns(2)
-                .spacing([12.0, 8.0])
-                .show(ui, |ui| {
-                    ui.label(t.site);
-                    ui.add_enabled(
-                        !self.running,
-                        egui::TextEdit::singleline(&mut self.site)
-                            .hint_text(t.site_ph)
-                            .desired_width(f32::INFINITY),
-                    );
-                    ui.end_row();
-
-                    ui.label(t.out);
-                    ui.horizontal(|ui| {
-                        ui.add_enabled(
-                            !self.running,
-                            egui::TextEdit::singleline(&mut self.out)
-                                .desired_width(ui.available_width() - 190.0),
+        // ---------- шапка и форма ----------
+        egui::Panel::top("header")
+            .frame(egui::Frame::new().fill(WHITE).inner_margin(egui::Margin {
+                left: 20,
+                right: 20,
+                top: 12,
+                bottom: 10,
+            }))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(
+                            egui::RichText::new(t.heading)
+                                .size(20.0)
+                                .strong()
+                                .color(TEXT),
                         );
-                        if ui
-                            .add_enabled(!self.running, egui::Button::new(t.browse))
-                            .clicked()
-                        {
-                            if let Some(dir) = crate::pick::pick_folder() {
-                                self.out = std::path::PathBuf::from(dir)
-                                    .join("site")
-                                    .to_string_lossy()
-                                    .into_owned();
-                            }
+                        ui.add_space(2.0);
+                        ui.label(egui::RichText::new(t.subtitle).size(12.5).color(MUTED));
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+                        let other = self.lang.other();
+                        let resp = ui.add(
+                            egui::Button::new(
+                                egui::RichText::new(self.lang.label())
+                                    .size(12.0)
+                                    .color(MUTED),
+                            )
+                            .fill(WHITE)
+                            .stroke(egui::Stroke::new(1.0, BORDER))
+                            .corner_radius(7)
+                            .min_size(egui::vec2(44.0, 30.0)),
+                        );
+                        if resp.on_hover_text(t.lang_hint).clicked() {
+                            self.lang = other;
+                            self.refresh_note();
                         }
-                        if ui
-                            .add_enabled(!self.running, egui::Button::new(t.analyse))
-                            .clicked()
-                        {
-                            self.analyse();
+                        ui.add_space(6.0);
+                        if action_button(ui, t.help, 2, true, 78.0, MUTED) {
+                            self.show_help = true;
                         }
                     });
-                    ui.end_row();
                 });
+                ui.add_space(10.0);
 
-            ui.add_space(6.0);
-            ui.label(egui::RichText::new(&self.note).weak());
-            ui.add_space(8.0);
+                egui::Grid::new("form")
+                    .num_columns(2)
+                    .spacing([14.0, 10.0])
+                    .min_col_width(112.0)
+                    .show(ui, |ui| {
+                        ui.label(egui::RichText::new(t.site).size(12.5).color(MUTED));
+                        ui.add_enabled(
+                            !self.running,
+                            egui::TextEdit::singleline(&mut self.site)
+                                .hint_text(t.site_ph)
+                                .frame(
+                                    egui::Frame::new()
+                                        .fill(WHITE)
+                                        .stroke(egui::Stroke::new(1.0, BORDER))
+                                        .corner_radius(7)
+                                        .inner_margin(egui::Margin::symmetric(9, 6)),
+                                )
+                                .desired_width(f32::INFINITY),
+                        );
+                        ui.end_row();
 
-            ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(!self.running, egui::Button::new(t.start))
-                    .clicked()
-                {
-                    self.start();
-                }
-                if ui
-                    .add_enabled(self.running, egui::Button::new(t.stop))
-                    .clicked()
-                {
-                    self.stop();
-                }
-                if ui.button(t.open).clicked() {
-                    open_folder(&self.out);
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(t.help).clicked() {
-                        self.show_help = true;
+                        ui.label(egui::RichText::new(t.out).size(12.5).color(MUTED));
+                        ui.horizontal(|ui| {
+                            let buttons_w = 190.0;
+                            ui.add_enabled(
+                                !self.running,
+                                egui::TextEdit::singleline(&mut self.out)
+                                    .frame(
+                                        egui::Frame::new()
+                                            .fill(WHITE)
+                                            .stroke(egui::Stroke::new(1.0, BORDER))
+                                            .corner_radius(7)
+                                            .inner_margin(egui::Margin::symmetric(9, 6)),
+                                    )
+                                    .desired_width((ui.available_width() - buttons_w).max(120.0)),
+                            );
+                            if action_button(ui, t.browse, 1, !self.running, 82.0, MUTED) {
+                                if let Some(dir) = crate::pick::pick_folder() {
+                                    self.out = std::path::PathBuf::from(dir)
+                                        .join("site")
+                                        .to_string_lossy()
+                                        .into_owned();
+                                }
+                            }
+                            if action_button(ui, t.analyse, 1, !self.running, 96.0, MUTED) {
+                                self.analyse();
+                            }
+                        });
+                        ui.end_row();
+                    });
+
+                ui.add_space(4.0);
+                let note_color = if self.note.starts_with('→') {
+                    OK
+                } else if self.note.starts_with('⚠') {
+                    WARN
+                } else {
+                    MUTED
+                };
+                ui.label(egui::RichText::new(&self.note).size(11.5).color(note_color));
+                ui.add_space(10.0);
+
+                ui.horizontal(|ui| {
+                    if action_button(ui, t.start, 0, !self.running, 112.0, ACCENT) {
+                        self.start();
+                    }
+                    if action_button(ui, t.stop, 1, self.running, 108.0, ERR) {
+                        self.stop();
+                    }
+                    ui.add_space(2.0);
+                    if action_button(ui, t.open, 2, true, 116.0, MUTED) {
+                        open_folder(&self.out);
                     }
                 });
+                let band = ui.max_rect().expand2(egui::vec2(20.0, 14.0));
+                ui.painter().hline(
+                    band.x_range(),
+                    band.bottom(),
+                    egui::Stroke::new(1.0, BORDER),
+                );
             });
-            ui.add_space(10.0);
-        });
 
+        // ---------- журнал ----------
         egui::Panel::bottom("log")
             .resizable(true)
+            .frame(egui::Frame::new().fill(WHITE).inner_margin(egui::Margin {
+                left: 20,
+                right: 20,
+                top: 10,
+                bottom: 12,
+            }))
             .show(ui, |ui| {
-                ui.add_space(6.0);
-                ui.label(egui::RichText::new(t.log).strong());
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(t.log).size(12.5).strong().color(TEXT));
+                    ui.label(
+                        egui::RichText::new(format!("{}", self.log.len()))
+                            .size(11.0)
+                            .color(MUTED),
+                    );
+                });
+                ui.add_space(4.0);
+                let box_w = ui.available_width();
                 egui::Frame::new()
-                    .fill(egui::Color32::from_rgb(17, 24, 39))
-                    .inner_margin(egui::Margin::same(10))
+                    .fill(DARK)
+                    .corner_radius(8)
+                    .inner_margin(egui::Margin::symmetric(10, 8))
                     .show(ui, |ui| {
+                        ui.set_max_width((box_w - 20.0).max(80.0));
+                        ui.set_min_height(58.0);
                         egui::ScrollArea::vertical()
                             .stick_to_bottom(true)
                             .auto_shrink([false, false])
-                            .max_height(180.0)
                             .show(ui, |ui| {
                                 for (text, level) in &self.log {
                                     let color = match level {
-                                        Level::Ok => egui::Color32::from_rgb(74, 222, 128),
-                                        Level::Warn => egui::Color32::from_rgb(251, 191, 36),
-                                        Level::Err => egui::Color32::from_rgb(248, 113, 113),
+                                        Level::Info => egui::Color32::from_rgb(203, 213, 225),
+                                        Level::Ok => egui::Color32::from_rgb(134, 239, 172),
+                                        Level::Warn => egui::Color32::from_rgb(253, 224, 71),
+                                        Level::Err => egui::Color32::from_rgb(252, 165, 165),
                                     };
-                                    ui.label(egui::RichText::new(text).monospace().color(color));
+                                    let line = ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(format!("•  {text}"))
+                                                .monospace()
+                                                .size(11.5)
+                                                .color(color),
+                                        )
+                                        .truncate(),
+                                    );
+                                    line.on_hover_text(text);
                                 }
                             });
                     });
             });
+        // ---------- прогресс ----------
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(PAGE).inner_margin(egui::Margin {
+                left: 20,
+                right: 20,
+                top: 16,
+                bottom: 16,
+            }))
+            .show(ui, |ui| {
+                egui::Frame::new()
+                    .fill(CARD)
+                    .stroke(egui::Stroke::new(1.0, BORDER))
+                    .corner_radius(10)
+                    .inner_margin(egui::Margin::same(14))
+                    .show(ui, |ui| {
+                        egui::ScrollArea::vertical()
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.style_mut().spacing.item_spacing.y = 6.0;
+                                ui.horizontal(|ui| {
+                                    let tone = match self.stage {
+                                        Stage::Done => OK,
+                                        Stage::Error => ERR,
+                                        Stage::Stopped => WARN,
+                                        _ => ACCENT,
+                                    };
+                                    let (rect, _) = ui.allocate_exact_size(
+                                        egui::vec2(9.0, 16.0),
+                                        egui::Sense::hover(),
+                                    );
+                                    ui.painter().circle_filled(rect.center(), 4.0, tone);
+                                    ui.label(
+                                        egui::RichText::new(self.stage_label())
+                                            .size(14.5)
+                                            .strong()
+                                            .color(TEXT),
+                                    );
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            ui.label(
+                                                egui::RichText::new(format!(
+                                                    "{:.0} %",
+                                                    self.overall
+                                                ))
+                                                .size(17.0)
+                                                .strong()
+                                                .color(ACCENT),
+                                            );
+                                        },
+                                    );
+                                });
+                                ui.add_space(10.0);
+                                bar(ui, self.overall / 100.0, 8.0, ui.available_width());
+                                ui.add_space(8.0);
 
-        egui::CentralPanel::default().show(ui, |ui| {
-            egui::Frame::new()
-                .fill(egui::Color32::WHITE)
-                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(229, 231, 235)))
-                .inner_margin(egui::Margin::same(14))
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new(self.stage_label()).strong());
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(format!("{:.0} %", self.overall));
-                        });
+                                let steps = [t.s_inv, t.s_dl, t.s_build, t.s_verify, t.s_report];
+                                let active = step_index(self.stage);
+                                ui.horizontal(|ui| {
+                                    for (idx, name) in steps.iter().enumerate() {
+                                        let state = match active {
+                                            Some(a) if idx < a => 1,
+                                            Some(a) if idx == a => 2,
+                                            _ if self.stage == Stage::Done => 1,
+                                            None if idx == 0 && self.stage == Stage::Idle => 1,
+                                            _ => 0,
+                                        };
+                                        stage_chip(ui, name, state);
+                                    }
+                                });
+                                ui.add_space(7.0);
+
+                                if self.total > 0 || self.running {
+                                    let gap = 10.0;
+                                    let width =
+                                        ((ui.available_width() - gap * 3.0) / 4.0).max(80.0);
+                                    ui.horizontal(|ui| {
+                                        tile(
+                                            ui,
+                                            width,
+                                            t.k_loaded,
+                                            format!("{} / {}", self.done, self.total),
+                                            TEXT,
+                                        );
+                                        tile(
+                                            ui,
+                                            width,
+                                            t.k_speed,
+                                            if self.bps >= 1_048_576.0 {
+                                                format!("{:.1} MB/s", self.bps / 1_048_576.0)
+                                            } else {
+                                                format!("{:.0} KB/s", self.bps / 1024.0)
+                                            },
+                                            TEXT,
+                                        );
+                                        tile(
+                                            ui,
+                                            width,
+                                            t.k_threads,
+                                            format!("{}", self.threads),
+                                            TEXT,
+                                        );
+                                        tile(
+                                            ui,
+                                            width,
+                                            t.k_issues,
+                                            format!("{} / {}", self.missing, self.errors),
+                                            if self.errors > 0 { ERR } else { TEXT },
+                                        );
+                                    });
+                                    ui.add_space(7.0);
+                                    ui.separator();
+                                    ui.add_space(6.0);
+
+                                    let names = [t.t_html, t.t_code, t.t_img, t.t_other];
+                                    let mut halves = self.types;
+                                    ui.columns(2, |cols| {
+                                        for (idx, name) in names.iter().enumerate() {
+                                            let col = &mut cols[idx % 2];
+                                            col.horizontal(|ui| {
+                                                ui.add_sized(
+                                                    [92.0, 15.0],
+                                                    egui::Label::new(
+                                                        egui::RichText::new(*name)
+                                                            .size(11.5)
+                                                            .color(MUTED),
+                                                    ),
+                                                );
+                                                let ok = halves[idx * 2];
+                                                let total = halves[idx * 2 + 1];
+                                                let frac = if total > 0 {
+                                                    ok as f32 / total as f32
+                                                } else {
+                                                    0.0
+                                                };
+                                                let width = (ui.available_width() - 56.0).max(40.0);
+                                                bar(ui, frac, 5.0, width);
+                                                ui.with_layout(
+                                                    egui::Layout::right_to_left(
+                                                        egui::Align::Center,
+                                                    ),
+                                                    |ui| {
+                                                        ui.label(
+                                                            egui::RichText::new(format!(
+                                                                "{ok} / {total}"
+                                                            ))
+                                                            .monospace()
+                                                            .size(11.0)
+                                                            .color(MUTED),
+                                                        );
+                                                    },
+                                                );
+                                            });
+                                        }
+                                    });
+                                    let _ = &mut halves;
+                                } else {
+                                    let width = ui.available_width();
+                                    let height = (ui.available_height() - 6.0).clamp(58.0, 190.0);
+                                    let (rect, _) = ui.allocate_exact_size(
+                                        egui::vec2(width, height),
+                                        egui::Sense::hover(),
+                                    );
+                                    let painter = ui.painter();
+                                    let compact = height < 84.0;
+                                    let title = painter.layout(
+                                        t.empty_title.to_owned(),
+                                        egui::FontId::proportional(14.0),
+                                        TEXT,
+                                        rect.width() - 24.0,
+                                    );
+                                    let note = if compact {
+                                        None
+                                    } else {
+                                        Some(painter.layout(
+                                            t.empty_note.to_owned(),
+                                            egui::FontId::proportional(11.5),
+                                            MUTED,
+                                            rect.width() - 40.0,
+                                        ))
+                                    };
+                                    let mut stack = 24.0 + 10.0 + title.size().y;
+                                    if let Some(note) = &note {
+                                        stack += 6.0 + note.size().y;
+                                    }
+                                    let top = rect.center().y - stack / 2.0;
+                                    let icon_y = top + 12.0;
+                                    painter.circle_stroke(
+                                        egui::pos2(rect.center().x, icon_y),
+                                        12.0,
+                                        egui::Stroke::new(
+                                            1.5,
+                                            egui::Color32::from_rgb(203, 213, 225),
+                                        ),
+                                    );
+                                    painter.circle_filled(
+                                        egui::pos2(rect.center().x, icon_y),
+                                        2.5,
+                                        egui::Color32::from_rgb(203, 213, 225),
+                                    );
+                                    let mut y = icon_y + 22.0;
+                                    let title_w = title.size().x;
+                                    let title_h = title.size().y;
+                                    painter.galley(
+                                        egui::pos2(rect.center().x - title_w / 2.0, y),
+                                        title,
+                                        TEXT,
+                                    );
+                                    y += title_h + 6.0;
+                                    if let Some(note) = note {
+                                        painter.galley(
+                                            egui::pos2(rect.center().x - note.size().x / 2.0, y),
+                                            note,
+                                            MUTED,
+                                        );
+                                    }
+                                }
+                            });
                     });
-                    ui.add_space(6.0);
-                    let full = ui.available_width();
-                    bar(ui, self.overall / 100.0, 14.0, full);
-                    ui.add_space(10.0);
-                    let names = [t.t_html, t.t_code, t.t_img, t.t_other];
-                    for (idx, name) in names.iter().enumerate() {
-                        ui.horizontal(|ui| {
-                            ui.add_sized([150.0, 18.0], egui::Label::new(*name));
-                            let ok = self.types[idx * 2];
-                            let total = self.types[idx * 2 + 1];
-                            let frac = if total > 0 {
-                                ok as f32 / total as f32
-                            } else {
-                                0.0
-                            };
-                            let width = ui.available_width() - 70.0;
-                            bar(ui, frac, 10.0, width);
-                            ui.label(format!("{ok} / {total}"));
-                        });
-                    }
-                    ui.add_space(10.0);
-                    ui.separator();
-                    ui.label(&self.status);
-                    if self.total > 0 {
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "{} / {} · {:.0} KB/s · threads {} · missing {} · errors {}",
-                                self.done,
-                                self.total,
-                                self.bps / 1024.0,
-                                self.threads,
-                                self.missing,
-                                self.errors
-                            ))
-                            .weak(),
-                        );
-                        if self.eta > 0 {
-                            ui.label(egui::RichText::new(format!("~{} s", self.eta)).weak());
-                        }
-                    }
-                    if self.bytes > 0 {
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "{:.1} MB",
-                                self.bytes as f64 / 1_048_576.0
-                            ))
-                            .weak(),
-                        );
-                    }
-                });
-        });
+            });
 
         if self.show_help {
             let ctx = ui.ctx().clone();
             let mut open = self.show_help;
             egui::Window::new(t.help)
                 .open(&mut open)
-                .default_size([640.0, 460.0])
+                .default_size([620.0, 440.0])
+                .min_width(420.0)
                 .show(&ctx, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                        ui.label(t.help_text);
+                        egui::Frame::new()
+                            .fill(TILE)
+                            .corner_radius(8)
+                            .inner_margin(egui::Margin::same(12))
+                            .show(ui, |ui| {
+                                ui.label(
+                                    egui::RichText::new(t.help_text)
+                                        .monospace()
+                                        .size(11.5)
+                                        .color(TEXT),
+                                );
+                            });
                     });
                 });
             self.show_help = open;

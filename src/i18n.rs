@@ -40,13 +40,25 @@ pub struct T {
     pub bad_address: &'static str,
     pub need_out: &'static str,
     pub help_text: &'static str,
+    pub lang_hint: &'static str,
+    pub k_loaded: &'static str,
+    pub k_speed: &'static str,
+    pub k_threads: &'static str,
+    pub k_issues: &'static str,
+    pub empty_title: &'static str,
+    pub empty_note: &'static str,
+    pub s_inv: &'static str,
+    pub s_dl: &'static str,
+    pub s_build: &'static str,
+    pub s_verify: &'static str,
+    pub s_report: &'static str,
+    pub eta_hint: &'static str,
 }
 
 pub static RU: T = T {
     title: "Site Restorer — копия сайта из веб-архива",
     heading: "Восстановление сайта из веб-архива",
-    subtitle:
-        "Скачивает сохранённую копию сайта из Wayback Machine и собирает её для локального просмотра.",
+    subtitle: "Скачивает сохранённую копию сайта из Wayback Machine и собирает её для локального просмотра.",
     site: "Адрес сайта",
     site_ph: "например, prokupol.ru",
     out: "Папка для копии",
@@ -76,6 +88,19 @@ pub static RU: T = T {
     hint: "Вставьте адрес — можно ссылку из письма, поиска или архива.",
     bad_address: "⚠ Не разобрал адрес — проверьте написание домена.",
     need_out: "Укажите папку для копии.",
+    lang_hint: "Переключить язык",
+    k_loaded: "Скачано",
+    k_speed: "Скорость",
+    k_threads: "Потоки",
+    k_issues: "Битые / ошибки",
+    empty_title: "Пока ничего не скачано",
+    empty_note: "Нажмите «Начать»: программа проверит архив, скачает файлы и соберёт копию.",
+    s_inv: "Инвентаризация",
+    s_dl: "Скачивание",
+    s_build: "Сборка",
+    s_verify: "Проверка",
+    s_report: "Отчёт",
+    eta_hint: "осталось",
     help_text: "ЧТО ДЕЛАЕТ ПРОГРАММА\n\
 Скачивает из Wayback Machine (Internet Archive) все сохранённые страницы и файлы\n\
 указанного сайта и собирает статическую копию для локального просмотра.\n\n\
@@ -101,8 +126,7 @@ site-restorer --cli --site <адрес> --out <папка> [--limit N] [--worker
 pub static EN: T = T {
     title: "Site Restorer — a website copy from the web archive",
     heading: "Restore a website from the web archive",
-    subtitle:
-        "Downloads the archived copy of a site from the Wayback Machine and builds it for local viewing.",
+    subtitle: "Downloads the archived copy of a site from the Wayback Machine and builds it for local viewing.",
     site: "Site address",
     site_ph: "e.g. example.com",
     out: "Output folder",
@@ -132,6 +156,19 @@ pub static EN: T = T {
     hint: "Paste an address — a link from an e-mail, search results or the archive.",
     bad_address: "⚠ Could not parse the address — check the domain spelling.",
     need_out: "Choose an output folder.",
+    lang_hint: "Switch language",
+    k_loaded: "Downloaded",
+    k_speed: "Speed",
+    k_threads: "Threads",
+    k_issues: "Broken / errors",
+    empty_title: "Nothing downloaded yet",
+    empty_note: "Press Start: the program checks the archive, downloads files and builds the copy.",
+    s_inv: "Inventory",
+    s_dl: "Download",
+    s_build: "Build",
+    s_verify: "Check",
+    s_report: "Report",
+    eta_hint: "left",
     help_text: "WHAT IT DOES\n\
 Downloads every archived page and file of a site from the Wayback Machine\n\
 (Internet Archive) and builds a static copy for local viewing.\n\n\

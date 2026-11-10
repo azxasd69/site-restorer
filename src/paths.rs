@@ -70,7 +70,9 @@ pub fn safe_seg(seg: &str) -> String {
             || (ch as u32) < 0x20;
         cleaned.push(if bad { '_' } else { ch });
     }
-    let mut seg = cleaned.trim_matches(|c: char| c == ' ' || c == '.').to_string();
+    let mut seg = cleaned
+        .trim_matches(|c: char| c == ' ' || c == '.')
+        .to_string();
     if seg.chars().count() > MAX_SEG_LEN {
         let cut: String = seg.chars().take(60).collect();
         seg = format!("{cut}_{}", fnv_hex(&seg));
@@ -121,7 +123,11 @@ pub fn url_to_local_path(url: &str) -> String {
     let rel = segs.join("/");
     if rel.chars().count() > MAX_REL_LEN {
         // Патологические адреса (data-URI, очень глубокие деревья): короткое детерминированное имя.
-        let head = if segs.len() > 1 { segs[0].clone() } else { "_".to_string() };
+        let head = if segs.len() > 1 {
+            segs[0].clone()
+        } else {
+            "_".to_string()
+        };
         let ext: String = match segs.last().and_then(|s| s.rfind('.').map(|i| &s[i..])) {
             Some(e) => e.chars().take(6).collect(),
             None => String::new(),
@@ -156,7 +162,11 @@ pub fn normalize_url(url: &str, host: &str) -> String {
             netloc = format!("{netloc}:{port}");
         }
     }
-    let path = if parts.path.is_empty() { "/" } else { &parts.path };
+    let path = if parts.path.is_empty() {
+        "/"
+    } else {
+        &parts.path
+    };
     if parts.query.is_empty() {
         format!("https://{netloc}{path}")
     } else {
@@ -199,10 +209,7 @@ mod tests {
         let b = url_to_local_path("https://example.com/list?page=2&sort=asc");
         assert_eq!(a, b);
         assert!(a.contains("__q_"), "{a}");
-        assert_ne!(
-            a,
-            url_to_local_path("https://example.com/list?page=3")
-        );
+        assert_ne!(a, url_to_local_path("https://example.com/list?page=3"));
     }
 
     #[test]

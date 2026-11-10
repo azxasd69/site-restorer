@@ -14,9 +14,9 @@
 //! веб-архива регулярно не соответствуют телу (например, KOI8-R под видом
 //! windows-1251), а объявление может стоять в комментарии.
 
-use std::sync::OnceLock;
 use encoding_rs::{Encoding, UTF_16BE, UTF_16LE, WINDOWS_1251};
 use regex_lite::Regex;
+use std::sync::OnceLock;
 
 /// Результат декодирования документа.
 #[derive(Debug, Clone)]
@@ -135,7 +135,10 @@ fn leak(name: &str) -> &'static str {
 
 /// Нормализация метки: `cp1251`, `win-1251`, `koi8r`, `utf8` и т.п.
 pub fn encoding_for_label(raw: &str) -> Option<&'static Encoding> {
-    let label = raw.trim().trim_matches(['"', '\'', ';']).to_ascii_lowercase();
+    let label = raw
+        .trim()
+        .trim_matches(['"', '\'', ';'])
+        .to_ascii_lowercase();
     let label = label.replace(' ', "");
     let aliased = match label.as_str() {
         "cp1251" | "cp-1251" | "win1251" | "win-1251" | "windows1251" | "x-cp1251" | "ansi"
@@ -152,7 +155,10 @@ pub fn encoding_for_label(raw: &str) -> Option<&'static Encoding> {
 }
 
 /// Объявленная кодировка: заголовок ответа, meta, xml, css — в порядке надёжности.
-fn declared_encoding(data: &[u8], content_type: Option<&str>) -> Option<(&'static Encoding, &'static str)> {
+fn declared_encoding(
+    data: &[u8],
+    content_type: Option<&str>,
+) -> Option<(&'static Encoding, &'static str)> {
     if let Some(ct) = content_type {
         if let Some(enc) = charset_from_header(ct) {
             return Some((enc, "header"));
@@ -221,9 +227,7 @@ fn xml_decl_rx() -> &'static Regex {
 }
 fn meta_charset_rx() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| {
-        Regex::new(r#"(?is)<meta[^>]+charset\s*=\s*["']?\s*([a-z0-9_.:-]+)"#).unwrap()
-    })
+    R.get_or_init(|| Regex::new(r#"(?is)<meta[^>]+charset\s*=\s*["']?\s*([a-z0-9_.:-]+)"#).unwrap())
 }
 fn css_charset_rx() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
@@ -312,18 +316,18 @@ fn looks_like_mojibake(text: &str) -> bool {
 /// байты через текстовое декодирование, файл будет испорчен.
 pub fn looks_binary(data: &[u8]) -> bool {
     const MAGIC: [&[u8]; 12] = [
-        &[0xFF, 0xD8, 0xFF],             // JPEG
-        &[0x89, 0x50, 0x4E, 0x47],       // PNG
-        &[0x47, 0x49, 0x46, 0x38],       // GIF
-        &[0x25, 0x50, 0x44, 0x46],       // PDF
-        &[0x50, 0x4B, 0x03, 0x04],       // ZIP/ODT/DOCX
-        &[0x77, 0x4F, 0x46, 0x46],       // WOFF
-        &[0x77, 0x4F, 0x46, 0x32],       // WOFF2
-        &[0x52, 0x49, 0x46, 0x46],       // RIFF (webp/wav)
-        &[0x1F, 0x8B],                   // gzip
-        &[0x42, 0x4D],                   // BMP
-        &[0x4D, 0x5A],                   // PE
-        &[0x7F, 0x45, 0x4C, 0x46],       // ELF
+        &[0xFF, 0xD8, 0xFF],       // JPEG
+        &[0x89, 0x50, 0x4E, 0x47], // PNG
+        &[0x47, 0x49, 0x46, 0x38], // GIF
+        &[0x25, 0x50, 0x44, 0x46], // PDF
+        &[0x50, 0x4B, 0x03, 0x04], // ZIP/ODT/DOCX
+        &[0x77, 0x4F, 0x46, 0x46], // WOFF
+        &[0x77, 0x4F, 0x46, 0x32], // WOFF2
+        &[0x52, 0x49, 0x46, 0x46], // RIFF (webp/wav)
+        &[0x1F, 0x8B],             // gzip
+        &[0x42, 0x4D],             // BMP
+        &[0x4D, 0x5A],             // PE
+        &[0x7F, 0x45, 0x4C, 0x46], // ELF
     ];
     if MAGIC.iter().any(|m| data.starts_with(m)) {
         return true;
@@ -356,7 +360,9 @@ pub fn quality(text: &str) -> f64 {
         match ch {
             'а'..='я' | 'А'..='Я' | 'ё' | 'Ё' => good += 1.0,
             ' ' | '\n' | '\r' | '\t' => good += 0.35,
-            '—' | '–' | '«' | '»' | '…' | '№' | '’' | '“' | '”' | '°' | '±' | '×' => good += 0.7,
+            '—' | '–' | '«' | '»' | '…' | '№' | '’' | '“' | '”' | '°' | '±' | '×' => {
+                good += 0.7
+            }
             c if c.is_ascii_alphanumeric() => good += 0.45,
             c if c.is_ascii_punctuation() => good += 0.35,
             '\u{0080}'..='\u{009F}' | '\u{FFFD}' => bad += 3.0,
@@ -384,12 +390,39 @@ fn is_cjk_punct(c: char) -> bool {
 /// Хи-квадрат гистограммы русских букв относительно эталонных частот (на 1000).
 pub fn chi_square_ru(text: &str) -> f64 {
     const FREQ: [(char, f64); 33] = [
-        ('о', 109.7), ('е', 84.5), ('а', 80.1), ('и', 73.5), ('н', 67.0), ('т', 62.6),
-        ('с', 54.7), ('р', 47.3), ('в', 45.4), ('л', 44.0), ('к', 34.9), ('м', 32.1),
-        ('д', 29.8), ('п', 28.1), ('у', 26.2), ('я', 20.1), ('ы', 19.0), ('ь', 17.4),
-        ('г', 17.0), ('з', 16.5), ('б', 15.9), ('ч', 14.4), ('й', 12.1), ('х', 9.7),
-        ('ж', 9.4), ('ш', 7.3), ('ю', 6.4), ('ц', 4.8), ('щ', 3.6), ('э', 3.2),
-        ('ф', 2.6), ('ъ', 0.4), ('ё', 0.4),
+        ('о', 109.7),
+        ('е', 84.5),
+        ('а', 80.1),
+        ('и', 73.5),
+        ('н', 67.0),
+        ('т', 62.6),
+        ('с', 54.7),
+        ('р', 47.3),
+        ('в', 45.4),
+        ('л', 44.0),
+        ('к', 34.9),
+        ('м', 32.1),
+        ('д', 29.8),
+        ('п', 28.1),
+        ('у', 26.2),
+        ('я', 20.1),
+        ('ы', 19.0),
+        ('ь', 17.4),
+        ('г', 17.0),
+        ('з', 16.5),
+        ('б', 15.9),
+        ('ч', 14.4),
+        ('й', 12.1),
+        ('х', 9.7),
+        ('ж', 9.4),
+        ('ш', 7.3),
+        ('ю', 6.4),
+        ('ц', 4.8),
+        ('щ', 3.6),
+        ('э', 3.2),
+        ('ф', 2.6),
+        ('ъ', 0.4),
+        ('ё', 0.4),
     ];
     let mut counts = [0f64; 33];
     let mut letters = 0f64;
@@ -479,14 +512,26 @@ mod tests {
     fn cp1251_without_any_declaration() {
         let d = decode_document(&encoded(WINDOWS_1251), None);
         assert_eq!(d.label, "windows-1251");
-        assert!(d.text.starts_with("Съешь"), "получилось: {}", &d.text[..40.min(d.text.len())]);
+        assert!(
+            d.text.starts_with("Съешь"),
+            "получилось: {}",
+            &d.text[..40.min(d.text.len())]
+        );
     }
 
     #[test]
     fn koi8r_detected_even_though_header_lies() {
         // архив регулярно врёт: заголовок windows-1251, тело — KOI8-R
-        let d = decode_document(&encoded(encoding_rs::KOI8_R), Some("text/html; charset=windows-1251"));
-        assert!(d.text.starts_with("Съешь"), "кодировка {}: {}", d.label, &d.text[..40.min(d.text.len())]);
+        let d = decode_document(
+            &encoded(encoding_rs::KOI8_R),
+            Some("text/html; charset=windows-1251"),
+        );
+        assert!(
+            d.text.starts_with("Съешь"),
+            "кодировка {}: {}",
+            d.label,
+            &d.text[..40.min(d.text.len())]
+        );
         assert_ne!(d.label, "windows-1251");
     }
 
@@ -494,7 +539,12 @@ mod tests {
     fn cp866_and_iso8859_5_are_recognised() {
         for enc in [encoding_rs::IBM866, encoding_rs::ISO_8859_5] {
             let d = decode_document(&encoded(enc), None);
-            assert!(d.text.starts_with("Съешь"), "{}: {}", enc.name(), &d.text[..30.min(d.text.len())]);
+            assert!(
+                d.text.starts_with("Съешь"),
+                "{}: {}",
+                enc.name(),
+                &d.text[..30.min(d.text.len())]
+            );
         }
     }
 
@@ -532,7 +582,10 @@ mod tests {
         let suffix = b"</body></html>".to_vec();
         page = [prefix, page, suffix].concat();
         let d = decode_document(&page, None);
-        assert_eq!(d.label, "windows-1251", "метка из комментария не должна побеждать");
+        assert_eq!(
+            d.label, "windows-1251",
+            "метка из комментария не должна побеждать"
+        );
         assert!(d.text.contains("Съешь"));
     }
 
@@ -541,10 +594,18 @@ mod tests {
         // UTF-8 → прочитали как windows-1251 → снова записали в UTF-8
         let (wrong, _, _) = WINDOWS_1251.decode(RU.as_bytes());
         let broken = wrong.into_owned();
-        assert!(broken.contains('Р') || broken.contains('С'), "нет признаков mojibake: {}", &broken[..40.min(broken.len())]);
+        assert!(
+            broken.contains('Р') || broken.contains('С'),
+            "нет признаков mojibake: {}",
+            &broken[..40.min(broken.len())]
+        );
         let d = decode_document(broken.as_bytes(), None);
         assert_eq!(d.source, "mojibake");
-        assert!(d.text.starts_with("Съешь"), "получилось: {}", &d.text[..40.min(d.text.len())]);
+        assert!(
+            d.text.starts_with("Съешь"),
+            "получилось: {}",
+            &d.text[..40.min(d.text.len())]
+        );
     }
 
     #[test]
@@ -568,7 +629,10 @@ mod tests {
         for label in ["utf8", "UTF-8", "unicode-1-1-utf-8"] {
             assert_eq!(encoding_for_label(label).map(|e| e.name()), Some("UTF-8"));
         }
-        assert_eq!(encoding_for_label("koi8r").map(|e| e.name()), Some("KOI8-R"));
+        assert_eq!(
+            encoding_for_label("koi8r").map(|e| e.name()),
+            Some("KOI8-R")
+        );
     }
 
     #[test]
@@ -577,7 +641,9 @@ mod tests {
         page.push_str(&"<!-- filler -->".repeat(90));
         page.push_str("<meta charset=\"windows-1251\"></head><body>привет</body></html>");
         let out = normalize_utf8(&page);
-        let at = out.find("<meta charset=\"utf-8\">").expect("meta вставлена");
+        let at = out
+            .find("<meta charset=\"utf-8\">")
+            .expect("meta вставлена");
         assert!(at < 1024);
         assert!(!out.contains("windows-1251"));
     }
@@ -587,7 +653,9 @@ mod tests {
         assert!(looks_binary(&[0xFF, 0xD8, 0xFF, 0xE0, 0, 0x10]));
         assert!(looks_binary(b"%PDF-1.7\n"));
         assert!(looks_binary(b"text\0with\0nul"));
-        assert!(!looks_binary(b"<html><body>\xd0\x9f\xd1\x80\xd0\xb8\xd0\xb2\xd0\xb5\xd1\x82</body></html>"));
+        assert!(!looks_binary(
+            b"<html><body>\xd0\x9f\xd1\x80\xd0\xb8\xd0\xb2\xd0\xb5\xd1\x82</body></html>"
+        ));
         assert!(!looks_binary(RU.as_bytes()));
     }
 
@@ -595,6 +663,11 @@ mod tests {
     fn quality_prefers_correct_decoding() {
         let good = quality(RU);
         let bad = quality(&WINDOWS_1251.decode(&encoded(encoding_rs::KOI8_R)).0);
-        assert!(good > bad + 0.10, "good={good:.3} bad={bad:.3} chi_good={:.2} chi_bad={:.2}", chi_square_ru(RU), chi_square_ru(&WINDOWS_1251.decode(&encoded(encoding_rs::KOI8_R)).0));
+        assert!(
+            good > bad + 0.10,
+            "good={good:.3} bad={bad:.3} chi_good={:.2} chi_bad={:.2}",
+            chi_square_ru(RU),
+            chi_square_ru(&WINDOWS_1251.decode(&encoded(encoding_rs::KOI8_R)).0)
+        );
     }
 }

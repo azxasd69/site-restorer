@@ -286,7 +286,11 @@ impl Shared {
         let year = &item.ts[..4.min(item.ts.len())];
         let current = 1970 + (now_secs() / 31_556_952) as usize;
         let mut tries: Vec<String> = vec![format!("/web/{}id_/{}", item.ts, item.url)];
-        for y in [current, current.saturating_sub(1), current.saturating_sub(2)] {
+        for y in [
+            current,
+            current.saturating_sub(1),
+            current.saturating_sub(2),
+        ] {
             let ys = y.to_string();
             if ys != year {
                 tries.push(format!("/web/{ys}id_/{}", item.url));
@@ -305,7 +309,10 @@ impl Shared {
                 let (status, body, retry_after, content_type) = match self.fetch(&url) {
                     Ok(res) => res,
                     Err(err) => {
-                        self.log(crate::tr::pick(format!("сеть: {err}"), format!("network: {err}")));
+                        self.log(crate::tr::pick(
+                            format!("сеть: {err}"),
+                            format!("network: {err}"),
+                        ));
                         self.sleep(0.6 * (attempt + 1) as f64);
                         continue;
                     }
@@ -339,7 +346,10 @@ impl Shared {
                 if status == 429 {
                     self.counters.win_429.fetch_add(1, Ordering::Relaxed);
                     let wait = retry_after.unwrap_or(20.0 * (attempt + 1) as f64);
-                    self.log(crate::tr::pick(format!("429: пауза {wait:.0} с"), format!("429: pause {wait:.0}s")));
+                    self.log(crate::tr::pick(
+                        format!("429: пауза {wait:.0} с"),
+                        format!("429: pause {wait:.0}s"),
+                    ));
                     self.sleep(wait);
                     continue;
                 }
@@ -357,7 +367,9 @@ impl Shared {
         self.counters.done.fetch_add(1, Ordering::Relaxed);
         if ok {
             self.counters.ok.fetch_add(1, Ordering::Relaxed);
-            self.counters.bytes.fetch_add(size as u64, Ordering::Relaxed);
+            self.counters
+                .bytes
+                .fetch_add(size as u64, Ordering::Relaxed);
             self.counters
                 .win_bytes
                 .fetch_add(size as u64, Ordering::Relaxed);
@@ -568,7 +580,10 @@ impl Engine {
             true,
         );
         let mut pages = 1usize;
-        match self.shared.fetch(&self.cdx_query("showNumPages=true&output=json")) {
+        match self
+            .shared
+            .fetch(&self.cdx_query("showNumPages=true&output=json"))
+        {
             Ok((200, body, _, _)) => {
                 if let Some(n) = parse_pages(&String::from_utf8_lossy(&body)) {
                     pages = n;
@@ -577,7 +592,10 @@ impl Engine {
             Ok((code, _, _, _)) => self
                 .shared
                 .log(format!("CDX: оценка недоступна (HTTP {code})")),
-            Err(err) => self.shared.log(crate::tr::pick(format!("CDX: оценка — ошибка {err}"), format!("CDX: estimate failed: {err}"))),
+            Err(err) => self.shared.log(crate::tr::pick(
+                format!("CDX: оценка — ошибка {err}"),
+                format!("CDX: estimate failed: {err}"),
+            )),
         }
 
         // Быстрый запрос выполняется ВСЕГДА: постраничный режим (`page=N`) у
@@ -683,12 +701,14 @@ impl Engine {
                                 break;
                             }
                             let wait = retry.unwrap_or(15.0);
-                            self.shared.log(crate::tr::pick(format!("CDX: HTTP {code}, пауза {wait:.0} с"), format!("CDX: HTTP {code}, pause {wait:.0}s")));
+                            self.shared.log(crate::tr::pick(
+                                format!("CDX: HTTP {code}, пауза {wait:.0} с"),
+                                format!("CDX: HTTP {code}, pause {wait:.0}s"),
+                            ));
                             self.shared.sleep(wait);
                             continue;
                         }
-                        self.shared
-                            .log(crate::tr::pick(
+                        self.shared.log(crate::tr::pick(
                             format!("CDX: страница {} — HTTP {code}", page + 1),
                             format!("CDX: page {} — HTTP {code}", page + 1),
                         ));
@@ -698,8 +718,10 @@ impl Engine {
                     Err(err) => {
                         attempts += 1;
                         if attempts >= 3 {
-                            self.shared
-                                .log(crate::tr::pick(format!("CDX: страница {} — ошибка {err}", page + 1), format!("CDX: page {} failed: {err}", page + 1)));
+                            self.shared.log(crate::tr::pick(
+                                format!("CDX: страница {} — ошибка {err}", page + 1),
+                                format!("CDX: page {} failed: {err}", page + 1),
+                            ));
                             self.inv_failed = true;
                             break;
                         }
@@ -762,8 +784,10 @@ impl Engine {
                 "archive has no pages for this address".to_string()
             });
         }
-        self.shared
-            .log(crate::tr::pick(format!("адресов найдено: {}", self.items.len()), format!("addresses found: {}", self.items.len())));
+        self.shared.log(crate::tr::pick(
+            format!("адресов найдено: {}", self.items.len()),
+            format!("addresses found: {}", self.items.len()),
+        ));
         self.emit("inventory", 8.0, "", true);
         Ok(())
     }
@@ -881,7 +905,10 @@ impl Engine {
                         cb(&Progress {
                             stage: "download",
                             overall: 10.0 + 75.0 * done as f32 / total.max(1) as f32,
-                            text: crate::tr::pick(format!("Скачано {done} из {total}"), format!("Downloaded {done} of {total}")),
+                            text: crate::tr::pick(
+                                format!("Скачано {done} из {total}"),
+                                format!("Downloaded {done} of {total}"),
+                            ),
                             done,
                             total,
                             ok: shared.counters.ok.load(Ordering::Relaxed),
@@ -911,14 +938,16 @@ impl Engine {
             let shared = Arc::clone(&self.shared);
             let queue = Arc::clone(&queue);
             let next = Arc::clone(&next);
-            handles.push(std::thread::spawn(move || loop {
-                let idx = next.fetch_add(1, Ordering::Relaxed);
-                if idx >= queue.len() || shared.cancel.load(Ordering::Relaxed) {
-                    break;
+            handles.push(std::thread::spawn(move || {
+                loop {
+                    let idx = next.fetch_add(1, Ordering::Relaxed);
+                    if idx >= queue.len() || shared.cancel.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    shared.gate.acquire();
+                    shared.fetch_one(&queue[idx]);
+                    shared.gate.release();
                 }
-                shared.gate.acquire();
-                shared.fetch_one(&queue[idx]);
-                shared.gate.release();
             }));
         }
 
@@ -966,7 +995,9 @@ impl Engine {
                 .unwrap_or(src)
                 .to_string_lossy()
                 .replace('\\', "/");
-            let dst = self.site_dir.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
+            let dst = self
+                .site_dir
+                .join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
             if let Some(parent) = dst.parent() {
                 let _ = fs::create_dir_all(parent);
             }
@@ -985,21 +1016,15 @@ impl Engine {
                     // под расширением .html в архиве бывает картинка или PDF:
                     // копируем байты как есть, иначе файл будет испорчен
                     let _ = fs::copy(src, &dst);
-                    if console_verbose()
-                        && self.enc_logged.fetch_add(1, Ordering::Relaxed) < 3
-                    {
-                        self.shared
-                            .log(crate::tr::pick(format!("двоичный файл под текстовым расширением: {rel}"), format!("binary file behind a text extension: {rel}")));
+                    if console_verbose() && self.enc_logged.fetch_add(1, Ordering::Relaxed) < 3 {
+                        self.shared.log(crate::tr::pick(
+                            format!("двоичный файл под текстовым расширением: {rel}"),
+                            format!("binary file behind a text extension: {rel}"),
+                        ));
                     }
                     continue;
                 }
-                let ct = self
-                    .shared
-                    .content_types
-                    .lock()
-                    .unwrap()
-                    .get(&rel)
-                    .cloned();
+                let ct = self.shared.content_types.lock().unwrap().get(&rel).cloned();
                 let decoded = crate::encoding::decode_document(&data, ct.as_deref());
                 if decoded.was_converted() {
                     *self
@@ -1009,19 +1034,17 @@ impl Engine {
                         .entry(decoded.label)
                         .or_insert(0) += 1;
                     // в журнал — только первые несколько примеров, дальше сводка
-                    if console_verbose()
-                        && self.enc_logged.fetch_add(1, Ordering::Relaxed) < 3
-                    {
+                    if console_verbose() && self.enc_logged.fetch_add(1, Ordering::Relaxed) < 3 {
                         self.shared.log(crate::tr::pick(
-                                format!(
-                                    "кодировка: {} ({}, {}%) — {}",
-                                    decoded.label, decoded.source, decoded.confidence, rel
-                                ),
-                                format!(
-                                    "encoding: {} ({}, {}%) — {}",
-                                    decoded.label, decoded.source, decoded.confidence, rel
-                                ),
-                            ));
+                            format!(
+                                "кодировка: {} ({}, {}%) — {}",
+                                decoded.label, decoded.source, decoded.confidence, rel
+                            ),
+                            format!(
+                                "encoding: {} ({}, {}%) — {}",
+                                decoded.label, decoded.source, decoded.confidence, rel
+                            ),
+                        ));
                     }
                 }
                 let mut text = decoded.text;
@@ -1048,7 +1071,11 @@ impl Engine {
                         .replace_all(&text, |caps: &regex_lite::Captures| {
                             let attr = &caps[1];
                             let quote = if caps.get(2).is_some() { "\"" } else { "'" };
-                            let value = caps.get(2).or_else(|| caps.get(3)).map(|m| m.as_str()).unwrap_or("");
+                            let value = caps
+                                .get(2)
+                                .or_else(|| caps.get(3))
+                                .map(|m| m.as_str())
+                                .unwrap_or("");
                             let items: Vec<String> = value
                                 .split(',')
                                 .filter(|s| !s.trim().is_empty())
@@ -1056,8 +1083,7 @@ impl Engine {
                                     let mut bits = item.split_whitespace();
                                     let url = bits.next().unwrap_or("");
                                     let rest: Vec<&str> = bits.collect();
-                                    let new_url =
-                                        self.rewrite_ref(url, src_dir, &index, &site_rx);
+                                    let new_url = self.rewrite_ref(url, src_dir, &index, &site_rx);
                                     if rest.is_empty() {
                                         new_url
                                     } else {
@@ -1092,7 +1118,10 @@ impl Engine {
         }
         let summary = self.enc_summary();
         if !summary.is_empty() {
-            self.shared.log(crate::tr::pick(format!("перекодировано в UTF-8: {summary}"), format!("converted to UTF-8: {summary}")));
+            self.shared.log(crate::tr::pick(
+                format!("перекодировано в UTF-8: {summary}"),
+                format!("converted to UTF-8: {summary}"),
+            ));
         }
         Ok(total)
     }
@@ -1104,9 +1133,7 @@ impl Engine {
         if summary.is_empty() {
             return String::new();
         }
-        format!(
-            "<tr><td>Перекодировано в UTF-8</td><td class=\"n\">{summary}</td></tr>"
-        )
+        format!("<tr><td>Перекодировано в UTF-8</td><td class=\"n\">{summary}</td></tr>")
     }
 
     fn enc_summary(&self) -> String {
@@ -1120,13 +1147,7 @@ impl Engine {
             .join(", ")
     }
 
-    fn rewrite_ref(
-        &self,
-        value: &str,
-        src_dir: &str,
-        index: &Index,
-        site_rx: &Regex,
-    ) -> String {
+    fn rewrite_ref(&self, value: &str, src_dir: &str, index: &Index, site_rx: &Regex) -> String {
         let raw = value.trim();
         if raw.is_empty()
             || raw.starts_with('#')
@@ -1140,7 +1161,10 @@ impl Engine {
         let absolute = if site_rx.is_match(raw) {
             Some(paths::normalize_url(raw, &self.host))
         } else if raw.starts_with('/') && !raw.starts_with("//") {
-            Some(paths::normalize_url(&format!("https://{}{raw}", self.host), &self.host))
+            Some(paths::normalize_url(
+                &format!("https://{}{raw}", self.host),
+                &self.host,
+            ))
         } else {
             None
         };
@@ -1197,12 +1221,18 @@ impl Engine {
                 }
                 stats.refs += 1;
                 let clean = crate::sanitize::pct_decode(
-                    raw.split('?').next().unwrap_or("").split('#').next().unwrap_or(""),
+                    raw.split('?')
+                        .next()
+                        .unwrap_or("")
+                        .split('#')
+                        .next()
+                        .unwrap_or(""),
                 );
-                let target = path
-                    .parent()
-                    .unwrap_or(Path::new("."))
-                    .join(clean.trim_start_matches('/').replace('/', std::path::MAIN_SEPARATOR_STR));
+                let target = path.parent().unwrap_or(Path::new(".")).join(
+                    clean
+                        .trim_start_matches('/')
+                        .replace('/', std::path::MAIN_SEPARATOR_STR),
+                );
                 let target = if target.is_dir() {
                     target.join("index.html")
                 } else {
@@ -1254,11 +1284,21 @@ impl Engine {
             .replace("{{broken}}", &stats.broken.to_string())
             .replace(
                 "{{missing}}",
-                &self.shared.counters.missing.load(Ordering::Relaxed).to_string(),
+                &self
+                    .shared
+                    .counters
+                    .missing
+                    .load(Ordering::Relaxed)
+                    .to_string(),
             )
             .replace(
                 "{{errors}}",
-                &self.shared.counters.errors.load(Ordering::Relaxed).to_string(),
+                &self
+                    .shared
+                    .counters
+                    .errors
+                    .load(Ordering::Relaxed)
+                    .to_string(),
             )
             .replace("{{rows}}", &rows)
             .replace("{{encodings}}", &self.report_encodings());
@@ -1278,7 +1318,15 @@ impl Engine {
         let report = self.report(stats)?;
         self.emit("report", 100.0, crate::tr::t("готово", "done"), true);
         let mut types = [0usize; 8];
-        for (i, (_, ok, total)) in self.shared.types.lock().unwrap().as_array().iter().enumerate() {
+        for (i, (_, ok, total)) in self
+            .shared
+            .types
+            .lock()
+            .unwrap()
+            .as_array()
+            .iter()
+            .enumerate()
+        {
             types[i * 2] = *ok;
             types[i * 2 + 1] = *total;
         }
@@ -1322,10 +1370,9 @@ struct Index {
 
 impl Index {
     fn of(root: &Path) -> Self {
-        let cache_rx = Regex::new(
-            r"(?i)^bitrix/cache/(css|js)/s1/[^/]+/[^/]+/([a-z_]+)_[0-9a-f]+_v1",
-        )
-        .unwrap();
+        let cache_rx =
+            Regex::new(r"(?i)^bitrix/cache/(css|js)/s1/[^/]+/[^/]+/([a-z_]+)_[0-9a-f]+_v1")
+                .unwrap();
         let resize_rx =
             Regex::new(r"(?i)^upload/resize_cache/iblock/([0-9a-z]+)/[^/]+/(.+)$").unwrap();
         let mut index = Self {
@@ -1472,7 +1519,6 @@ fn parse_rows(body: &[u8]) -> Vec<Vec<String>> {
     }
     rows
 }
-
 
 /// Сколько страниц в CDX: значение рядом с "numpages" (форматы ответа различаются).
 fn parse_pages(text: &str) -> Option<usize> {
@@ -1655,7 +1701,8 @@ mod build_tests {
     #[test]
     fn cp1251_page_is_converted_to_utf8() {
         let root = workdir("charset");
-        let page = "<html><head><meta charset=\"windows-1251\"></head><body><h1>Привет</h1></body></html>";
+        let page =
+            "<html><head><meta charset=\"windows-1251\"></head><body><h1>Привет</h1></body></html>";
         let mut bytes = Vec::new();
         for ch in page.chars() {
             match ch {
@@ -1689,11 +1736,18 @@ mod build_tests {
         let meta_at = out
             .find("<meta charset=\"utf-8\">")
             .expect("meta добавлена");
-        assert!(meta_at < 1024, "meta должна попасть в первые 1024 байта: {meta_at}");
+        assert!(
+            meta_at < 1024,
+            "meta должна попасть в первые 1024 байта: {meta_at}"
+        );
         assert!(out.contains("charset=utf-8"));
 
         let early = "<html><head><meta charset=\"utf-8\"></head><body>x</body></html>";
-        assert_eq!(crate::encoding::normalize_utf8(early), early, "корректный документ не меняем");
+        assert_eq!(
+            crate::encoding::normalize_utf8(early),
+            early,
+            "корректный документ не меняем"
+        );
     }
 
     #[test]
@@ -1716,7 +1770,11 @@ mod build_tests {
     #[test]
     fn single_quoted_attribute_keeps_quotes() {
         let root = workdir("single");
-        put(&root, "index.html", b"<html><body><a href='/page2/'>x</a></body></html>");
+        put(
+            &root,
+            "index.html",
+            b"<html><body><a href='/page2/'>x</a></body></html>",
+        );
         put(&root, "page2/index.html", b"<html><body>p2</body></html>");
         build(&root);
         let text = read(&root, "index.html");
@@ -1737,7 +1795,10 @@ mod build_tests {
         build(&root);
         let html = read(&root, "page/index.html");
         assert!(!html.contains("<base"), "base не удалён: {html}");
-        assert!(html.contains("href='../css/s.css'") || html.contains("href=\"../css/s.css\""), "css-ссылка: {html}");
+        assert!(
+            html.contains("href='../css/s.css'") || html.contains("href=\"../css/s.css\""),
+            "css-ссылка: {html}"
+        );
         let css = read(&root, "css/s.css");
         assert!(css.contains("url(../img/a.png)"), "css: {css}");
         let _ = fs::remove_dir_all(&root);

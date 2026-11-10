@@ -148,7 +148,9 @@ fn attach_parent_console() {}
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let console_mode = args.iter().any(|a| a == "--cli" || a == "--version" || a == "-V");
+    let console_mode = args
+        .iter()
+        .any(|a| a == "--cli" || a == "--version" || a == "-V");
     if console_mode || !cfg!(feature = "gui") {
         attach_parent_console();
         ensure_console_utf8();
@@ -170,9 +172,10 @@ fn main() {
         };
         let options = eframe::NativeOptions {
             renderer: eframe::Renderer::Glow,
+            persist_window: false,
             viewport: eframe::egui::ViewportBuilder::default()
-                .with_inner_size([880.0, 740.0])
-                .with_min_inner_size([840.0, 700.0])
+                .with_inner_size([900.0, 660.0])
+                .with_min_inner_size([760.0, 560.0])
                 .with_title(title),
             ..Default::default()
         };
@@ -354,11 +357,19 @@ fn cli(args: &[String]) -> i32 {
                 tr::pick(
                     format!(
                         "ИТОГ: скачано {} из {}, страниц {}, ссылок {}, битых {}",
-                        outcome.ok, outcome.total, outcome.stats.pages, outcome.stats.refs, outcome.stats.broken
+                        outcome.ok,
+                        outcome.total,
+                        outcome.stats.pages,
+                        outcome.stats.refs,
+                        outcome.stats.broken
                     ),
                     format!(
                         "RESULT: downloaded {} of {}, pages {}, links {}, broken {}",
-                        outcome.ok, outcome.total, outcome.stats.pages, outcome.stats.refs, outcome.stats.broken
+                        outcome.ok,
+                        outcome.total,
+                        outcome.stats.pages,
+                        outcome.stats.refs,
+                        outcome.stats.broken
                     ),
                 )
             );
@@ -368,7 +379,12 @@ fn cli(args: &[String]) -> i32 {
                 outcome.types[4],
                 outcome.types[6],
             );
-            let totals = (outcome.types[1], outcome.types[3], outcome.types[5], outcome.types[7]);
+            let totals = (
+                outcome.types[1],
+                outcome.types[3],
+                outcome.types[5],
+                outcome.types[7],
+            );
             println!(
                 "{}",
                 tr::pick(
@@ -382,19 +398,37 @@ fn cli(args: &[String]) -> i32 {
                     ),
                 )
             );
-            println!("{}", tr::pick(format!("копия:  {}", outcome.site.display()), format!("copy:   {}", outcome.site.display())));
-            println!("{}", tr::pick(format!("отчёт:  {}", outcome.report.display()), format!("report: {}", outcome.report.display())));
+            println!(
+                "{}",
+                tr::pick(
+                    format!("копия:  {}", outcome.site.display()),
+                    format!("copy:   {}", outcome.site.display())
+                )
+            );
+            println!(
+                "{}",
+                tr::pick(
+                    format!("отчёт:  {}", outcome.report.display()),
+                    format!("report: {}", outcome.report.display())
+                )
+            );
             0
         }
         Err(err) if err == "cancelled" => {
-            println!("{}", tr::t(
-                "остановлено; повторный запуск продолжит с места остановки",
-                "stopped; run again to continue from the same folder",
-            ));
+            println!(
+                "{}",
+                tr::t(
+                    "остановлено; повторный запуск продолжит с места остановки",
+                    "stopped; run again to continue from the same folder",
+                )
+            );
             130
         }
         Err(err) => {
-            eprintln!("{}", tr::pick(format!("ошибка: {err}"), format!("error: {err}")));
+            eprintln!(
+                "{}",
+                tr::pick(format!("ошибка: {err}"), format!("error: {err}"))
+            );
             1
         }
     }

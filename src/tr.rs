@@ -19,18 +19,10 @@ pub fn is_english() -> bool {
 
 /// Выбрать строку по языку.
 pub fn t(ru: &'static str, en: &'static str) -> &'static str {
-    if is_english() {
-        en
-    } else {
-        ru
-    }
+    if is_english() { en } else { ru }
 }
 
 /// То же для заранее собранных строк (форматирование с аргументами).
 pub fn pick(ru: String, en: String) -> String {
-    if is_english() {
-        en
-    } else {
-        ru
-    }
+    if is_english() { en } else { ru }
 }

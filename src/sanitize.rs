@@ -9,12 +9,38 @@ use std::sync::OnceLock;
 
 /// ЙЦУКЕН -> QWERTY по физическим клавишам.
 const RU_LAYOUT: &[(char, char)] = &[
-    ('й', 'q'), ('ц', 'w'), ('у', 'e'), ('к', 'r'), ('е', 't'), ('н', 'y'),
-    ('г', 'u'), ('ш', 'i'), ('щ', 'o'), ('з', 'p'), ('х', '['), ('ъ', ']'),
-    ('ф', 'a'), ('ы', 's'), ('в', 'd'), ('а', 'f'), ('п', 'g'), ('р', 'h'),
-    ('о', 'j'), ('л', 'k'), ('д', 'l'), ('ж', ';'), ('э', '\''), ('я', 'z'),
-    ('ч', 'x'), ('с', 'c'), ('м', 'v'), ('и', 'b'), ('т', 'n'), ('ь', 'm'),
-    ('б', ','), ('ю', '.'),
+    ('й', 'q'),
+    ('ц', 'w'),
+    ('у', 'e'),
+    ('к', 'r'),
+    ('е', 't'),
+    ('н', 'y'),
+    ('г', 'u'),
+    ('ш', 'i'),
+    ('щ', 'o'),
+    ('з', 'p'),
+    ('х', '['),
+    ('ъ', ']'),
+    ('ф', 'a'),
+    ('ы', 's'),
+    ('в', 'd'),
+    ('а', 'f'),
+    ('п', 'g'),
+    ('р', 'h'),
+    ('о', 'j'),
+    ('л', 'k'),
+    ('д', 'l'),
+    ('ж', ';'),
+    ('э', '\''),
+    ('я', 'z'),
+    ('ч', 'x'),
+    ('с', 'c'),
+    ('м', 'v'),
+    ('и', 'b'),
+    ('т', 'n'),
+    ('ь', 'm'),
+    ('б', ','),
+    ('ю', '.'),
 ];
 
 /// Откуда взялся адрес — для журнала.
@@ -31,8 +57,10 @@ pub enum Note {
 fn host_rx() -> &'static Regex {
     static RX: OnceLock<Regex> = OnceLock::new();
     RX.get_or_init(|| {
-        Regex::new(r"^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$")
-            .expect("host regex")
+        Regex::new(
+            r"^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$",
+        )
+        .expect("host regex")
     })
 }
 
@@ -186,10 +214,11 @@ fn hostname_from_url(s: &str) -> Option<String> {
 fn candidate_tokens(s: &str) -> Vec<(String, bool)> {
     let mut out = Vec::new();
     let cleaned = s.replace(['\r', '\n'], " ");
-    for raw in cleaned.split([' ', ',', ';', '\t']).filter(|t| !t.is_empty()) {
-        let tok = raw.trim_matches(|c: char| {
-            "\"'`<>()[]{}.,;:!?".contains(c)
-        });
+    for raw in cleaned
+        .split([' ', ',', ';', '\t'])
+        .filter(|t| !t.is_empty())
+    {
+        let tok = raw.trim_matches(|c: char| "\"'`<>()[]{}.,;:!?".contains(c));
         if tok.is_empty() {
             continue;
         }
@@ -201,10 +230,7 @@ fn candidate_tokens(s: &str) -> Vec<(String, bool)> {
             }
         }
         if tok.contains('.') && !tok.contains(' ') {
-            out.push((
-                tok.split('/').next().unwrap_or(tok).to_string(),
-                false,
-            ));
+            out.push((tok.split('/').next().unwrap_or(tok).to_string(), false));
         } else if is_cyrillic(tok) && dekeyboard(tok).contains('.') {
             out.push((dekeyboard(tok), true));
         }
@@ -225,7 +251,11 @@ fn finish(host: &str) -> Option<(String, Note)> {
         return None;
     }
     if !is_cyrillic(&host) {
-        return if valid_host(&host) { Some((host.clone(), Note::Plain)) } else { None };
+        return if valid_host(&host) {
+            Some((host.clone(), Note::Plain))
+        } else {
+            None
+        };
     }
 
     // Кириллица: либо набрано в русской раскладке, либо настоящий IDN-домен.
@@ -325,7 +355,10 @@ mod tests {
     fn common_forms() {
         let cases = [
             ("prokupol.ru", "prokupol.ru"),
-            ("https://www.prokupol.ru/catalog/?utm_source=x#top", "prokupol.ru"),
+            (
+                "https://www.prokupol.ru/catalog/?utm_source=x#top",
+                "prokupol.ru",
+            ),
             ("  «prokupol.ru»  ", "prokupol.ru"),
             ("Сайт: prokupol.ru — магазин", "prokupol.ru"),
             (

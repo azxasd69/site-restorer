@@ -8,7 +8,11 @@ fn main() {
         .build();
     let agent = ureq::Agent::new_with_config(cfg);
     let t = Instant::now();
-    match agent.get(&url).header("User-Agent", "SiteRestorer/2.0").call() {
+    match agent
+        .get(&url)
+        .header("User-Agent", "SiteRestorer/2.0")
+        .call()
+    {
         Ok(mut r) => {
             let status = r.status().as_u16();
             println!("статус {status} за {:?}", t.elapsed());
