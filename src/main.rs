@@ -204,6 +204,7 @@ fn main() {
             viewport: eframe::egui::ViewportBuilder::default()
                 .with_inner_size([900.0, 660.0])
                 .with_min_inner_size([760.0, 560.0])
+                .with_icon(window_icon())
                 .with_title(title),
             ..Default::default()
         };
@@ -214,13 +215,14 @@ fn main() {
         );
         if let Err(err) = run {
             eprintln!("не удалось открыть окно: {err}");
+            let cli = cli_build_name();
             let text = if std::env::var("SR_LANG").as_deref() == Ok("en") {
                 format!(
-                    "Cannot open the window.\n\n{err}\n\nThe graphics driver does not provide OpenGL 2.0+ (typical for virtual machines and remote sessions).\nUse the command-line build: SiteRestorer-rust-win-cli-*.exe --cli --site <address>"
+                    "Cannot open the window.\n\n{err}\n\nThe graphics driver does not provide OpenGL 2.0+ (typical for virtual machines and remote sessions).\nUse the command-line build: {cli} --cli --site <address>"
                 )
             } else {
                 format!(
-                    "Не удалось открыть окно.\n\n{err}\n\nВидеодрайвер не предоставляет OpenGL 2.0+ (обычное дело в виртуальных машинах и удалённых сеансах).\nВоспользуйтесь консольной сборкой: SiteRestorer-rust-win-cli-*.exe --cli --site <адрес>"
+                    "Не удалось открыть окно.\n\n{err}\n\nВидеодрайвер не предоставляет OpenGL 2.0+ (обычное дело в виртуальных машинах и удалённых сеансах).\nВоспользуйтесь консольной сборкой: {cli} --cli --site <адрес>"
                 )
             };
             message_box(&text);
@@ -383,6 +385,9 @@ fn cli(args: &[String]) -> i32 {
         _ => {
             if !p.text.is_empty() {
                 println!("[{:5.1}%] {}  {}", p.overall, p.stage, p.text);
+                // При перенаправлении вывода в файл строка должна быть видна сразу:
+                // без сброса буфера журнал читается рывками или только в конце (ОШ-4).
+                let _ = std::io::Write::flush(&mut std::io::stdout());
             }
         }
     });
@@ -393,17 +398,19 @@ fn cli(args: &[String]) -> i32 {
                 "{}",
                 tr::pick(
                     format!(
-                        "ИТОГ: скачано {} из {}, страниц {}, ссылок {}, битых {}",
+                        "ИТОГ: скачано {} из {} адресов, файлов в копии {}, страниц {}, ссылок {}, битых {}",
                         outcome.ok,
                         outcome.total,
+                        outcome.site_files,
                         outcome.stats.pages,
                         outcome.stats.refs,
                         outcome.stats.broken
                     ),
                     format!(
-                        "RESULT: downloaded {} of {}, pages {}, links {}, broken {}",
+                        "RESULT: downloaded {} of {} addresses, files in copy {}, pages {}, links {}, broken {}",
                         outcome.ok,
                         outcome.total,
+                        outcome.site_files,
                         outcome.stats.pages,
                         outcome.stats.refs,
                         outcome.stats.broken
@@ -451,10 +458,14 @@ fn cli(args: &[String]) -> i32 {
             );
             // Машиночитаемый итог: одна строка, чтобы прогон разбирался скриптом.
             println!(
-                "RESULT {{\"ok\":{},\"total\":{},\"pages\":{},\"refs\":{},\"broken\":{},\"site\":\"{}\",\"report\":\"{}\"}}",
+                "RESULT {{\"ok\":{},\"total\":{},\"files\":{},\"mirror\":{},\"unique\":{},\"pages\":{},\"foreign\":{},\"refs\":{},\"broken\":{},\"site\":\"{}\",\"report\":\"{}\"}}",
                 outcome.ok,
                 outcome.total,
+                outcome.site_files,
+                outcome.mirror_files,
+                outcome.unique_paths,
                 outcome.stats.pages,
+                outcome.stats.foreign,
                 outcome.stats.refs,
                 outcome.stats.broken,
                 json_escape(&outcome.site.to_string_lossy()),
@@ -479,6 +490,35 @@ fn cli(args: &[String]) -> i32 {
             );
             1
         }
+    }
+}
+
+/// Иконка окна: знак продукта с сайта lastcopy.ru.
+/// Байты готовит `scripts/make-icons.py` (64×64, RGBA); готовый массив — `packaging/icons/site-restorer-64.rgba`.
+/// Декодировать PNG в рантайме не нужно, поэтому лишней зависимости нет.
+#[cfg(feature = "gui")]
+fn window_icon() -> eframe::egui::IconData {
+    const RAW: &[u8] = include_bytes!("../packaging/icons/site-restorer-64.rgba");
+    eframe::egui::IconData {
+        rgba: RAW.to_vec(),
+        width: 64,
+        height: 64,
+    }
+}
+
+/// Имя консольной сборки для текущей платформы и архитектуры.
+/// Держим в одном месте: подсказка должна называть файл, который есть в релизе (ОШ-1).
+/// Нужна только оконной сборке — в консольной её некому вызывать.
+#[cfg(feature = "gui")]
+fn cli_build_name() -> &'static str {
+    if cfg!(all(target_os = "windows", target_arch = "x86")) {
+        "SiteRestorer-windows-x86-cli.exe"
+    } else if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+        "SiteRestorer-windows-x64-cli.exe"
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        "SiteRestorer-linux-x64-cli"
+    } else {
+        "SiteRestorer-windows-x64-cli.exe"
     }
 }
 

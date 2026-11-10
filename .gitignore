@@ -38,4 +38,8 @@ mutants.out.old/
 
 # генерируется в CI для релиз-нот
 RELEASE_NOTES.md
+# Состояние инструментов
+.indexnow-state.json
 
+# Рабочие каталоги прогонов
+scratch/

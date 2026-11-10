@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Site Restorer">
+  <title>Site Restorer</title>
+  <rect width="512" height="512" rx="92" fill="#2D3748"/>
+  <rect x="48" y="48" width="176" height="176" rx="19" fill="#FFFFFF"/>
+  <rect x="264" y="48" width="176" height="176" rx="19" fill="#FFFFFF"/>
+  <rect x="48" y="264" width="176" height="176" rx="19" fill="#FFFFFF"/>
+  <rect x="275" y="275" width="154" height="154" rx="16" fill="none" stroke="#9FB0C2" stroke-width="24" stroke-dasharray="35 32"/>
+</svg>

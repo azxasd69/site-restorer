@@ -5,6 +5,8 @@ AIMD = "AIMD"
 aimd = "aimd"
 # имя крейта сжатия flate2: typos режет его на «flate» и цифру
 flate = "flate"
+# аргумент компилятора ресурсов Windows (/fo) — не опечатка
+fo = "fo"
 
 [files]
 extend-exclude = ["target/", "legacy/", "landing/assets/"]

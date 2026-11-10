@@ -196,6 +196,7 @@ jobs:
           install -m755 assets/SiteRestorer-linux-x64-gui bundle/site-restorer-linux-x64/site-restorer-gui
           install -m644 packaging/linux/site-restorer.desktop bundle/site-restorer-linux-x64/share/applications/
           install -m644 packaging/linux/site-restorer.svg bundle/site-restorer-linux-x64/share/icons/
+          install -m644 packaging/linux/icons/site-restorer-256.png bundle/site-restorer-linux-x64/share/icons/
           install -m755 packaging/linux/install.sh bundle/site-restorer-linux-x64/
           install -m644 packaging/linux/README.txt bundle/site-restorer-linux-x64/
           tar -C bundle -czf assets/SiteRestorer-linux-x64.tar.gz site-restorer-linux-x64

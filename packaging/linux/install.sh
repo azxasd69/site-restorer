@@ -8,6 +8,7 @@ prefix="${PREFIX:-$HOME/.local}"
 install -Dm755 "$here/site-restorer" "$prefix/bin/site-restorer"
 install -Dm755 "$here/site-restorer-gui" "$prefix/bin/site-restorer-gui"
 install -Dm644 "$here/share/icons/site-restorer.svg" "$prefix/share/icons/hicolor/scalable/apps/site-restorer.svg"
+install -Dm644 "$here/share/icons/site-restorer-256.png" "$prefix/share/icons/hicolor/256x256/apps/site-restorer.png"
 install -Dm644 "$here/share/applications/site-restorer.desktop" "$prefix/share/applications/site-restorer.desktop"
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "$prefix/share/applications" || true

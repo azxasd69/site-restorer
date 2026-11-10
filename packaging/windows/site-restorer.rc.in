@@ -1,0 +1,31 @@
+// Ресурс исполняемого файла: иконка и сведения о версии.
+// Шаблон подставляет build.rs: {{VERSION}} — версия сборки, {{VERSION_NUM}} — она же числами.
+// Заголовки не подключаются: winver.h требует путей SDK, а VERSIONINFO — встроенная структура rc.
+
+1 ICON "packaging/icons/site-restorer.ico"
+
+1 VERSIONINFO
+FILEVERSION {{VERSION_NUM}}
+PRODUCTVERSION {{VERSION_NUM}}
+FILEOS 0x40004L
+FILETYPE 0x1L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "Site Restorer"
+            VALUE "FileDescription", "Site Restorer: copy a site from the web archive"
+            VALUE "FileVersion", "{{VERSION}}"
+            VALUE "InternalName", "site-restorer"
+            VALUE "OriginalFilename", "SiteRestorer-windows.exe"
+            VALUE "ProductName", "Site Restorer"
+            VALUE "ProductVersion", "{{VERSION}}"
+            VALUE "LegalCopyright", "MIT License"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
