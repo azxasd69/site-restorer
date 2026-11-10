@@ -53,6 +53,7 @@ libegl1-mesa-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev
 libwayland-dev libfontconfig1-dev`.
 
 Профиль релиза: `opt-level = "z"`, LTO, `panic = "abort"`, strip.
+Версия тулчейна закреплена в `rust-toolchain.toml` (1.99.1) и используется в CI.
 
 ### Python и Go
 

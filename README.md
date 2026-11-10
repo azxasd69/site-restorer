@@ -181,7 +181,7 @@ cargo audit && cargo deny check && cargo machete && typos
 
 ## Сборка из исходников
 
-Rust (нужен тулчейн 1.85+, для Windows — MSVC):
+Rust (версия тулчейна закреплена в `rust-toolchain.toml` — 1.99.1; для Windows — MSVC):
 
 ```bash
 cargo build --release                                   # GUI + CLI, нативное окно

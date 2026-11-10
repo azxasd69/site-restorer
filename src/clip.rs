@@ -66,7 +66,9 @@ pub fn read_text() -> Option<String> {
     }
 }
 
+/// Стаб для не-Windows: вызывается только из windows-ветки.
 #[cfg(not(windows))]
+#[allow(dead_code)]
 pub fn read_text() -> Option<String> {
     None
 }
@@ -126,5 +128,7 @@ pub fn write_text(text: &str) {
     }
 }
 
+/// Стаб для не-Windows: вызывается только из windows-ветки.
 #[cfg(not(windows))]
+#[allow(dead_code)]
 pub fn write_text(_text: &str) {}

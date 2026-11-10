@@ -1,0 +1,5 @@
+# Одна версия для разработки и CI: релиз не должен зависеть от того,
+# какой stable попал на раннер. Обновлять вместе с CHANGELOG.
+[toolchain]
+channel = "1.99.1"
+components = ["clippy", "rustfmt"]
