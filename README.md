@@ -4,6 +4,10 @@
 сохранённую копию сайта из Wayback Machine (Internet Archive), собирает её для
 локального просмотра и показывает отчёт о полноте.
 
+[![Build](https://img.shields.io/github/actions/workflow/status/azxasd69/site-restorer/build.yml?label=build)](https://github.com/azxasd69/site-restorer/actions/workflows/build.yml) [![Release](https://img.shields.io/github/v/release/azxasd69/site-restorer)](https://github.com/azxasd69/site-restorer/releases/latest) [![Downloads](https://img.shields.io/github/downloads/azxasd69/site-restorer/total)](https://github.com/azxasd69/site-restorer/releases) [![License](https://img.shields.io/github/license/azxasd69/site-restorer)](LICENSE)
+
+Сайт: **[lastcopy.ru](https://lastcopy.ru/)** · English: [lastcopy.ru/en](https://lastcopy.ru/en/)
+
 Реализация — **Rust**: нативный интерфейс на egui и CLI в одном исходнике.
 Python-версия (`legacy/python`) и порт на Go (`ports/go`) оставлены в репозитории
 как история и **больше не разрабатываются и не публикуются**.
