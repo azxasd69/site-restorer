@@ -1241,6 +1241,68 @@ impl Engine {
         self.data_dir.join("no-snapshot.tsv")
     }
 
+    /// Путь к справочнику дат снимков.
+    fn snapshots_path(&self) -> PathBuf {
+        self.data_dir.join("snapshots.tsv")
+    }
+
+    /// Прочитать даты снимков: `путь`, табуляция, отпечаток снимка.
+    ///
+    /// Журнал сборки описывает и логику переписывания, поэтому при смене версии
+    /// программы он отвергается целиком — вместе с датами снимков. Справочник
+    /// хранит только даты и переживает обновление: иначе в отчёте «Годы снимков»
+    /// пустеет после каждого выпуска.
+    fn load_snapshots(&self) {
+        let Ok(text) = fs::read_to_string(self.snapshots_path()) else {
+            return;
+        };
+        let Ok(mut map) = self.shared.snapshots.lock() else {
+            return;
+        };
+        for line in text.lines() {
+            if let Some((path, stamp)) = line.split_once('\t')
+                && !path.is_empty()
+                && stamp.len() >= 8
+            {
+                map.entry(path.to_string())
+                    .or_insert_with(|| stamp.to_string());
+            }
+        }
+    }
+
+    /// Сохранить даты снимков: из загрузки этого прогона и из журнала сборки.
+    fn save_snapshots(&self) {
+        let mut all: HashMap<String, String> = match self.shared.snapshots.lock() {
+            Ok(map) => map.clone(),
+            Err(_) => return,
+        };
+        if let Ok(journal) = self.journal.lock() {
+            for (rel, entry) in journal.iter() {
+                if entry.snapshot.len() >= 8 {
+                    all.insert(rel.clone(), entry.snapshot.clone());
+                }
+            }
+        }
+        if all.is_empty() {
+            return;
+        }
+        let mut keys: Vec<&String> = all.keys().collect();
+        keys.sort();
+        let mut out = String::with_capacity(all.len() * 80);
+        for key in keys {
+            out.push_str(key);
+            out.push('\t');
+            out.push_str(&all[key]);
+            out.push('\n');
+        }
+        let _ = fs::create_dir_all(&self.data_dir);
+        let path = self.snapshots_path();
+        let tmp = path.with_extension("tsv.part");
+        if fs::write(&tmp, out).is_ok() {
+            let _ = fs::rename(&tmp, &path);
+        }
+    }
+
     /// Прочитать список адресов без снимка: `url`, табуляция, время проверки.
     fn load_no_snapshot(&self) -> HashMap<String, u64> {
         let Ok(text) = fs::read_to_string(self.no_snapshot_path()) else {
@@ -2831,12 +2893,14 @@ impl Engine {
             ));
         }
         self.load_content_types();
+        self.load_snapshots();
         self.inventory()?;
         self.ensure_not_cancelled()?;
         self.check_space()?;
         self.download()?;
         self.ensure_not_cancelled()?;
         self.build()?;
+        self.save_snapshots();
         self.ensure_not_cancelled()?;
         let mut stats = self.verify();
         self.ensure_not_cancelled()?;
