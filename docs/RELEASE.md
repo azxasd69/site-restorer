@@ -9,12 +9,12 @@
 
 | Файл | Откуда | Лимит размера |
 |---|---|---|
-| `SiteRestorer-windows-x64.exe` | `cargo build --release`, target `x86_64-pc-windows-msvc`, `+crt-static` | 8 МБ |
-| `SiteRestorer-windows-x86.exe` | то же, `i686-pc-windows-msvc` | 7 МБ |
-| `SiteRestorer-windows-x64-cli.exe` | `--no-default-features`, `x86_64-pc-windows-msvc` | 2,5 МБ |
-| `SiteRestorer-windows-x86-cli.exe` | `--no-default-features`, `i686-pc-windows-msvc` | 2 МБ |
-| `SiteRestorer-linux-x64-gui` | features `gui`, target `x86_64-unknown-linux-gnu` | 9 МБ |
-| `SiteRestorer-linux-x64-cli` | `--no-default-features`, `x86_64-unknown-linux-musl`, статический | 3 МБ |
+| `SiteRestorer-windows-x64.exe` | `cargo build --release`, target `x86_64-pc-windows-msvc`, `+crt-static` | 45 МБ |
+| `SiteRestorer-windows-x86.exe` | то же, `i686-pc-windows-msvc` | 35 МБ |
+| `SiteRestorer-windows-x64-cli.exe` | `--no-default-features`, `x86_64-pc-windows-msvc` | 15 МБ |
+| `SiteRestorer-windows-x86-cli.exe` | `--no-default-features`, `i686-pc-windows-msvc` | 10 МБ |
+| `SiteRestorer-linux-x64-gui` | features `gui`, target `x86_64-unknown-linux-gnu` | 45 МБ |
+| `SiteRestorer-linux-x64-cli` | `--no-default-features`, `x86_64-unknown-linux-musl`, статический | 15 МБ |
 | `SiteRestorer-linux-x64.tar.gz` | оба Linux-бинарника + `.desktop`, иконка, `install.sh`, `README.txt` | — |
 | `SHA256SUMS.txt` | контрольные суммы всех файлов | — |
 

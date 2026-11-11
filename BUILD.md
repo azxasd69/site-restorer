@@ -12,15 +12,15 @@ Python (`legacy/python`) и Go (`ports/go`) переведены в архив: 
 
 | Файл | Платформа | Размер | Что внутри |
 |---|---|---|---|
-| `SiteRestorer-windows-x64.exe` | Windows 10/11 x64 | 6,2 МБ | **основной вариант**: окно egui, RU/EN, статический CRT |
-| `SiteRestorer-windows-x86.exe` | Windows 10/11 x86 | 5,6 МБ | то же, 32 бита |
-| `SiteRestorer-windows-x64-cli.exe` | Windows x64 | 1,8 МБ | только командная строка |
-| `SiteRestorer-windows-x86-cli.exe` | Windows x86 | 1,3 МБ | самый маленький бинарник для Windows |
-| `SiteRestorer-linux-x64-gui` | Linux x64 | 7,5 МБ | окно egui (нужны системные X11/GL) |
-| `SiteRestorer-linux-x64-cli` | Linux x64 | 2,1 МБ | статический ELF (`ldd` → not a dynamic executable) |
-| `SiteRestorer-linux-x64.tar.gz` | Linux x64 | 4,5 МБ | оба бинарника + `.desktop`, иконка, `install.sh` |
+| `SiteRestorer-windows-x64.exe` | Windows 10/11 x64 | 7,2 МБ | **основной вариант**: окно egui, RU/EN, статический CRT |
+| `SiteRestorer-windows-x86.exe` | Windows 10/11 x86 | 6,4 МБ | то же, 32 бита |
+| `SiteRestorer-windows-x64-cli.exe` | Windows x64 | 2,8 МБ | только командная строка |
+| `SiteRestorer-windows-x86-cli.exe` | Windows x86 | 2,1 МБ | самый маленький бинарник для Windows |
+| `SiteRestorer-linux-x64-gui` | Linux x64 | 8,8 МБ | окно egui (нужны системные X11/GL) |
+| `SiteRestorer-linux-x64-cli` | Linux x64 | 3,3 МБ | статический ELF (`ldd` → not a dynamic executable) |
+| `SiteRestorer-linux-x64.tar.gz` | Linux x64 | 5,3 МБ | оба бинарника + `.desktop`, иконка, `install.sh` |
 
-Размеры сняты с релиза **v3.1.2**. Имя не содержит версию — ссылки
+Размеры сняты с релиза **v3.5.2**. Имя не содержит версию — ссылки
 `releases/latest/download/<имя>` постоянны; версию печатает `--version`
 и первая строка журнала окна.
 

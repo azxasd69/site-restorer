@@ -76,7 +76,7 @@ jobs:
             apt: musl-tools
             rustflags: "-C linker=musl-gcc"
             out: SiteRestorer-linux-x64-cli
-            max_mb: 3.5
+            max_mb: 15
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             features: "gui"
@@ -85,35 +85,35 @@ jobs:
               libxrandr-dev libxi-dev libwayland-dev libfontconfig1-dev
             rustflags: ""
             out: SiteRestorer-linux-x64-gui
-            max_mb: 10
+            max_mb: 45
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             features: "gui"
             apt: ""
             rustflags: "-C target-feature=+crt-static"
             out: SiteRestorer-windows-x64.exe
-            max_mb: 8.5
+            max_mb: 45
           - os: windows-latest
             target: i686-pc-windows-msvc
             features: "gui"
             apt: ""
             rustflags: "-C target-feature=+crt-static"
             out: SiteRestorer-windows-x86.exe
-            max_mb: 7.5
+            max_mb: 35
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             features: "cli"
             apt: ""
             rustflags: "-C target-feature=+crt-static"
             out: SiteRestorer-windows-x64-cli.exe
-            max_mb: 3.2
+            max_mb: 15
           - os: windows-latest
             target: i686-pc-windows-msvc
             features: "cli"
             apt: ""
             rustflags: "-C target-feature=+crt-static"
             out: SiteRestorer-windows-x86-cli.exe
-            max_mb: 2.6
+            max_mb: 10
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

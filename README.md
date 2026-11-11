@@ -110,7 +110,11 @@ site-restorer --cli --site example.com --out ~/SiteRestore/site
 <папка>
 ├── site\        готовая копия (открывать локальным веб-сервером)
 ├── mirror\      сырые файлы из архива
-├── data\        inventory.jsonl — список адресов
+├── data\        inventory.jsonl   — список адресов
+│                content-types.tsv — карта типов содержимого
+│                build.jsonl       — журнал сборки (пропуск неизменённого)
+│                snapshots.tsv     — даты снимков, переживают обновление
+│                no-snapshot.tsv   — адреса без пригодного снимка (повтор через 7 дней)
 └── report.html  отчёт о покрытии
 ```
 
