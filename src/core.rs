@@ -2909,46 +2909,57 @@ fn keep_previous(candidate: &Item, current: &Item) -> bool {
     candidate.url.len() >= current.url.len()
 }
 
-/// Свободное место на диске для каталога. Платформенные вызовы: без внешних зависимостей.
+/// Свободное место на диске для каталога: платформенный вызов без внешних зависимостей
+/// (Д-15). Возвращает `None`, если каталога ещё нет или система не ответила.
+#[cfg(windows)]
 fn free_bytes(path: &Path) -> Option<u64> {
     if !path.exists() {
         return None;
     }
-    #[cfg(windows)]
-    {
-        #[link(name = "kernel32")]
-        unsafe extern "system" {
-            fn GetDiskFreeSpaceExW(
-                directory: *const u16,
-                free_available: *mut u64,
-                total: *mut u64,
-                free_total: *mut u64,
-            ) -> i32;
-        }
-        let mut wide: Vec<u16> = path.to_string_lossy().encode_utf16().collect();
-        wide.push(0);
-        let mut free_available = 0u64;
-        // SAFETY: строка с завершающим нулём, все указатели ведут на локальные переменные.
-        let ok = unsafe {
-            GetDiskFreeSpaceExW(
-                wide.as_ptr(),
-                &mut free_available,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-            )
-        };
-        return (ok != 0).then_some(free_available);
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetDiskFreeSpaceExW(
+            directory: *const u16,
+            free_available: *mut u64,
+            total: *mut u64,
+            free_total: *mut u64,
+        ) -> i32;
     }
-    #[cfg(unix)]
-    {
-        use std::ffi::CString;
-        let c_path = CString::new(path.to_string_lossy().as_bytes()).ok()?;
-        let mut stats: libc::statvfs = unsafe { std::mem::zeroed() };
-        // SAFETY: путь корректен, структура целиком заполняется вызовом.
-        let ok = unsafe { libc::statvfs(c_path.as_ptr(), &mut stats) };
-        return (ok == 0).then(|| stats.f_bavail as u64 * stats.f_frsize as u64);
+    let mut wide: Vec<u16> = path.to_string_lossy().encode_utf16().collect();
+    wide.push(0);
+    let mut free_available = 0u64;
+    // SAFETY: строка с завершающим нулём, все указатели ведут на локальные переменные.
+    let ok = unsafe {
+        GetDiskFreeSpaceExW(
+            wide.as_ptr(),
+            &mut free_available,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    (ok != 0).then_some(free_available)
+}
+
+/// То же для Linux и прочих unix: `statvfs` даёт свободные блоки и размер блока.
+#[cfg(unix)]
+#[allow(clippy::unnecessary_cast)]
+fn free_bytes(path: &Path) -> Option<u64> {
+    use std::ffi::CString;
+    if !path.exists() {
+        return None;
     }
-    #[allow(unreachable_code)]
+    let c_path = CString::new(path.to_string_lossy().as_bytes()).ok()?;
+    // SAFETY: структура целиком заполняется вызовом statvfs, путь корректен.
+    let mut stats: libc::statvfs = unsafe { std::mem::zeroed() };
+    // SAFETY: указатель на корректный C-путь и на локальную структуру.
+    let ok = unsafe { libc::statvfs(c_path.as_ptr(), &mut stats) };
+    // c_ulong на 32-битном Linux уже u32, на 64-битном — u64: приведение нужно в обоих случаях.
+    (ok == 0).then(|| (stats.f_bavail as u64).saturating_mul(stats.f_frsize as u64))
+}
+
+#[cfg(not(any(windows, unix)))]
+fn free_bytes(path: &Path) -> Option<u64> {
+    let _ = path;
     None
 }
 
