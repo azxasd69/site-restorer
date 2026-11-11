@@ -362,7 +362,11 @@ struct Shared {
     cancel: Arc<AtomicBool>,
     counters: Counters,
     types: Mutex<TypeCounts>,
-    cb: Option<Cb>,
+    /// Обработчик прогресса ставится один раз и дальше не меняется.
+    /// Раньше здесь был Option, а установка пересоздавала весь Shared и вручную
+    /// переносила два десятка полей — новое поле легко было забыть и получить
+    /// молчаливый ноль (2.3 архитектурного разбора).
+    cb: std::sync::OnceLock<Cb>,
     /// Глобальная пауза после серии 429: её соблюдают все воркеры, а не только контроллер.
     pause_until: Mutex<Instant>,
     /// Пользователь поставил прогон на паузу (Д-20): новые запросы ждут.
@@ -427,7 +431,7 @@ impl Shared {
     }
 
     fn log(&self, msg: impl Into<String>) {
-        if let Some(cb) = &self.cb {
+        if let Some(cb) = self.cb.get() {
             cb(&Progress {
                 stage: "log",
                 text: msg.into(),
@@ -934,7 +938,6 @@ pub struct Engine {
     /// Адреса, добранные по ссылкам в этом прогоне.
     pub rescued: AtomicUsize,
     shared: Arc<Shared>,
-    cb: Option<Cb>,
     started: Instant,
     items: Vec<Item>,
     inv_failed: bool,
@@ -1060,7 +1063,7 @@ impl Engine {
                 no_snapshot: Mutex::new(HashMap::new()),
                 snapshots: Mutex::new(HashMap::new()),
                 types: Mutex::new(TypeCounts::default()),
-                cb: None,
+                cb: std::sync::OnceLock::new(),
                 pause_until: Mutex::new(Instant::now()),
                 rate_nanos: AtomicU64::new(0),
                 rate_next: Mutex::new(Instant::now()),
@@ -1068,7 +1071,6 @@ impl Engine {
                 foreign: AtomicUsize::new(0),
                 foreign_logged: AtomicUsize::new(0),
             }),
-            cb: None,
             started: Instant::now(),
             items: Vec::new(),
             inv_failed: false,
@@ -1160,51 +1162,10 @@ impl Engine {
     }
 
     pub fn set_progress_handler(&mut self, cb: impl Fn(&Progress) + Send + Sync + 'static) {
-        let shared: Cb = Arc::new(cb);
-        self.cb = Some(Arc::clone(&shared));
-        // пересоздаём Shared с обработчиком (он нужен воркерам для журнала),
-        // сохраняя уже настроенные паузу и лимит скорости
-        let paused = *self.shared.pause_until.lock().unwrap();
-        let rate = self.shared.rate_nanos.load(Ordering::Relaxed);
-        let next = *self.shared.rate_next.lock().unwrap();
-        let ct = self.shared.content_types.lock().unwrap().clone();
-        let paused_flag = Arc::clone(&self.shared.paused);
-        let mode = self.shared.snapshot.lock().unwrap().clone();
-        let stub = self.shared.stub_bytes.load(Ordering::Relaxed);
-        let depth = self.shared.fallback_depth.load(Ordering::Relaxed);
-        // Режим сопоставления снимаем до пересоздания Shared: иначе заимствование
-        // живёт через присваивание (E0506).
-        let match_mode = *self.shared.match_type.lock().unwrap();
-        self.shared = Arc::new(Shared {
-            agent: self.shared.agent.clone(),
-            agent_index: self.shared.agent_index.clone(),
-            match_type: Mutex::new(match_mode),
-            agent_archive: self.shared.agent_archive.clone(),
-            archive_alt: self.shared.archive_alt.clone(),
-            archive_switched: AtomicBool::new(self.shared.archive_switched.load(Ordering::Relaxed)),
-            archive_switch_logged: AtomicBool::new(
-                self.shared.archive_switch_logged.load(Ordering::Relaxed),
-            ),
-            mirror: self.shared.mirror.clone(),
-            gate: Gate::new(MIN_THREADS),
-            cancel: Arc::clone(&self.shared.cancel),
-            counters: Counters::default(),
-            types: Mutex::new(TypeCounts::default()),
-            cb: Some(shared),
-            paused: paused_flag,
-            snapshot: Mutex::new(mode),
-            stub_bytes: AtomicUsize::new(stub),
-            fallback_depth: AtomicUsize::new(depth),
-            refresh: Mutex::new(HashSet::new()),
-            no_snapshot: Mutex::new(HashMap::new()),
-            snapshots: Mutex::new(HashMap::new()),
-            pause_until: Mutex::new(paused),
-            rate_nanos: AtomicU64::new(rate),
-            rate_next: Mutex::new(next),
-            content_types: Mutex::new(ct),
-            foreign: AtomicUsize::new(0),
-            foreign_logged: AtomicUsize::new(0),
-        });
+        // Обработчик ставится один раз: Shared создаётся с OnceLock, поэтому
+        // пересоздавать его и переносить поля вручную больше не нужно
+        // (2.3 архитектурного разбора).
+        let _ = self.shared.cb.set(Arc::new(cb));
     }
 
     /// Заголовки ответов (кодировки) пригодятся при сборке: meta в документе
@@ -1326,7 +1287,9 @@ impl Engine {
     }
 
     fn emit(&self, stage: &'static str, overall: f32, text: &str, _force: bool) {
-        let Some(cb) = &self.cb else { return };
+        let Some(cb) = self.shared.cb.get() else {
+            return;
+        };
         let counters = &self.shared.counters;
         let done = counters.done.load(Ordering::Relaxed);
         let total = self.items.len();
@@ -2295,7 +2258,7 @@ impl Engine {
         let progress_thread = {
             let shared = Arc::clone(&self.shared);
             let stop = Arc::clone(&stop);
-            let cb = self.cb.clone();
+            let cb = shared.cb.get().cloned();
             let started = self.started;
             std::thread::spawn(move || {
                 while !stop.load(Ordering::Relaxed) {
