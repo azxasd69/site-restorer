@@ -76,7 +76,7 @@ jobs:
             apt: musl-tools
             rustflags: "-C linker=musl-gcc"
             out: SiteRestorer-linux-x64-cli
-            max_mb: 3
+            max_mb: 3.5
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             features: "gui"
@@ -85,35 +85,35 @@ jobs:
               libxrandr-dev libxi-dev libwayland-dev libfontconfig1-dev
             rustflags: ""
             out: SiteRestorer-linux-x64-gui
-            max_mb: 9
+            max_mb: 10
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             features: "gui"
             apt: ""
             rustflags: "-C target-feature=+crt-static"
             out: SiteRestorer-windows-x64.exe
-            max_mb: 8
+            max_mb: 8.5
           - os: windows-latest
             target: i686-pc-windows-msvc
             features: "gui"
             apt: ""
             rustflags: "-C target-feature=+crt-static"
             out: SiteRestorer-windows-x86.exe
-            max_mb: 7
+            max_mb: 7.5
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             features: "cli"
             apt: ""
             rustflags: "-C target-feature=+crt-static"
             out: SiteRestorer-windows-x64-cli.exe
-            max_mb: 2.5
+            max_mb: 3.2
           - os: windows-latest
             target: i686-pc-windows-msvc
             features: "cli"
             apt: ""
             rustflags: "-C target-feature=+crt-static"
             out: SiteRestorer-windows-x86-cli.exe
-            max_mb: 2
+            max_mb: 2.6
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -160,6 +160,8 @@ jobs:
           echo "$out"
           echo "$out" | grep -q "$ver" || { echo "::error::--version не совпал с $ver"; exit 1; }
 
+      # Лимиты подняты на ~0,3–0,6 МБ в 3.5.1: переписывание ссылок перешло с regex-lite
+      # на regex (DFA) — сборка копии ускорилась в 2–10 раз, см. docs/build-performance.md.
       - name: Size limit
         shell: bash
         run: |
