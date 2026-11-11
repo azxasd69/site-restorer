@@ -118,11 +118,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Зеркала Ubuntu на раннерах иногда не отвечают (Ign -> exit 100): без повторов
+      # выпуск падает из-за сети, хотя код в порядке.
       - name: System libraries
         if: matrix.apt != ''
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ${{ matrix.apt }}
+          for attempt in 1 2 3; do
+            if sudo apt-get update && sudo apt-get install -y ${{ matrix.apt }}; then
+              exit 0
+            fi
+            echo "попытка $attempt не удалась, пауза и повтор"
+            sleep 10
+          done
+          echo "::error::системные библиотеки не установились после трёх попыток"
+          exit 1
 
       - uses: dtolnay/rust-toolchain@1.99.1
         with:
