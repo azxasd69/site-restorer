@@ -80,6 +80,8 @@ python scripts/make-icons.py
 
 ```
 site-restorer --cli --site <адрес> --out <папка> [--limit N] [--workers N] [--threads N]
+                [--snapshot newest|oldest|<дата>] [--as-of ГГГГ[-ММ[-ДД]]] [--since ГГГГ[-ММ]]
+                [--refresh-days N] [--refresh] [--fallback-depth N] [--rescue-limit N]
 site-restorer --version
 ```
 
@@ -90,6 +92,10 @@ site-restorer --version
 - `--workers` — потолок параллельных загрузок (внутри работает AIMD);
 - `--threads` — потоков сборки копии и проверки ссылок (0 — по числу ядер, не больше 32);
 - `--rate` — максимум запросов в секунду (общий для всех воркеров);
+- `--snapshot` / `--as-of` — выбор снимка: самый свежий (по умолчанию), самый ранний или на дату;
+- `--fallback-depth` — глубина добора к более старым снимкам (5);
+- `--refresh-days` / `--refresh` — срок свежести файла и принудительная проверка;
+- `--since` — окно адресов для страниц; `--rescue-limit` — добор по ссылкам;
 - `--lang` — язык окна (`ru`/`en`); сообщения CLI остаются русскими.
 
 У архивного Go-варианта были свои `--stage` и `--sanitize`; в актуальной
