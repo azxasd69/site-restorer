@@ -125,13 +125,15 @@ jobs:
         run: |
           # ForceIPv4 и внутренние повторы apt: раннеры иногда не имеют маршрута по IPv6,
           # и тогда apt молча не подключается к зеркалу (Ign -> exit 100).
-          APT="sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=5 -o Acquire::http::Timeout=30"
+          # Повторы внутри apt держим короткими: при недоступном зеркале длинные
+          # таймауты растягивают задачу на полчаса вместо быстрой повторной попытки.
+          APT="sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=1 -o Acquire::http::Timeout=15"
           for attempt in 1 2 3; do
             if $APT update && $APT install -y ${{ matrix.apt }}; then
               exit 0
             fi
             echo "попытка $attempt не удалась, пауза и повтор"
-            sleep 10
+            sleep 5
           done
           echo "::error::системные библиотеки не установились после трёх попыток"
           exit 1
