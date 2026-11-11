@@ -242,6 +242,8 @@ struct Args {
     out: PathBuf,
     limit: usize,
     workers: usize,
+    /// Сколько потоков отдавать сборке копии; 0 — по числу ядер.
+    threads: usize,
     rate: f64,
     lang: String,
 }
@@ -252,6 +254,7 @@ fn parse_args(args: &[String]) -> Args {
         out: PathBuf::from("SiteRestore/site"),
         limit: 0,
         workers: 16,
+        threads: 0,
         rate: 0.0,
         lang: "ru".to_string(),
     };
@@ -272,6 +275,10 @@ fn parse_args(args: &[String]) -> Args {
             }
             "--workers" => {
                 parsed.workers = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(16);
+                i += 2;
+            }
+            "--threads" => {
+                parsed.threads = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(0);
                 i += 2;
             }
             "--lang" => {
@@ -304,8 +311,8 @@ fn cli(args: &[String]) -> i32 {
         eprintln!(
             "{}",
             tr::t(
-                "использование: site-restorer --cli --site <адрес> [--out <папка>] [--workers N] [--rate N] [--limit N]",
-                "usage: site-restorer --cli --site <address> [--out <folder>] [--workers N] [--rate N] [--limit N]",
+                "использование: site-restorer --cli --site <адрес> [--out <папка>] [--workers N] [--threads N] [--rate N] [--limit N]",
+                "usage: site-restorer --cli --site <address> [--out <folder>] [--workers N] [--threads N] [--rate N] [--limit N]",
             )
         );
         return 2;
@@ -323,6 +330,7 @@ fn cli(args: &[String]) -> i32 {
     };
 
     engine.set_rate(parsed.rate);
+    engine.set_build_threads(parsed.threads);
     engine.set_progress_handler(|p: &Progress| match p.stage {
         "log" => println!("{}", p.text),
         "download" => {

@@ -1,6 +1,6 @@
 [package]
 name = "site-restorer"
-version = "3.3.1"
+version = "3.4.0"
 edition = "2024"
 description = "Восстановление сайта из веб-архива: нативный GUI + CLI"
 
@@ -11,6 +11,7 @@ gui = ["dep:eframe"]
 [dependencies]
 eframe = { version = "0.37.0", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"], optional = true }
 encoding_rs = "0.8.44"
+rayon = "1.12"
 regex-lite = "0.1"
 ureq = "3.5.1"
 

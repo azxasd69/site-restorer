@@ -4,6 +4,7 @@
 use crate::paths;
 use crate::sanitize::sanitize_site;
 
+use rayon::prelude::*;
 use regex_lite::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -546,6 +547,8 @@ pub struct Engine {
     pub data_dir: PathBuf,
     pub limit: usize,
     pub workers: usize,
+    /// Сколько потоков отдаётся сборке и проверке (0 — по числу ядер).
+    pub build_threads: usize,
     shared: Arc<Shared>,
     cb: Option<Cb>,
     started: Instant,
@@ -554,23 +557,60 @@ pub struct Engine {
     /// Сколько файлов пришлось перекодировать: кодировка -> число.
     enc_stats: std::sync::Mutex<HashMap<&'static str, usize>>,
     enc_logged: std::sync::atomic::AtomicUsize,
+    /// Список файлов зеркала: дерево обходится один раз за прогон (было восемь обходов).
+    mirror_cache: Mutex<Option<Arc<Vec<PathBuf>>>>,
+    /// Список файлов готовой копии — так же кешируется.
+    site_cache: Mutex<Option<Arc<Vec<PathBuf>>>>,
+    /// Число страниц (html, не бинарных), посчитанное при сборке.
+    pages: AtomicUsize,
+    /// Файлы, пришедшие под именем страницы, но страницей не являющиеся.
+    foreign_built: AtomicUsize,
+    /// Число файлов копии и зеркала без повторного обхода дерева в отчёте.
+    site_files: AtomicUsize,
+    mirror_files: AtomicUsize,
+    /// Цели ссылок, собранные при переписывании: путь файла -> ключи целей.
+    /// Проверка ссылок идёт по ним, без второго чтения и повторного разбора страниц.
+    ref_targets: Mutex<Vec<(String, Vec<String>)>>,
+    /// Что уже собрано: повторный прогон не переписывает неизменённые файлы.
+    journal: Mutex<HashMap<String, JournalEntry>>,
+    /// Сколько файлов не удалось записать (для журнала работы и разбора жалоб).
+    write_errors: AtomicUsize,
+}
+
+/// Запись журнала сборки: что уже переписано и какие цели ссылок получились.
+/// Повторный прогон пропускает файл, если размер и время изменения в зеркале совпали.
+#[derive(Clone, Default)]
+struct JournalEntry {
+    size: u64,
+    mtime: u64,
+    /// Ключи целей ссылок страницы — для проверки без повторного чтения.
+    targets: Vec<String>,
+    /// Файл считается страницей (html и не бинарный).
+    page: bool,
+    /// Под именем страницы лежит не страница (картинка, PDF): повторный прогон
+    /// должен давать тот же счётчик, иначе «не страница» обнуляется.
+    foreign: bool,
 }
 
 impl Engine {
     pub fn new(site: &str, out: &Path, workers: usize, limit: usize) -> Option<Self> {
         let (host, _note) = sanitize_site(site)?;
+        // Каталог вывода всегда абсолютный: файловые операции Windows не умеют
+        // длинный префикс \?\ на относительном пути, а очистка копии через него.
+        let out = absolute_dir(out);
         let config = ureq::Agent::config_builder()
             .http_status_as_error(false)
             .timeout_global(Some(Duration::from_secs(180)))
             .build();
         Some(Self {
             host,
-            out: out.to_path_buf(),
+            out: out.clone(),
             mirror: out.join("mirror"),
             site_dir: out.join("site"),
             data_dir: out.join("data"),
             limit,
             workers: workers.clamp(1, 64),
+            build_threads: 0,
             shared: Arc::new(Shared {
                 agent: ureq::Agent::new_with_config(config),
                 agent_archive: ARCHIVE_PRIMARY.to_string(),
@@ -596,7 +636,93 @@ impl Engine {
             inv_failed: false,
             enc_stats: std::sync::Mutex::new(HashMap::new()),
             enc_logged: std::sync::atomic::AtomicUsize::new(0),
+            mirror_cache: Mutex::new(None),
+            site_cache: Mutex::new(None),
+            pages: AtomicUsize::new(0),
+            foreign_built: AtomicUsize::new(0),
+            site_files: AtomicUsize::new(0),
+            mirror_files: AtomicUsize::new(0),
+            ref_targets: Mutex::new(Vec::new()),
+            journal: Mutex::new(HashMap::new()),
+            write_errors: AtomicUsize::new(0),
         })
+    }
+
+    /// Список файлов зеркала: один обход на прогон (раньше дерево обходилось восемь раз).
+    fn mirror_list(&self) -> Arc<Vec<PathBuf>> {
+        let mut cache = self.mirror_cache.lock().unwrap();
+        if let Some(list) = cache.as_ref() {
+            return Arc::clone(list);
+        }
+        let list = Arc::new(walk_files(&self.mirror));
+        self.mirror_files.store(list.len(), Ordering::Relaxed);
+        *cache = Some(Arc::clone(&list));
+        list
+    }
+
+    /// Список файлов копии; сбрасывается после сборки.
+    fn site_list(&self) -> Arc<Vec<PathBuf>> {
+        let mut cache = self.site_cache.lock().unwrap();
+        if let Some(list) = cache.as_ref() {
+            return Arc::clone(list);
+        }
+        let list = Arc::new(walk_files(&self.site_dir));
+        self.site_files.store(list.len(), Ordering::Relaxed);
+        *cache = Some(Arc::clone(&list));
+        list
+    }
+
+    fn reset_site_list(&self) {
+        *self.site_cache.lock().unwrap() = None;
+    }
+
+    /// Сколько потоков отдаётся сборке и проверке.
+    fn thread_count(&self) -> usize {
+        if self.build_threads > 0 {
+            return self.build_threads.clamp(1, 64);
+        }
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+            .clamp(1, 32)
+    }
+
+    /// Выполняет работу в пуле потоков заданного размера.
+    fn in_pool<R: Send>(&self, work: impl FnOnce() -> R + Send) -> R {
+        match rayon::ThreadPoolBuilder::new()
+            .num_threads(self.thread_count())
+            .build()
+        {
+            Ok(pool) => pool.install(work),
+            Err(_) => work(),
+        }
+    }
+
+    /// Создаёт каталог один раз: раньше `create_dir_all` вызывался на каждый файл.
+    fn ensure_dir(&self, cache: &Mutex<HashSet<PathBuf>>, dir: &Path) {
+        if cache.lock().unwrap().contains(dir) {
+            return;
+        }
+        // Захват один: между проверкой и вставкой другой поток уже мог создать каталог.
+        if fs::create_dir_all(dir).is_ok() {
+            cache.lock().unwrap().insert(dir.to_path_buf());
+        }
+    }
+
+    /// Пишет в журнал первые ошибки записи: раньше они терялись, а отчёт
+    /// показывал несуществующие файлы как собранные.
+    fn log_write_error(&self, rel: &str, err: &std::io::Error) {
+        if self.write_errors.fetch_add(1, Ordering::Relaxed) < 10 {
+            self.shared.log(crate::tr::pick(
+                format!("не удалось записать {rel}: {err}"),
+                format!("cannot write {rel}: {err}"),
+            ));
+        }
+    }
+
+    /// Сколько потоков отдавать сборке и проверке: 0 — по числу ядер.
+    pub fn set_build_threads(&mut self, threads: usize) {
+        self.build_threads = threads;
     }
 
     pub fn set_progress_handler(&mut self, cb: impl Fn(&Progress) + Send + Sync + 'static) {
@@ -815,6 +941,10 @@ impl Engine {
                         self.shared.sleep(wait);
                         continue;
                     }
+                    // Код ошибки вместо пустого ответа — отказ индекса, а не «нет страниц».
+                    if code != 200 {
+                        self.inv_failed = true;
+                    }
                     break;
                 }
                 Err(err) => {
@@ -828,6 +958,7 @@ impl Engine {
                         format!("CDX: list failed: {err}"),
                     ));
                     self.shared.switch_archive("список недоступен");
+                    self.inv_failed = true;
                     let wait = 5.0 * (1u32 << attempt.min(4)) as f64;
                     self.shared.log(crate::tr::pick(
                         format!(
@@ -1027,6 +1158,16 @@ impl Engine {
             format!("адресов найдено: {}", self.items.len()),
             format!("addresses found: {}", self.items.len()),
         ));
+        // Отказ индекса (503 или ограничение частоты) выглядит как домен из одной страницы:
+        // копия формально успешна, но пуста. Говорим об этом прямо.
+        if self.items.len() == 1 && self.inv_failed {
+            self.shared.log(crate::tr::pick(
+                "архив отдал только главную страницу — вероятен отказ индекса (503 или предел частоты), повторите прогон позже"
+                    .to_string(),
+                "the archive returned the front page only — the index likely refused (503 or rate limit); retry later"
+                    .to_string(),
+            ));
+        }
         self.emit("inventory", 8.0, "", true);
         Ok(())
     }
@@ -1211,15 +1352,25 @@ impl Engine {
     }
 
     // ------------------------------------------------------------ build
+    /// Собирает копию: переписывает ссылки, приводит кодировки, копирует файлы.
+    ///
+    /// Файлы обрабатываются параллельно; дерево зеркала обходится один раз; каталоги
+    /// создаются один раз на путь; повторный прогон пропускает неизменённые файлы,
+    /// беря цели ссылок из журнала сборки.
     fn build(&self) -> Result<usize, String> {
-        let index = Index::of(&self.mirror);
-        if self.site_dir.exists() {
-            let _ = fs::remove_dir_all(&self.site_dir);
+        let files = self.mirror_list();
+        let index = Index::of(&files, &self.mirror);
+        let total = files.len().max(1);
+
+        let journal = self.load_journal();
+        let incremental = !journal.is_empty();
+        if !incremental && self.site_dir.exists() {
+            // remove_dir_all спотыкается о длинные пути Windows (глубокие каталоги
+            // архивных сайтов): чистим своим обходом, добавляя префикс \\?\.
+            remove_tree(&self.site_dir);
         }
         fs::create_dir_all(&self.site_dir).map_err(|e| e.to_string())?;
 
-        let files = walk_files(&self.mirror);
-        let total = files.len().max(1);
         let attr_rx = Regex::new(
             r#"(?i)(href|src|data-src|data-bg|poster|action|data-original)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>`=]+))"#,
         )
@@ -1234,136 +1385,272 @@ impl Engine {
         ))
         .unwrap();
 
-        for (i, src) in files.iter().enumerate() {
-            if self.shared.cancel.load(Ordering::Relaxed) {
-                return Err("cancelled".to_string());
-            }
-            let rel = src
-                .strip_prefix(&self.mirror)
-                .unwrap_or(src)
-                .to_string_lossy()
-                .replace('\\', "/");
-            let dst = self
-                .site_dir
-                .join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
-            if let Some(parent) = dst.parent() {
-                let _ = fs::create_dir_all(parent);
-            }
-            let lower = rel.to_lowercase();
-            let src_dir = rel.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
-            if lower.ends_with(".html")
-                || lower.ends_with(".htm")
-                || lower.ends_with(".css")
-                || lower.ends_with(".js")
-            {
-                let data = match fs::read(src) {
-                    Ok(d) => d,
-                    Err(_) => continue,
-                };
-                if crate::encoding::looks_binary(&data) {
-                    // под расширением .html в архиве бывает картинка или PDF:
-                    // копируем байты как есть, иначе файл будет испорчен
-                    let _ = fs::copy(src, &dst);
-                    if console_verbose() && self.enc_logged.fetch_add(1, Ordering::Relaxed) < 3 {
-                        self.shared.log(crate::tr::pick(
-                            format!("двоичный файл под текстовым расширением: {rel}"),
-                            format!("binary file behind a text extension: {rel}"),
-                        ));
+        let dirs: Mutex<HashSet<PathBuf>> = Mutex::new(HashSet::new());
+        let done = AtomicUsize::new(0);
+        let pages = AtomicUsize::new(0);
+        let skipped = AtomicUsize::new(0);
+        let fresh_journal: Mutex<HashMap<String, JournalEntry>> =
+            Mutex::new(HashMap::with_capacity(files.len()));
+
+        let results: Vec<(String, JournalEntry)> = self.in_pool(|| {
+            files
+                .par_iter()
+                .filter_map(|src| {
+                    if self.shared.cancel.load(Ordering::Relaxed) {
+                        return None;
                     }
-                    continue;
-                }
-                let ct = self.shared.content_types.lock().unwrap().get(&rel).cloned();
-                let decoded = crate::encoding::decode_document(&data, ct.as_deref());
-                if decoded.was_converted() {
-                    *self
-                        .enc_stats
-                        .lock()
-                        .unwrap()
-                        .entry(decoded.label)
-                        .or_insert(0) += 1;
-                    // в журнал — только первые несколько примеров, дальше сводка
-                    if console_verbose() && self.enc_logged.fetch_add(1, Ordering::Relaxed) < 3 {
-                        self.shared.log(crate::tr::pick(
-                            format!(
-                                "кодировка: {} ({}, {}%) — {}",
-                                decoded.label, decoded.source, decoded.confidence, rel
-                            ),
-                            format!(
-                                "encoding: {} ({}, {}%) — {}",
-                                decoded.label, decoded.source, decoded.confidence, rel
-                            ),
-                        ));
+                    let rel = src
+                        .strip_prefix(&self.mirror)
+                        .unwrap_or(src)
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    let dst = self
+                        .site_dir
+                        .join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
+
+                    let meta = fs::metadata(src).ok()?;
+                    let size = meta.len();
+                    let mtime = meta
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+
+                    // Файл уже собран и в зеркале не менялся: переписывать нечего.
+                    if let Some(prev) = journal.get(&rel)
+                        && prev.size == size
+                        && prev.mtime == mtime
+                        && dst.exists()
+                    {
+                        skipped.fetch_add(1, Ordering::Relaxed);
+                        if prev.page {
+                            pages.fetch_add(1, Ordering::Relaxed);
+                        }
+                        if prev.foreign {
+                            self.foreign_built.fetch_add(1, Ordering::Relaxed);
+                        }
+                        self.bump_build(&done, total);
+                        return Some((rel, prev.clone()));
                     }
-                }
-                let mut text = decoded.text;
-                if lower.ends_with(".js") {
-                    text = site_rx
-                        .replace_all(&text, |caps: &regex_lite::Captures| caps[1].to_string())
-                        .into_owned();
-                } else {
-                    text = attr_rx
-                        .replace_all(&text, |caps: &regex_lite::Captures| {
-                            let attr = &caps[1];
-                            let (value, quote) = if let Some(v) = caps.get(2) {
-                                (v.as_str(), "\"")
-                            } else if let Some(v) = caps.get(3) {
-                                (v.as_str(), "'")
-                            } else {
-                                (caps.get(4).map(|m| m.as_str()).unwrap_or(""), "\"")
+
+                    if let Some(parent) = dst.parent() {
+                        self.ensure_dir(&dirs, parent);
+                    }
+                    let lower = rel.to_lowercase();
+                    let src_dir = rel.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+                    let is_page = lower.ends_with(".html") || lower.ends_with(".htm");
+
+                    if lower.ends_with(".html")
+                        || lower.ends_with(".htm")
+                        || lower.ends_with(".css")
+                        || lower.ends_with(".js")
+                    {
+                        let data = match fs::read(src) {
+                            Ok(d) => d,
+                            Err(_) => return None,
+                        };
+                        if crate::encoding::looks_binary(&data) {
+                            // под расширением .html в архиве бывает картинка или PDF:
+                            // копируем байты как есть, иначе файл будет испорчен
+                            let copied = match fs::copy(src, &dst) {
+                                Ok(_) => true,
+                                Err(e) => {
+                                    self.log_write_error(&rel, &e);
+                                    false
+                                }
                             };
-                            let new_value = self.rewrite_ref(value, src_dir, &index, &site_rx);
-                            format!("{attr}={quote}{new_value}{quote}")
-                        })
-                        .into_owned();
-                    text = srcset_rx
-                        .replace_all(&text, |caps: &regex_lite::Captures| {
-                            let attr = &caps[1];
-                            let quote = if caps.get(2).is_some() { "\"" } else { "'" };
-                            let value = caps
-                                .get(2)
-                                .or_else(|| caps.get(3))
-                                .map(|m| m.as_str())
-                                .unwrap_or("");
-                            let items: Vec<String> = value
-                                .split(',')
-                                .filter(|s| !s.trim().is_empty())
-                                .map(|item| {
-                                    let mut bits = item.split_whitespace();
-                                    let url = bits.next().unwrap_or("");
-                                    let rest: Vec<&str> = bits.collect();
-                                    let new_url = self.rewrite_ref(url, src_dir, &index, &site_rx);
-                                    if rest.is_empty() {
-                                        new_url
-                                    } else {
-                                        format!("{new_url} {}", rest.join(" "))
-                                    }
+                            if copied && is_page {
+                                self.foreign_built.fetch_add(1, Ordering::Relaxed);
+                            }
+                            self.bump_build(&done, total);
+                            if !copied {
+                                return None;
+                            }
+                            return Some((
+                                rel.clone(),
+                                JournalEntry {
+                                    size,
+                                    mtime,
+                                    targets: Vec::new(),
+                                    page: false,
+                                    foreign: is_page,
+                                },
+                            ));
+                        }
+                        let ct = self.shared.content_types.lock().unwrap().get(&rel).cloned();
+                        let decoded = crate::encoding::decode_document(&data, ct.as_deref());
+                        if decoded.was_converted() {
+                            *self
+                                .enc_stats
+                                .lock()
+                                .unwrap()
+                                .entry(decoded.label)
+                                .or_insert(0) += 1;
+                            if console_verbose()
+                                && self.enc_logged.fetch_add(1, Ordering::Relaxed) < 3
+                            {
+                                self.shared.log(crate::tr::pick(
+                                    format!(
+                                        "кодировка: {} ({}, {}%) — {rel}",
+                                        decoded.label, decoded.source, decoded.confidence
+                                    ),
+                                    format!(
+                                        "encoding: {} ({}, {}%) — {rel}",
+                                        decoded.label, decoded.source, decoded.confidence
+                                    ),
+                                ));
+                            }
+                        }
+
+                        let mut text = decoded.text;
+                        // Цели ссылок страницы: проверка обойдётся без второго чтения и разбора.
+                        let mut targets: Vec<String> = Vec::new();
+                        let mut collect = |raw: &str, quoted: bool| {
+                            if is_page
+                                && quoted
+                                && let Some(key) = self.ref_key(raw, src_dir)
+                            {
+                                targets.push(key);
+                            }
+                        };
+                        if lower.ends_with(".js") {
+                            text = site_rx
+                                .replace_all(&text, |caps: &regex_lite::Captures| {
+                                    caps[1].to_string()
                                 })
-                                .collect();
-                            format!("{attr}={quote}{}{quote}", items.join(", "))
-                        })
-                        .into_owned();
-                    text = css_rx
-                        .replace_all(&text, |caps: &regex_lite::Captures| {
-                            let url = &caps[1];
-                            format!("url({})", self.rewrite_ref(url, src_dir, &index, &site_rx))
-                        })
-                        .into_owned();
-                    text = base_rx.replace_all(&text, "").into_owned();
-                    text = crate::encoding::normalize_utf8(&text);
-                }
-                let _ = fs::write(&dst, text.as_bytes());
-            } else if fs::copy(src, &dst).is_err() {
-                continue;
+                                .into_owned();
+                        } else {
+                            text = attr_rx
+                                .replace_all(&text, |caps: &regex_lite::Captures| {
+                                    let attr = &caps[1];
+                                    let (value, quote) = if let Some(v) = caps.get(2) {
+                                        (v.as_str(), "\"")
+                                    } else if let Some(v) = caps.get(3) {
+                                        (v.as_str(), "'")
+                                    } else {
+                                        (caps.get(4).map(|m| m.as_str()).unwrap_or(""), "\"")
+                                    };
+                                    let new_value =
+                                        self.rewrite_ref(value, src_dir, &index, &site_rx);
+                                    // Считаем ИТОГОВУЮ ссылку: проверка ссылается на то, что
+                                    // реально попало в копию (так же считала проверка в 3.3.1).
+                                    collect(&new_value, caps.get(4).is_none());
+                                    format!("{attr}={quote}{new_value}{quote}")
+                                })
+                                .into_owned();
+                            text = srcset_rx
+                                .replace_all(&text, |caps: &regex_lite::Captures| {
+                                    let attr = &caps[1];
+                                    let quote = if caps.get(2).is_some() { "\"" } else { "'" };
+                                    let value = caps
+                                        .get(2)
+                                        .or_else(|| caps.get(3))
+                                        .map(|m| m.as_str())
+                                        .unwrap_or("");
+                                    let items: Vec<String> = value
+                                        .split(',')
+                                        .filter(|s| !s.trim().is_empty())
+                                        .map(|item| {
+                                            let mut bits = item.split_whitespace();
+                                            let url = bits.next().unwrap_or("");
+                                            let rest: Vec<&str> = bits.collect();
+                                            let new_url =
+                                                self.rewrite_ref(url, src_dir, &index, &site_rx);
+                                            if rest.is_empty() {
+                                                new_url
+                                            } else {
+                                                format!("{new_url} {}", rest.join(" "))
+                                            }
+                                        })
+                                        .collect();
+                                    format!("{attr}={quote}{}{quote}", items.join(", "))
+                                })
+                                .into_owned();
+                            text = css_rx
+                                .replace_all(&text, |caps: &regex_lite::Captures| {
+                                    let url = &caps[1];
+                                    format!(
+                                        "url({})",
+                                        self.rewrite_ref(url, src_dir, &index, &site_rx)
+                                    )
+                                })
+                                .into_owned();
+                            text = base_rx.replace_all(&text, "").into_owned();
+                            text = crate::encoding::normalize_utf8(&text);
+                        }
+                        // Страницу считаем записанной: иначе отчёт покажет файлы,
+                        // которых на диске нет, а журнал запомнит их собранными.
+                        let written = match fs::write(&dst, text.as_bytes()) {
+                            Ok(()) => true,
+                            Err(e) => {
+                                self.log_write_error(&rel, &e);
+                                false
+                            }
+                        };
+                        if written && is_page {
+                            pages.fetch_add(1, Ordering::Relaxed);
+                        }
+                        self.bump_build(&done, total);
+                        if !written {
+                            return None;
+                        }
+                        return Some((
+                            rel.clone(),
+                            JournalEntry {
+                                size,
+                                mtime,
+                                targets,
+                                page: is_page,
+                                foreign: false,
+                            },
+                        ));
+                    }
+
+                    if let Err(e) = fs::copy(src, &dst) {
+                        self.log_write_error(&rel, &e);
+                        self.bump_build(&done, total);
+                        return None;
+                    }
+                    self.bump_build(&done, total);
+                    Some((
+                        rel.clone(),
+                        JournalEntry {
+                            size,
+                            mtime,
+                            targets: Vec::new(),
+                            page: false,
+                            foreign: false,
+                        },
+                    ))
+                })
+                .collect()
+        });
+
+        self.reset_site_list();
+        let mut journal_new = HashMap::with_capacity(results.len());
+        let mut targets_all: Vec<(String, Vec<String>)> = Vec::with_capacity(results.len());
+        for (rel, entry) in results {
+            if !entry.targets.is_empty() {
+                targets_all.push((rel.clone(), entry.targets.clone()));
             }
-            if (i + 1) % 25 == 0 || i + 1 == total {
-                self.emit(
-                    "build",
-                    86.0 + 9.0 * (i + 1) as f32 / total as f32,
-                    &format!("{}/{}", i + 1, total),
-                    true,
-                );
-            }
+            journal_new.insert(rel, entry);
         }
+        *self.ref_targets.lock().unwrap() = targets_all;
+        *fresh_journal.lock().unwrap() = journal_new.clone();
+        *self.journal.lock().unwrap() = journal_new;
+        self.pages
+            .store(pages.load(Ordering::Relaxed), Ordering::Relaxed);
+
+        // Осиротевшие файлы прошлой копии убираем только при полном прогоне:
+        // при ограничении числа адресов часть зеркала просто не скачана.
+        if incremental && self.limit == 0 {
+            self.drop_orphans(&files);
+        }
+        self.save_journal();
+        self.site_files
+            .store(walk_files(&self.site_dir).len(), Ordering::Relaxed);
+
         let summary = self.enc_summary();
         if !summary.is_empty() {
             self.shared.log(crate::tr::pick(
@@ -1371,7 +1658,173 @@ impl Engine {
                 format!("converted to UTF-8: {summary}"),
             ));
         }
+        if skipped.load(Ordering::Relaxed) > 0 {
+            self.shared.log(crate::tr::pick(
+                format!(
+                    "сборка: без изменений {}, обновлено {}",
+                    skipped.load(Ordering::Relaxed),
+                    total.saturating_sub(skipped.load(Ordering::Relaxed))
+                ),
+                format!(
+                    "build: unchanged {}, updated {}",
+                    skipped.load(Ordering::Relaxed),
+                    total.saturating_sub(skipped.load(Ordering::Relaxed))
+                ),
+            ));
+        }
         Ok(total)
+    }
+
+    /// Считает прогресс сборки и сообщает его не чаще, чем раз в 25 файлов.
+    fn bump_build(&self, done: &AtomicUsize, total: usize) {
+        let n = done.fetch_add(1, Ordering::Relaxed) + 1;
+        if n.is_multiple_of(25) || n == total {
+            self.emit(
+                "build",
+                86.0 + 9.0 * n as f32 / total as f32,
+                &format!("{n}/{total}"),
+                true,
+            );
+        }
+    }
+
+    /// Ключ цели ссылки: нормализованный абсолютный путь без учёта регистра.
+    /// Возвращает None для внешних и служебных ссылок — их не проверяют.
+    fn ref_key(&self, raw: &str, src_dir: &str) -> Option<String> {
+        let raw = raw.trim();
+        if raw.is_empty()
+            || raw.starts_with("http://")
+            || raw.starts_with("https://")
+            || raw.starts_with("//")
+            || raw.starts_with("mailto:")
+            || raw.starts_with("tel:")
+            || raw.starts_with("javascript:")
+            || raw.starts_with("data:")
+        {
+            return None;
+        }
+        // Совместимость с прежним подсчётом: значения с якорем в отчёте не участвовали.
+        if raw.contains('#') {
+            return None;
+        }
+        if raw
+            .chars()
+            .any(|c| c.is_whitespace() || "(){},;'\"*`".contains(c))
+        {
+            return None;
+        }
+        let clean = crate::sanitize::pct_decode(
+            raw.split('?')
+                .next()
+                .unwrap_or("")
+                .split('#')
+                .next()
+                .unwrap_or(""),
+        );
+        let base = if src_dir.is_empty() {
+            self.site_dir.clone()
+        } else {
+            self.site_dir
+                .join(src_dir.replace('/', std::path::MAIN_SEPARATOR_STR))
+        };
+        let target = base.join(
+            clean
+                .trim_start_matches('/')
+                .replace('/', std::path::MAIN_SEPARATOR_STR),
+        );
+        let full = norm_key(&target.to_string_lossy().replace('\\', "/")).to_lowercase();
+        // Ключ храним относительно корня копии: журнал становится переносимым
+        // и не раздувается на длину пути рабочего каталога.
+        let root = norm_key(&self.site_dir.to_string_lossy().replace('\\', "/")).to_lowercase();
+        let key = full
+            .strip_prefix(&root)
+            .map(|rest| rest.trim_start_matches('/').to_string())
+            .unwrap_or(full);
+        Some(key)
+    }
+
+    /// Удаляет из копии файлы, которых нет в зеркале.
+    fn drop_orphans(&self, files: &[PathBuf]) {
+        let keep: HashSet<String> = files
+            .iter()
+            .filter_map(|p| {
+                p.strip_prefix(&self.mirror)
+                    .ok()
+                    .map(|r| r.to_string_lossy().replace('\\', "/").to_lowercase())
+            })
+            .collect();
+        for path in walk_files(&self.site_dir) {
+            let rel = path
+                .strip_prefix(&self.site_dir)
+                .unwrap_or(path.as_path())
+                .to_string_lossy()
+                .replace('\\', "/")
+                .to_lowercase();
+            if !keep.contains(&rel) {
+                let _ = fs::remove_file(long_path(&path));
+            }
+        }
+    }
+
+    fn journal_path(&self) -> PathBuf {
+        self.data_dir.join("build.jsonl")
+    }
+
+    fn load_journal(&self) -> HashMap<String, JournalEntry> {
+        let Ok(text) = fs::read_to_string(self.journal_path()) else {
+            return HashMap::new();
+        };
+        // Метка формата: журнал другой версии программы описывает иную логику
+        // переписывания, поэтому его записи не годятся — нужна полная сборка.
+        let mut lines = text.lines();
+        if journal_label(lines.next()).as_deref() != Some(self.journal_tag().as_str()) {
+            return HashMap::new();
+        }
+        lines.filter_map(parse_journal_line).collect()
+    }
+
+    /// Метка журнала: формат, версия сборки и хост.
+    fn journal_tag(&self) -> String {
+        format!(
+            "#journal {} {} {}",
+            JOURNAL_FORMAT,
+            env!("CARGO_PKG_VERSION"),
+            self.host
+        )
+    }
+
+    fn save_journal(&self) {
+        let journal = self.journal.lock().unwrap();
+        let mut out = String::with_capacity(journal.len() * 128);
+        out.push_str(&self.journal_tag());
+        out.push('\n');
+        for (rel, entry) in journal.iter() {
+            out.push_str("{\"path\":\"");
+            out.push_str(&json_escape(rel));
+            out.push_str(&format!(
+                "\",\"size\":{},\"mtime\":{},\"page\":{},\"foreign\":{},\"targets\":[",
+                entry.size, entry.mtime, entry.page, entry.foreign
+            ));
+            for (i, key) in entry.targets.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                out.push('"');
+                out.push_str(&json_escape(key));
+                out.push('"');
+            }
+            out.push_str("]}\n");
+        }
+        let path = self.journal_path();
+        // Каталог данных может отсутствовать (сборка без загрузки) — создаём сами,
+        // иначе журнал молча не сохранялся и повторный прогон собирал всё заново.
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let tmp = path.with_extension("jsonl.part");
+        if fs::write(&tmp, out).is_ok() {
+            let _ = fs::rename(&tmp, &path);
+        }
     }
 
     /// «windows-1251: 120, koi8-r: 2» — для журнала и отчёта.
@@ -1431,84 +1884,41 @@ impl Engine {
     }
 
     // ------------------------------------------------------------ verify
+    /// Проверяет ссылки по множеству путей копии и целям, собранным при переписывании.
+    /// Ни `stat` на каждую ссылку, ни повторного чтения страниц здесь нет.
     fn verify(&self) -> Stats {
-        let ref_rx = Regex::new(
-            r##"(?i)(?:href|src|data-src|poster|action)\s*=\s*(?:"([^"#]+)"|'([^'#]+)')"##,
-        )
-        .unwrap();
-        let mut stats = Stats::default();
-        for path in walk_files(&self.site_dir) {
-            if self.shared.cancel.load(Ordering::Relaxed) {
-                return stats;
-            }
-            let name = path.to_string_lossy().to_lowercase();
-            if !name.ends_with(".html") && !name.ends_with(".htm") {
-                continue;
-            }
-            // Под именем страницы в копии может лежать картинка или PDF:
-            // это не страница, и в число страниц она не входит (ОШ-5).
-            let head = match fs::read(&path) {
-                Ok(data) => data,
-                Err(_) => continue,
-            };
-            if crate::encoding::looks_binary(&head) {
-                stats.foreign += 1;
-                continue;
-            }
-            stats.pages += 1;
-            let text = match String::from_utf8(head) {
-                Ok(t) => t,
-                Err(_) => continue,
-            };
-            for caps in ref_rx.captures_iter(&text) {
-                let raw = caps
-                    .get(1)
-                    .or_else(|| caps.get(2))
-                    .map(|m| m.as_str().trim())
-                    .unwrap_or("");
-                if raw.is_empty()
-                    || raw.starts_with("http://")
-                    || raw.starts_with("https://")
-                    || raw.starts_with("//")
-                    || raw.starts_with("mailto:")
-                    || raw.starts_with("tel:")
-                    || raw.starts_with("javascript:")
-                    || raw.starts_with("data:")
-                {
-                    continue;
+        let files = self.site_list();
+        let root = norm_key(&self.site_dir.to_string_lossy().replace('\\', "/")).to_lowercase();
+        let known: HashSet<String> = files
+            .iter()
+            .map(|p| {
+                let full = norm_key(&p.to_string_lossy().replace('\\', "/")).to_lowercase();
+                full.strip_prefix(&root)
+                    .map(|rest| rest.trim_start_matches('/').to_string())
+                    .unwrap_or(full)
+            })
+            .collect();
+        // Цели не копируем: на большой копии это десятки мегабайт строк.
+        let targets = self.ref_targets.lock().unwrap();
+        let refs = AtomicUsize::new(0);
+        let broken = AtomicUsize::new(0);
+        self.in_pool(|| {
+            targets.par_iter().for_each(|(_rel, keys)| {
+                for key in keys {
+                    refs.fetch_add(1, Ordering::Relaxed);
+                    let as_dir = format!("{key}/index.html");
+                    if !known.contains(key) && !known.contains(&as_dir) {
+                        broken.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
-                // внутри <script> регулярка ловит конструкции вида href=(...) — это не ссылки
-                if raw
-                    .chars()
-                    .any(|c| c.is_whitespace() || "(){},;'\"*`".contains(c))
-                {
-                    continue;
-                }
-                stats.refs += 1;
-                let clean = crate::sanitize::pct_decode(
-                    raw.split('?')
-                        .next()
-                        .unwrap_or("")
-                        .split('#')
-                        .next()
-                        .unwrap_or(""),
-                );
-                let target = path.parent().unwrap_or(Path::new(".")).join(
-                    clean
-                        .trim_start_matches('/')
-                        .replace('/', std::path::MAIN_SEPARATOR_STR),
-                );
-                let target = if target.is_dir() {
-                    target.join("index.html")
-                } else {
-                    target
-                };
-                if !target.exists() {
-                    stats.broken += 1;
-                }
-            }
+            });
+        });
+        Stats {
+            pages: self.pages.load(Ordering::Relaxed),
+            refs: refs.load(Ordering::Relaxed),
+            broken: broken.load(Ordering::Relaxed),
+            foreign: self.foreign_built.load(Ordering::Relaxed),
         }
-        stats
     }
 
     // ------------------------------------------------------------ report
@@ -1533,15 +1943,16 @@ impl Engine {
         let total = self.items.len();
         // объём считаем по готовой копии: при докачке счётчик сессии показал бы
         // только докачанные файлы
-        let bytes: u64 = walk_files(&self.site_dir)
+        let site_list = self.site_list();
+        let bytes: u64 = site_list
             .iter()
             .filter_map(|f| fs::metadata(f).ok())
             .map(|m| m.len())
             .sum();
         // Адресов в инвентаре может быть больше, чем файлов: разные адреса
         // (варианты с параметрами, повторы адреса) ведут на один файл (ОШ-6).
-        let site_files = walk_files(&self.site_dir).len();
-        let mirror_files = walk_files(&self.mirror).len();
+        let site_files = site_list.len();
+        let mirror_files = self.mirror_list().len();
         let unique_paths = self
             .items
             .iter()
@@ -1671,8 +2082,8 @@ impl Engine {
             site: self.site_dir.clone(),
             stats,
             types,
-            site_files: walk_files(&self.site_dir).len(),
-            mirror_files: walk_files(&self.mirror).len(),
+            site_files: self.site_files.load(Ordering::Relaxed),
+            mirror_files: self.mirror_files.load(Ordering::Relaxed),
             unique_paths: self
                 .items
                 .iter()
@@ -1767,6 +2178,17 @@ pub fn read_inventory(file: &Path) -> Vec<Item> {
 }
 
 /// Значение строкового поля из строки JSON: `"key":"value"`.
+/// Числовое поле журнала: `"size":1997` (без кавычек вокруг значения).
+fn json_number(line: &str, key: &str) -> Option<u64> {
+    let needle = format!("\"{key}\":");
+    let start = line.find(&needle)? + needle.len();
+    let digits: String = line[start..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    digits.parse().ok()
+}
+
 fn json_field(line: &str, key: &str) -> Option<String> {
     let needle = format!("\"{key}\":\"");
     let start = line.find(&needle)? + needle.len();
@@ -1803,27 +2225,31 @@ struct Index {
     /// Скомпилированы один раз: resolve() вызывается на каждую ссылку.
     cache_rx: Regex,
     resize_rx: Regex,
+    /// Результаты разрешения: ключ в нижнем регистре -> найденный путь.
+    /// На типичной странице половина ссылок повторяется (меню, шапка, подвал).
+    resolved: Mutex<HashMap<String, Option<String>>>,
 }
 
 impl Index {
-    fn of(root: &Path) -> Self {
+    fn of(files: &[PathBuf], root: &Path) -> Self {
         let cache_rx =
             Regex::new(r"(?i)^bitrix/cache/(css|js)/s1/[^/]+/[^/]+/([a-z_]+)_[0-9a-f]+_v1")
                 .unwrap();
         let resize_rx =
             Regex::new(r"(?i)^upload/resize_cache/iblock/([0-9a-z]+)/[^/]+/(.+)$").unwrap();
         let mut index = Self {
-            paths: HashMap::new(),
-            by_name: HashMap::new(),
+            paths: HashMap::with_capacity(files.len()),
+            by_name: HashMap::with_capacity(files.len()),
             by_kind: HashMap::new(),
             resized: HashMap::new(),
             cache_rx: cache_rx.clone(),
             resize_rx,
+            resolved: Mutex::new(HashMap::new()),
         };
-        for path in walk_files(root) {
+        for path in files {
             let rel = path
                 .strip_prefix(root)
-                .unwrap_or(&path)
+                .unwrap_or(path)
                 .to_string_lossy()
                 .replace('\\', "/");
             index.paths.insert(rel.to_lowercase(), rel.clone());
@@ -1848,17 +2274,32 @@ impl Index {
     }
 
     fn resolve(&self, rel: &str) -> Option<String> {
-        let key = rel.trim_start_matches('/').to_lowercase();
-        if let Some(found) = self.paths.get(&key) {
+        let trimmed = rel.trim_start_matches('/');
+        // Точное совпадение — без аллокации на нижний регистр.
+        if let Some(found) = self.paths.get(trimmed) {
             return Some(found.clone());
         }
-        if let Some(caps) = self.cache_rx.captures(&key) {
+        let key = trimmed.to_lowercase();
+        if let Some(hit) = self.resolved.lock().unwrap().get(&key) {
+            return hit.clone();
+        }
+        let found = self.resolve_slow(&key);
+        self.resolved.lock().unwrap().insert(key, found.clone());
+        found
+    }
+
+    /// Разрешение с эвристиками — вызывается только при промахе кеша.
+    fn resolve_slow(&self, key: &str) -> Option<String> {
+        if let Some(found) = self.paths.get(key) {
+            return Some(found.clone());
+        }
+        if let Some(caps) = self.cache_rx.captures(key) {
             let slot = (caps[1].to_lowercase(), caps[2].to_lowercase());
             if let Some(found) = self.by_kind.get(&slot) {
                 return Some(found.clone());
             }
         }
-        if let Some(caps) = self.resize_rx.captures(&key) {
+        if let Some(caps) = self.resize_rx.captures(key) {
             let orig = format!("upload/iblock/{}/{}", &caps[1], &caps[2]).to_lowercase();
             if let Some(found) = self.paths.get(&orig) {
                 return Some(found.clone());
@@ -1872,7 +2313,7 @@ impl Index {
         {
             return Some(found.clone());
         }
-        let base = key.rsplit('/').next().unwrap_or(&key).to_string();
+        let base = key.rsplit('/').next().unwrap_or(key).to_string();
         if let Some(found) = self.by_name.get(&base) {
             let depth_src = key.matches('/').count();
             if found.matches('/').count() == depth_src {
@@ -2034,6 +2475,125 @@ fn now_secs() -> u64 {
         .unwrap_or(0)
 }
 
+/// Формат журнала сборки. Меняется, когда меняется смысл записей.
+const JOURNAL_FORMAT: u32 = 1;
+
+/// Каталог вывода в абсолютном виде: относительный путь нельзя склеивать
+/// с префиксом длинного пути, иначе файловые операции Windows его не находят.
+fn absolute_dir(path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    match std::env::current_dir() {
+        Ok(cwd) => cwd.join(path),
+        Err(_) => path.to_path_buf(),
+    }
+}
+
+/// Первая строка журнала: `#journal <формат> <версия> <хост>`.
+fn journal_label(line: Option<&str>) -> Option<String> {
+    let line = line?.trim();
+    line.starts_with("#journal ").then(|| line.to_string())
+}
+
+/// Префикс длинного пути Windows: без него файловые операции не видят пути длиннее 260 символов.
+fn long_path(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    if cfg!(windows) && path.is_absolute() && !text.starts_with(r"\\?\") {
+        PathBuf::from(format!(r"\\?\{text}"))
+    } else {
+        path.to_path_buf()
+    }
+}
+
+/// Удаляет дерево каталогов, обходя его сам: `remove_dir_all` останавливается
+/// на длинных путях и оставляет часть файлов — в копии появлялся мусор прошлой сборки.
+fn remove_tree(root: &Path) {
+    let mut stack = vec![root.to_path_buf()];
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(long_path(&dir)) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            match entry.file_type() {
+                Ok(t) if t.is_dir() => stack.push(path),
+                _ => {
+                    let _ = fs::remove_file(long_path(&path));
+                }
+            }
+        }
+        dirs.push(dir);
+    }
+    for dir in dirs.into_iter().rev() {
+        let _ = fs::remove_dir(long_path(&dir));
+    }
+}
+
+/// Убирает из пути «.» и «..»: файловая система их разворачивает, а строковый ключ — нет.
+fn norm_key(path: &str) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    for seg in path.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            other => parts.push(other),
+        }
+    }
+    parts.join("/")
+}
+
+/// Разбирает строку журнала сборки: путь, размер, время изменения, страница ли, цели ссылок.
+fn parse_journal_line(line: &str) -> Option<(String, JournalEntry)> {
+    if line.trim().is_empty() {
+        return None;
+    }
+    let path = json_field(line, "path")?;
+    let size = json_number(line, "size")?;
+    let mtime = json_number(line, "mtime")?;
+    let page = line.contains("\"page\":true");
+    let foreign = line.contains("\"foreign\":true");
+    let mut targets = Vec::new();
+    if let Some(start) = line.find("\"targets\":[") {
+        let rest = &line[start + "\"targets\":[".len()..];
+        if let Some(end) = rest.find(']') {
+            let mut buf = String::new();
+            let mut in_str = false;
+            let mut chars = rest[..end].chars();
+            while let Some(c) = chars.next() {
+                match c {
+                    '"' => {
+                        if in_str {
+                            targets.push(std::mem::take(&mut buf));
+                        }
+                        in_str = !in_str;
+                    }
+                    '\\' if in_str => {
+                        if let Some(next) = chars.next() {
+                            buf.push(next);
+                        }
+                    }
+                    _ if in_str => buf.push(c),
+                    _ => {}
+                }
+            }
+        }
+    }
+    Some((
+        path,
+        JournalEntry {
+            size,
+            mtime,
+            targets,
+            page,
+            foreign,
+        },
+    ))
+}
+
 fn walk_files(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
@@ -2157,6 +2717,10 @@ mod build_tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    /// Язык сообщений — глобальный флаг процесса, поэтому тесты, которые его
+    /// переключают, идут по очереди: иначе отчёт приходит на чужом языке.
+    static LANG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn workdir(tag: &str) -> PathBuf {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -2213,6 +2777,7 @@ mod build_tests {
     /// ОШ-6: отчёт показывает число файлов копии и пояснение о зеркале.
     #[test]
     fn report_shows_copy_file_count() {
+        let _lang = LANG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let root = workdir("counts");
         put(&root, "index.html", b"<html><body>a</body></html>");
         put(&root, "assets/a.css", b"body{color:#000}");
@@ -2373,6 +2938,7 @@ mod build_tests {
 
     #[test]
     fn report_follows_interface_language() {
+        let _lang = LANG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let root = workdir("report-lang");
         put(
             &root,
@@ -2408,6 +2974,93 @@ mod build_tests {
         assert_eq!(stats.refs, 1, "мусор из script не должен считаться ссылкой");
         assert_eq!(stats.broken, 1);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn second_build_skips_unchanged_files() {
+        let root = workdir("incr");
+        put(
+            &root,
+            "index.html",
+            b"<html><body><a href=\"/a.html\">a</a></body></html>",
+        );
+        put(&root, "a.html", b"<html><body>ok</body></html>");
+        let first = build(&root);
+        let stats_first = first.verify();
+        let copy = root.join("site").join("index.html");
+        let before = fs::metadata(&copy).unwrap().modified().unwrap();
+
+        // Второй прогон: зеркало не менялось, файл копии не должен переписываться.
+        let second = Engine::new("example.com", &root, 1, 0).unwrap();
+        second.build().unwrap();
+        let after = fs::metadata(&copy).unwrap().modified().unwrap();
+        assert_eq!(before, after, "неизменённый файл не переписывается");
+        let stats_second = second.verify();
+        assert_eq!(stats_first.refs, stats_second.refs, "ссылки те же");
+        assert_eq!(stats_first.broken, stats_second.broken, "битые те же");
+        assert_eq!(stats_first.pages, stats_second.pages, "страницы те же");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn foreign_counter_survives_incremental_build() {
+        let root = workdir("incrforeign");
+        put(
+            &root,
+            "index.html",
+            b"<html><body><a href=\"/shot.html\">i</a></body></html>",
+        );
+        // под именем страницы лежит картинка — страницей она не считается
+        put(
+            &root,
+            "shot.html",
+            b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01\x08\x06\0\0\0",
+        );
+        let first = build(&root);
+        assert_eq!(first.verify().foreign, 1, "картинка под именем страницы");
+        let second = Engine::new("example.com", &root, 1, 0).unwrap();
+        second.build().unwrap();
+        assert_eq!(
+            second.verify().foreign,
+            1,
+            "при повторной сборке счётчик не обнуляется"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn journal_of_another_version_forces_full_build() {
+        let root = workdir("jversion");
+        put(&root, "index.html", b"<html><body>ok</body></html>");
+        build(&root);
+        let path = root.join("data").join("build.jsonl");
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(
+            text.starts_with("#journal "),
+            "журнал помечен форматом и версией"
+        );
+        // Подменяем метку: журнал чужой версии не должен приниматься.
+        let broken = text.replacen("#journal 1", "#journal 0", 1);
+        fs::write(&path, broken).unwrap();
+        let engine = Engine::new("example.com", &root, 1, 0).unwrap();
+        engine.build().expect("сборка без журнала проходит");
+        let after = fs::read_to_string(&path).unwrap();
+        assert!(after.starts_with(&format!("#journal 1 {}", env!("CARGO_PKG_VERSION"))));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn journal_survives_round_trip() {
+        let line = concat!(
+            "{\"path\":\"parts/a/index.html\",\"size\":1997,\"mtime\":1794361782,",
+            "\"page\":true,\"targets\":[\"img/x.png\",\"parts/b/index.html\"]}"
+        );
+        let (path, entry) = parse_journal_line(line).expect("строка журнала должна разбираться");
+        assert_eq!(path, "parts/a/index.html");
+        assert_eq!(entry.size, 1997);
+        assert_eq!(entry.mtime, 1_794_361_782);
+        assert!(entry.page);
+        assert_eq!(entry.targets, vec!["img/x.png", "parts/b/index.html"]);
     }
 
     #[test]

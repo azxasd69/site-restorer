@@ -369,7 +369,21 @@ impl App {
                 Ok(Msg::Progress(p)) => {
                     changed = true;
                     if p.stage == "log" {
-                        self.push_log(p.text.clone(), Level::Info);
+                        // Движок присылает и ошибки обычным текстом: без окраски
+                        // они терялись среди строк прогресса.
+                        let text = p.text.clone();
+                        let lower = text.to_lowercase();
+                        let level = if lower.contains("не удалось")
+                            || lower.contains("ошибк")
+                            || lower.contains("cannot ")
+                            || lower.contains(" failed")
+                            || lower.contains("ошибка сети")
+                        {
+                            Level::Warn
+                        } else {
+                            Level::Info
+                        };
+                        self.push_log(text, level);
                         continue;
                     }
                     self.overall = p.overall;
@@ -961,25 +975,29 @@ impl eframe::App for App {
                                     let gap = 10.0;
                                     let width =
                                         ((ui.available_width() - gap * 3.0) / 4.0).max(80.0);
+                                    // Сборка и проверка идут по файлам, загрузка — по адресам:
+                                    // одна и та же подпись на всех этапах путала.
+                                    let downloading = matches!(self.stage, Stage::Download);
+                                    let first_label = if downloading {
+                                        t.k_loaded
+                                    } else {
+                                        t.k_processed
+                                    };
+                                    let first_value = format!("{} / {}", self.done, self.total);
+                                    let second_label =
+                                        if downloading { t.k_speed } else { t.k_rate };
+                                    let second_value = if downloading {
+                                        if self.bps >= 1_048_576.0 {
+                                            format!("{:.1} MB/s", self.bps / 1_048_576.0)
+                                        } else {
+                                            format!("{:.0} KB/s", self.bps / 1024.0)
+                                        }
+                                    } else {
+                                        format!("{:.1}", self.files_per_sec)
+                                    };
                                     ui.horizontal(|ui| {
-                                        tile(
-                                            ui,
-                                            width,
-                                            t.k_loaded,
-                                            format!("{} / {}", self.done, self.total),
-                                            TEXT,
-                                        );
-                                        tile(
-                                            ui,
-                                            width,
-                                            t.k_speed,
-                                            if self.bps >= 1_048_576.0 {
-                                                format!("{:.1} MB/s", self.bps / 1_048_576.0)
-                                            } else {
-                                                format!("{:.0} KB/s", self.bps / 1024.0)
-                                            },
-                                            TEXT,
-                                        );
+                                        tile(ui, width, first_label, first_value, TEXT);
+                                        tile(ui, width, second_label, second_value, TEXT);
                                         tile(
                                             ui,
                                             width,

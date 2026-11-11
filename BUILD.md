@@ -79,7 +79,7 @@ python scripts/make-icons.py
 ## Командная строка
 
 ```
-site-restorer --cli --site <адрес> --out <папка> [--limit N] [--workers N]
+site-restorer --cli --site <адрес> --out <папка> [--limit N] [--workers N] [--threads N]
 site-restorer --version
 ```
 
@@ -88,6 +88,7 @@ site-restorer --version
 - `--out` — папка результата (`site/`, `mirror/`, `data/`, `report.html`);
 - `--limit` — ограничить число адресов (быстрая проба);
 - `--workers` — потолок параллельных загрузок (внутри работает AIMD);
+- `--threads` — потоков сборки копии и проверки ссылок (0 — по числу ядер, не больше 32);
 - `--rate` — максимум запросов в секунду (общий для всех воркеров);
 - `--lang` — язык окна (`ru`/`en`); сообщения CLI остаются русскими.
 
