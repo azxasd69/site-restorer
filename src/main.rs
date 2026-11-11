@@ -667,7 +667,7 @@ fn cli(args: &[String]) -> i32 {
             );
             // Машиночитаемый итог: одна строка, чтобы прогон разбирался скриптом.
             println!(
-                "RESULT {{\"ok\":{},\"total\":{},\"files\":{},\"mirror\":{},\"unique\":{},\"pages\":{},\"foreign\":{},\"refs\":{},\"broken\":{},\"fallbacks\":{},\"collisions\":{},\"rescued\":{},\"oldest\":\"{}\",\"newest\":\"{}\",\"site\":\"{}\",\"report\":\"{}\"}}",
+                "RESULT {{\"ok\":{},\"total\":{},\"files\":{},\"mirror\":{},\"unique\":{},\"pages\":{},\"foreign\":{},\"refs\":{},\"broken\":{},\"fallbacks\":{},\"collisions\":{},\"rescued\":{},\"oldest\":\"{}\",\"newest\":\"{}\",\"site\":\"{}\",\"index_total\":{},\"index_pages\":{},\"index_truncated\":{},\"index_failed\":{},\"added_live\":{},\"added_build\":{},\"report\":\"{}\"}}",
                 outcome.ok,
                 outcome.total,
                 outcome.site_files,
@@ -683,6 +683,12 @@ fn cli(args: &[String]) -> i32 {
                 outcome.oldest,
                 outcome.newest,
                 json_escape(&outcome.site.to_string_lossy()),
+                outcome.index_total,
+                outcome.index_pages,
+                outcome.index_truncated,
+                outcome.index_failed,
+                outcome.added_live,
+                outcome.added_build,
                 json_escape(&outcome.report.to_string_lossy()),
             );
             0

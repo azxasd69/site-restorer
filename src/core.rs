@@ -208,6 +208,18 @@ pub struct Outcome {
     pub collisions: usize,
     /// Сколько целей добрано по ссылкам (ФТ-128).
     pub rescued: usize,
+    /// Адресов в индексе до пользовательского --limit (ФТ-155).
+    pub index_total: usize,
+    /// Сколько страниц индекса обойдено (ФТ-155).
+    pub index_pages: usize,
+    /// Индекс остановлен по пределу или размеру выборки (ФТ-155).
+    pub index_truncated: bool,
+    /// Индекс не получен: отказы архива после повторов (ФТ-150, ФТ-155).
+    pub index_failed: bool,
+    /// Адресов добрано на ходу при загрузке (ФТ-152, ФТ-155).
+    pub added_live: usize,
+    /// Адресов добрано по ссылкам при сборке (ФТ-153, ФТ-155).
+    pub added_build: usize,
     /// Самый старый и самый новый снимок в копии: `ГГГГ-ММ-ДД` (ФТ-129).
     pub oldest: String,
     pub newest: String,
@@ -885,6 +897,12 @@ pub struct Engine {
     index_max_pages: usize,
     /// Индекс пришлось остановить по пределу страниц или по размеру выборки (ФТ-149).
     index_truncated: bool,
+    /// Сколько адресов отдал индекс до применения пользовательского --limit.
+    index_total: usize,
+    /// Сколько страниц индекса реально обойдено (ФТ-149).
+    index_pages: usize,
+    /// Сколько адресов отброшено пользовательским --limit (для сверки ФТ-154).
+    limit_skipped: usize,
     /// Предел добора по ссылкам (ФТ-128); 0 — выключено.
     pub rescue_limit: usize,
     /// Бюджет времени на добор по ссылкам, секунд (0 — без бюджета).
@@ -979,6 +997,9 @@ impl Engine {
             watermark: 0,
             index_max_pages: DEFAULT_INDEX_MAX_PAGES,
             index_truncated: false,
+            index_total: 0,
+            index_pages: 0,
+            limit_skipped: 0,
             rescue_limit: DEFAULT_RESCUE_LIMIT,
             rescue_budget: DEFAULT_RESCUE_BUDGET,
             retry_missing_days: DEFAULT_RETRY_MISSING_DAYS,
@@ -1762,6 +1783,7 @@ impl Engine {
                         let got = chunk.len();
                         rows.extend(chunk);
                         page += 1;
+                        self.index_pages = page;
                         if got < PAGE_LIMIT {
                             break;
                         }
@@ -1924,6 +1946,8 @@ impl Engine {
             }
         }
         if self.limit > 0 {
+            self.index_total = items.len();
+            self.limit_skipped = items.len().saturating_sub(self.limit);
             items.truncate(self.limit);
         }
         {
@@ -1933,7 +1957,17 @@ impl Engine {
             }
         }
         fs::create_dir_all(&self.data_dir).map_err(|e| e.to_string())?;
-        let mut inv = String::new();
+        // Заголовок инвентаря (ФТ-151): водяной знак и состояние индекса.
+        // `read_inventory` такие строки пропускает: в них нет поля `url`.
+        let mut inv = format!(
+            "{{\"index\":{{\"watermark\":{},\"pages\":{},\"total\":{},\"truncated\":{},\"failed\":{},\"skipped\":{}}}}}\n",
+            self.watermark,
+            self.index_pages,
+            self.index_total,
+            self.index_truncated,
+            self.inv_failed,
+            self.limit_skipped
+        );
         for item in &items {
             inv.push_str(&format!(
                 "{{\"url\":\"{}\",\"ts\":\"{}\",\"orig\":\"{}\",\"mime\":\"{}\",\"path\":\"{}\",\"type\":\"{}\",\"len\":{}}}\n",
@@ -1955,6 +1989,32 @@ impl Engine {
                 "archive has no pages for this address".to_string()
             });
         }
+        self.shared.log(crate::tr::pick(
+            format!(
+                "индекс: страниц {}, адресов {}, {}",
+                self.index_pages,
+                self.index_total,
+                if self.inv_failed {
+                    "не получен"
+                } else if self.index_truncated {
+                    "обрезан"
+                } else {
+                    "полон"
+                }
+            ),
+            format!(
+                "index: {} pages, {} addresses, {}",
+                self.index_pages,
+                self.index_total,
+                if self.inv_failed {
+                    "failed"
+                } else if self.index_truncated {
+                    "truncated"
+                } else {
+                    "complete"
+                }
+            ),
+        ));
         self.shared.log(crate::tr::pick(
             format!("адресов найдено: {}", self.items.len()),
             format!("addresses found: {}", self.items.len()),
@@ -3096,6 +3156,12 @@ impl Engine {
             fallbacks: self.shared.counters.fallbacks.load(Ordering::Relaxed),
             collisions: self.shared.counters.collisions.load(Ordering::Relaxed),
             rescued: self.rescued.load(Ordering::Relaxed),
+            index_total: self.index_total,
+            index_pages: self.index_pages,
+            index_truncated: self.index_truncated,
+            index_failed: self.inv_failed,
+            added_live: 0,
+            added_build: 0,
             oldest: self.snapshot_range().0,
             newest: self.snapshot_range().1,
         })
@@ -4009,6 +4075,31 @@ mod tests {
         assert_eq!(parse_pages(r#"{"pages": 0}"#), None);
     }
 
+    /// ФТ-151: заголовочная строка инвентаря с водяным знаком не мешает чтению
+    /// адресов — `read_inventory` пропускает записи без поля `url`.
+    #[test]
+    fn inventory_header_is_skipped_by_reader() {
+        let dir = std::env::temp_dir().join(format!(
+            "sr-invhead-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("inventory.jsonl");
+        let text = concat!(
+            "{\"index\":{\"watermark\":1762900000,\"pages\":3,\"total\":1638,",
+            "\"truncated\":true,\"failed\":false,\"skipped\":0}}\n",
+            "{\"url\":\"https://example.com/\",\"ts\":\"20260101000000\",",
+            "\"orig\":\"https://example.com/\",\"mime\":\"text/html\",",
+            "\"path\":\"index.html\",\"type\":\"page\",\"len\":10}\n"
+        );
+        fs::write(&file, text).unwrap();
+        let items = read_inventory(&file);
+        assert_eq!(items.len(), 1, "заголовок не должен попадать в адреса");
+        assert_eq!(items[0].url, "https://example.com/");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn inventory_reads_old_and_new_format() {
         let dir = std::env::temp_dir().join(format!("sr-inventory-{}", std::process::id()));
@@ -4508,10 +4599,19 @@ mod build_tests {
         flag.store(true, Ordering::Relaxed);
         let shared = Arc::clone(&engine.shared);
         let started = Instant::now();
+        // Признак «воркер вошёл в ожидание»: без него на загруженной машине поток
+        // мог стартовать уже после снятия паузы, и тест падал ложно (наблюдалось).
+        let ready = Arc::new(AtomicBool::new(false));
+        let go = Arc::clone(&ready);
         let worker = std::thread::spawn(move || {
+            go.store(true, Ordering::Relaxed);
             shared.wait_for_pause();
             started.elapsed()
         });
+        let spin = Instant::now();
+        while !ready.load(Ordering::Relaxed) && spin.elapsed() < Duration::from_secs(2) {
+            std::thread::sleep(Duration::from_millis(1));
+        }
         std::thread::sleep(Duration::from_millis(120));
         flag.store(false, Ordering::Relaxed);
         let waited = worker.join().unwrap();
