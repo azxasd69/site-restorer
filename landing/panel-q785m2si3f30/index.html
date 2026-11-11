@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#2d3748">
+<title>Панель аналитики — Site Restorer</title>
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="admin.css?v=15fcf610">
+</head>
+<body>
+
+<!-- ───────────── Вход ───────────── -->
+<section class="lock" id="lock" aria-labelledby="lock-title">
+  <div class="lock-card">
+    <span class="mark" aria-hidden="true">
+      <svg viewBox="0 0 32 32" width="32" height="32" role="presentation">
+        <rect width="32" height="32" rx="6" fill="#2d3748"></rect>
+        <rect x="7" y="7" width="7" height="7" fill="#fff"></rect>
+        <rect x="18" y="7" width="7" height="7" fill="#fff"></rect>
+        <rect x="7" y="18" width="7" height="7" fill="#fff"></rect>
+        <rect x="18.5" y="18.5" width="6" height="6" fill="none" stroke="#9fb0c2" stroke-width="1.4" stroke-dasharray="2 2"></rect>
+      </svg>
+    </span>
+    <p class="eyebrow">Site Restorer · панель</p>
+    <h1 id="lock-title">Аналитика lastcopy.ru</h1>
+    <p class="lock-lead">Страница открывается по прямой ссылке. Данные лежат в зашифрованном виде: без пароля в браузер не попадает ничего.</p>
+
+    <form id="unlock" novalidate>
+      <label for="pw">Пароль</label>
+      <input class="sr-only" type="text" name="username" autocomplete="username" value="admin" tabindex="-1" aria-hidden="true">
+      <div class="pw-wrap">
+        <input id="pw" name="pw" type="password" autocomplete="current-password" spellcheck="false"
+               autofocus required aria-describedby="lock-msg">
+        <button type="button" id="pw-toggle" class="pw-toggle" aria-pressed="false" aria-label="Показать пароль">
+          <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M1 10s3.2-5.5 9-5.5S19 10 19 10s-3.2 5.5-9 5.5S1 10 1 10Z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="10" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        </button>
+      </div>
+      <button type="submit" class="btn btn-primary" id="unlock-btn">Открыть панель</button>
+      <p class="lock-msg" id="lock-msg" role="status" aria-live="polite"></p>
+    </form>
+
+    <p class="lock-note">
+      В админке счётчик Метрики не подключён: заходы сюда не считаются.
+      Поисковики страницу не индексируют, ссылок на неё с сайта нет.
+    </p>
+
+    <ul class="lock-chips" aria-label="Что внутри">
+      <li>Метрика: трафик, источники, отказы, цели</li>
+      <li>Аудитория: устройства, часы, постоянство, роботы</li>
+      <li>Вебмастер: диагностика, карта сайта, квота</li>
+      <li>GitHub: скачивания, релизы, пути и рефереры</li>
+      <li>Самопроверки сайта и журнал правок</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ───────────── Панель ───────────── -->
+<main id="app" hidden>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="https://lastcopy.ru/" rel="noopener">
+        <span class="mark mark-sm" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="24" height="24" role="presentation">
+            <rect width="32" height="32" rx="6" fill="#2d3748"></rect>
+            <rect x="7" y="7" width="7" height="7" fill="#fff"></rect>
+            <rect x="18" y="7" width="7" height="7" fill="#fff"></rect>
+            <rect x="7" y="18" width="7" height="7" fill="#fff"></rect>
+            <rect x="18.5" y="18.5" width="6" height="6" fill="none" stroke="#9fb0c2" stroke-width="1.4" stroke-dasharray="2 2"></rect>
+          </svg>
+        </span>
+        <span class="brand-text"><strong>Site Restorer</strong><span>панель аналитики</span></span>
+      </a>
+
+      <div class="topbar-tools">
+        <div class="seg" role="group" aria-label="Период">
+          <button type="button" data-period="7">7 дней</button>
+          <button type="button" data-period="30" aria-pressed="true" class="is-on">30 дней</button>
+          <button type="button" data-period="90">90 дней</button>
+        </div>
+        <button type="button" class="btn btn-quiet" id="export-btn">Экспорт JSON</button>
+        <button type="button" class="btn btn-quiet" id="lock-btn">Закрыть</button>
+      </div>
+    </div>
+    <div class="stamp-row">
+      <span id="stamp" class="stamp"></span>
+      <span id="stale" class="badge badge-warn" hidden></span>
+    </div>
+  </header>
+
+  <div id="content" class="content"></div>
+
+  <footer class="foot">
+    <p>Источники: Яндекс.Метрика (счётчик <span id="counter-id">114170389</span>), Яндекс.Вебмастер, GitHub API, самопроверки сайта.
+      Без сервера: страница читает только зашифрованный снимок, живых запросов к API не делает.</p>
+    <p class="foot-links">
+      <a href="https://metrika.yandex.ru/dashboard?id=114170389" target="_blank" rel="noopener">Открыть Метрику</a>
+      <a href="https://webmaster.yandex.ru/site/https:lastcopy.ru:443/" target="_blank" rel="noopener">Вебмастер</a>
+      <a href="https://github.com/azxasd69/site-restorer" target="_blank" rel="noopener">GitHub</a>
+    </p>
+  </footer>
+</main>
+
+<noscript>
+  <div class="noscript">
+    <h2>Нужен JavaScript</h2>
+    <p>Панель расшифровывает данные в браузере, поэтому без JavaScript она не откроется.
+      Включите его или посмотрите отчёты напрямую в Метрике и Вебмастере.</p>
+  </div>
+</noscript>
+
+<script src="admin.js?v=3f1a10b6" defer></script>
+</body>
+</html>
