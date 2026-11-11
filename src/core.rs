@@ -1708,6 +1708,10 @@ impl Engine {
             pages = pages.max(2);
         } else if rows.len() >= QUICK_LIMIT {
             self.index_truncated = true;
+        } else {
+            // Быстрый запрос вернул весь индекс: страниц обходить не пришлось,
+            // но для отчёта считаем покрытие полным (иначе «0 страниц»).
+            self.index_pages = pages;
             self.shared.log(crate::tr::t(
                 "CDX: список обрезан на 50000 адресах",
                 "CDX: address list truncated at 50000",
@@ -1945,8 +1949,10 @@ impl Engine {
                 }
             }
         }
+        // Число адресов индекса фиксируется до пользовательского --limit (ФТ-154):
+        // иначе при работе без лимита счётчик оставался нулевым.
+        self.index_total = items.len();
         if self.limit > 0 {
-            self.index_total = items.len();
             self.limit_skipped = items.len().saturating_sub(self.limit);
             items.truncate(self.limit);
         }
