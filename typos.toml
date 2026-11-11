@@ -7,6 +7,9 @@ aimd = "aimd"
 flate = "flate"
 # аргумент компилятора ресурсов Windows (/fo) — не опечатка
 fo = "fo"
+# Tilda — конструктор сайтов, название продукта (не «tilde»)
+Tilda = "Tilda"
+tilda = "tilda"
 
 [files]
 extend-exclude = ["target/", "legacy/", "landing/assets/"]
