@@ -164,18 +164,17 @@ unsafe fn init_com() {
 }
 
 /// Есть ли графический сеанс: нужен для понятного сообщения до открытия окна (Д-13).
-#[cfg(feature = "gui")]
+/// На Linux без `DISPLAY` и `WAYLAND_DISPLAY` окно не откроется, и об этом лучше сказать сразу.
+#[cfg(all(feature = "gui", unix))]
 fn graphics_available() -> bool {
-    #[cfg(all(unix, feature = "gui"))]
-    {
-        let display = std::env::var("DISPLAY").unwrap_or_default();
-        let wayland = std::env::var("WAYLAND_DISPLAY").unwrap_or_default();
-        return !display.trim().is_empty() || !wayland.trim().is_empty();
-    }
-    #[cfg(not(all(unix, feature = "gui")))]
-    {
-        true
-    }
+    let display = std::env::var("DISPLAY").unwrap_or_default();
+    let wayland = std::env::var("WAYLAND_DISPLAY").unwrap_or_default();
+    !display.trim().is_empty() || !wayland.trim().is_empty()
+}
+
+#[cfg(all(feature = "gui", not(unix)))]
+fn graphics_available() -> bool {
+    true
 }
 
 fn main() {
