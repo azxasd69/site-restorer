@@ -291,6 +291,10 @@ struct Args {
     since: String,
     /// Предел добора по ссылкам (ФТ-128).
     rescue_limit: Option<usize>,
+    /// Бюджет времени на добор, секунд (ФТ-128).
+    rescue_budget: Option<u64>,
+    /// Через сколько дней повторять адреса без снимка (ФТ-135).
+    retry_missing_days: Option<u32>,
     /// Порог «пустой страницы» (ФТ-127).
     stub_bytes: Option<usize>,
 }
@@ -311,6 +315,8 @@ fn parse_args(args: &[String]) -> Args {
         refresh: false,
         since: String::new(),
         rescue_limit: None,
+        rescue_budget: None,
+        retry_missing_days: None,
         stub_bytes: None,
     };
     let mut i = 0;
@@ -373,6 +379,14 @@ fn parse_args(args: &[String]) -> Args {
             }
             "--rescue-limit" => {
                 parsed.rescue_limit = args.get(i + 1).and_then(|v| v.parse().ok());
+                i += 2;
+            }
+            "--rescue-budget" => {
+                parsed.rescue_budget = args.get(i + 1).and_then(|v| v.parse().ok());
+                i += 2;
+            }
+            "--retry-missing" => {
+                parsed.retry_missing_days = args.get(i + 1).and_then(|v| v.parse().ok());
                 i += 2;
             }
             "--stub-bytes" => {
@@ -470,6 +484,12 @@ fn cli(args: &[String]) -> i32 {
     }
     if let Some(limit) = parsed.rescue_limit {
         engine.set_rescue_limit(limit);
+    }
+    if let Some(seconds) = parsed.rescue_budget {
+        engine.set_rescue_budget(seconds);
+    }
+    if let Some(days) = parsed.retry_missing_days {
+        engine.set_retry_missing_days(days);
     }
     if let Some(bytes) = parsed.stub_bytes {
         engine.set_stub_bytes(bytes);

@@ -5,7 +5,7 @@ use crate::paths;
 use crate::sanitize::sanitize_site;
 
 use rayon::prelude::*;
-use regex_lite::Regex;
+use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Read;
@@ -36,6 +36,10 @@ const DEFAULT_REFRESH_DAYS: u32 = 30;
 const DEFAULT_RESCUE_LIMIT: usize = 500;
 /// Порог «пустой страницы»: короче — считаем заглушкой и берём более старый снимок (ФТ-127).
 const DEFAULT_STUB_BYTES: usize = 256;
+/// Бюджет времени на добор по ссылкам: без него прогон висит на тысячах запросов.
+const DEFAULT_RESCUE_BUDGET: u64 = 30;
+/// Через сколько дней повторять адрес, у которого не было пригодного снимка.
+const DEFAULT_RETRY_MISSING_DAYS: u32 = 7;
 const ERROR_MARKERS: [&[u8]; 3] = [
     b"This page is not available",
     b"doesn't have that page archived",
@@ -318,6 +322,8 @@ struct Shared {
     fallback_depth: AtomicUsize,
     /// Файлы, которые надо скачать заново, несмотря на наличие на диске (ФТ-130).
     refresh: Mutex<HashSet<String>>,
+    /// Адреса без пригодного снимка: url -> когда проверяли (ФТ-135).
+    no_snapshot: Mutex<HashMap<String, u64>>,
     /// Дата снимка каждого файла зеркала: путь относительно зеркала -> отпечаток.
     snapshots: Mutex<HashMap<String, String>>,
     /// Минимальный интервал между запросами (наносекунды), 0 — без ограничения.
@@ -355,6 +361,14 @@ impl Shared {
     }
 
     /// Считает файл, пришедший не тем типом, чем обещал индекс (ОШ-5).
+    /// Запомнить адрес, у которого не было пригодного снимка (ФТ-135):
+    /// повторять его каждый прогон — это десятки лишних запросов к архиву.
+    fn note_no_snapshot(&self, item: &Item) {
+        if let Ok(mut map) = self.no_snapshot.lock() {
+            map.insert(item.url.clone(), now_secs());
+        }
+    }
+
     fn note_foreign(&self) {
         self.foreign.fetch_add(1, Ordering::Relaxed);
     }
@@ -641,6 +655,7 @@ impl Shared {
             Attempt::Absent => {
                 self.counters.missing.fetch_add(1, Ordering::Relaxed);
                 self.counters.no_snapshot.fetch_add(1, Ordering::Relaxed);
+                self.note_no_snapshot(item);
                 self.log(crate::tr::pick(
                     format!("snapshot:none — {}", item.path),
                     format!("snapshot:none — {}", item.path),
@@ -649,6 +664,7 @@ impl Shared {
             Attempt::Unusable => {
                 self.counters.missing.fetch_add(1, Ordering::Relaxed);
                 self.counters.no_snapshot.fetch_add(1, Ordering::Relaxed);
+                self.note_no_snapshot(item);
                 self.log(crate::tr::pick(
                     format!("snapshot:unusable — {}", item.path),
                     format!("snapshot:unusable — {}", item.path),
@@ -785,6 +801,13 @@ impl Shared {
     }
 }
 
+/// Временный файл прошлого прогона: `.part` или `.jsonl.part`.
+fn is_temp_file(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.ends_with(".part") || n.ends_with(".jsonl.part"))
+}
+
 fn tmp_path(full: &Path) -> PathBuf {
     let mut name = full
         .file_name()
@@ -818,6 +841,11 @@ pub struct Engine {
     pub since: Option<String>,
     /// Предел добора по ссылкам (ФТ-128); 0 — выключено.
     pub rescue_limit: usize,
+    /// Бюджет времени на добор по ссылкам, секунд (0 — без бюджета).
+    pub rescue_budget: u64,
+    /// Через сколько дней повторять адрес, у которого не было пригодного снимка;
+    /// 0 — повторять всегда (ФТ-135).
+    pub retry_missing_days: u32,
     /// Порог «пустой страницы» в байтах (ФТ-127).
     pub stub_bytes: usize,
     /// Адреса, добранные по ссылкам в этом прогоне.
@@ -841,9 +869,10 @@ pub struct Engine {
     /// Число файлов копии и зеркала без повторного обхода дерева в отчёте.
     site_files: AtomicUsize,
     mirror_files: AtomicUsize,
-    /// Цели ссылок, собранные при переписывании: путь файла -> ключи целей.
-    /// Проверка ссылок идёт по ним, без второго чтения и повторного разбора страниц.
-    ref_targets: Mutex<Vec<(String, Vec<String>)>>,
+    /// Цели ссылок, собранные при переписывании: по списку на страницу.
+    /// Проверка идёт по ним, без второго чтения и повторного разбора страниц.
+    /// Списки разделяются с журналом через `Arc`: копировать их не нужно.
+    ref_targets: Mutex<Vec<Arc<Vec<String>>>>,
     /// Что уже собрано: повторный прогон не переписывает неизменённые файлы.
     journal: Mutex<HashMap<String, JournalEntry>>,
     /// Сколько файлов не удалось записать (для журнала работы и разбора жалоб).
@@ -857,7 +886,8 @@ struct JournalEntry {
     size: u64,
     mtime: u64,
     /// Ключи целей ссылок страницы — для проверки без повторного чтения.
-    targets: Vec<String>,
+    /// `Arc`: один список живёт и в журнале, и в проверке, копий нет.
+    targets: Arc<Vec<String>>,
     /// Файл считается страницей (html и не бинарный).
     page: bool,
     /// Под именем страницы лежит не страница (картинка, PDF): повторный прогон
@@ -895,6 +925,8 @@ impl Engine {
             refresh: false,
             since: None,
             rescue_limit: DEFAULT_RESCUE_LIMIT,
+            rescue_budget: DEFAULT_RESCUE_BUDGET,
+            retry_missing_days: DEFAULT_RETRY_MISSING_DAYS,
             stub_bytes: DEFAULT_STUB_BYTES,
             rescued: AtomicUsize::new(0),
             shared: Arc::new(Shared {
@@ -912,6 +944,7 @@ impl Engine {
                 stub_bytes: AtomicUsize::new(DEFAULT_STUB_BYTES),
                 fallback_depth: AtomicUsize::new(DEFAULT_FALLBACK_DEPTH),
                 refresh: Mutex::new(HashSet::new()),
+                no_snapshot: Mutex::new(HashMap::new()),
                 snapshots: Mutex::new(HashMap::new()),
                 types: Mutex::new(TypeCounts::default()),
                 cb: None,
@@ -962,10 +995,6 @@ impl Engine {
         self.site_files.store(list.len(), Ordering::Relaxed);
         *cache = Some(Arc::clone(&list));
         list
-    }
-
-    fn reset_site_list(&self) {
-        *self.site_cache.lock().unwrap() = None;
     }
 
     /// Сколько потоков отдаётся сборке и проверке.
@@ -1049,6 +1078,7 @@ impl Engine {
             stub_bytes: AtomicUsize::new(stub),
             fallback_depth: AtomicUsize::new(depth),
             refresh: Mutex::new(HashSet::new()),
+            no_snapshot: Mutex::new(HashMap::new()),
             snapshots: Mutex::new(HashMap::new()),
             pause_until: Mutex::new(paused),
             rate_nanos: AtomicU64::new(rate),
@@ -1141,6 +1171,16 @@ impl Engine {
         self.rescue_limit = limit;
     }
 
+    /// Бюджет времени на добор по ссылкам, секунд (0 — без бюджета).
+    pub fn set_rescue_budget(&mut self, seconds: u64) {
+        self.rescue_budget = seconds;
+    }
+
+    /// Через сколько дней повторять адреса без пригодного снимка (0 — всегда).
+    pub fn set_retry_missing_days(&mut self, days: u32) {
+        self.retry_missing_days = days;
+    }
+
     /// Порог «пустой страницы» (ФТ-127).
     pub fn set_stub_bytes(&mut self, bytes: usize) {
         self.stub_bytes = bytes;
@@ -1196,6 +1236,52 @@ impl Engine {
     }
 
     // ------------------------------------------------------------ inventory
+    /// Путь к списку адресов без снимка.
+    fn no_snapshot_path(&self) -> PathBuf {
+        self.data_dir.join("no-snapshot.tsv")
+    }
+
+    /// Прочитать список адресов без снимка: `url`, табуляция, время проверки.
+    fn load_no_snapshot(&self) -> HashMap<String, u64> {
+        let Ok(text) = fs::read_to_string(self.no_snapshot_path()) else {
+            return HashMap::new();
+        };
+        text.lines()
+            .filter_map(|line| {
+                let (url, stamp) = line.split_once('\t')?;
+                Some((url.to_string(), stamp.trim().parse().ok()?))
+            })
+            .collect()
+    }
+
+    /// Сохранить список, выбросив записи старше срока повтора.
+    fn save_no_snapshot(&self) {
+        let Ok(fresh) = self.shared.no_snapshot.lock() else {
+            return;
+        };
+        if fresh.is_empty() {
+            return;
+        }
+        let mut all = self.load_no_snapshot();
+        for (url, stamp) in fresh.iter() {
+            all.insert(url.clone(), *stamp);
+        }
+        let ttl = u64::from(self.retry_missing_days) * 86_400;
+        let now = now_secs();
+        let mut out = String::with_capacity(all.len() * 80);
+        for (url, stamp) in all {
+            if self.retry_missing_days > 0 && now.saturating_sub(stamp) > ttl.saturating_mul(4) {
+                continue;
+            }
+            out.push_str(&url);
+            out.push('\t');
+            out.push_str(&stamp.to_string());
+            out.push('\n');
+        }
+        let _ = fs::create_dir_all(&self.data_dir);
+        let _ = fs::write(self.no_snapshot_path(), out);
+    }
+
     /// Файлы, чей снимок старше `--refresh-days` или которые нужно проверить заново (ФТ-130).
     /// Работает только в режиме «самый свежий»: в режиме `oldest` журнал ведёт себя как в 3.4.0.
     fn stale_paths(&self) -> HashSet<String> {
@@ -1263,18 +1349,26 @@ impl Engine {
     }
 
     /// Удалить временные файлы прошлых прогонов (Д-16).
+    ///
+    /// `.part` появляется только в зеркале (недокачанный файл) и в данных (журнал),
+    /// поэтому дерево обходится один раз, а зеркало — заодно с этим: список файлов
+    /// идёт в сборку, второй обход не нужен.
     fn cleanup_temp(&self) -> usize {
         let mut removed = 0usize;
-        for dir in [&self.mirror, &self.site_dir, &self.out, &self.data_dir] {
-            if !dir.exists() {
-                continue;
+        if self.mirror.exists() {
+            let mirror_files = walk_files(&self.mirror);
+            for path in &mirror_files {
+                if is_temp_file(path) && fs::remove_file(long_path(path)).is_ok() {
+                    removed += 1;
+                }
             }
-            for path in walk_files(dir) {
-                let temp = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(|n| n.ends_with(".part") || n.ends_with(".jsonl.part"));
-                if temp && fs::remove_file(long_path(&path)).is_ok() {
+            let count = mirror_files.len();
+            *self.mirror_cache.lock().unwrap() = Some(Arc::new(mirror_files));
+            self.mirror_files.store(count, Ordering::Relaxed);
+        }
+        if self.data_dir.exists() {
+            for path in walk_files(&self.data_dir) {
+                if is_temp_file(&path) && fs::remove_file(long_path(&path)).is_ok() {
                     removed += 1;
                 }
             }
@@ -1614,6 +1708,32 @@ impl Engine {
 
         let mut items: Vec<Item> = by_path.into_values().collect();
         items.sort_by(|a, b| a.url.cmp(&b.url));
+        // Адреса, у которых снимка нет, повторяются не каждый прогон (ФТ-135).
+        if self.retry_missing_days > 0 {
+            let known = self.load_no_snapshot();
+            if !known.is_empty() {
+                let ttl = u64::from(self.retry_missing_days) * 86_400;
+                let now = now_secs();
+                let before = items.len();
+                items.retain(|item| match known.get(&item.url) {
+                    Some(checked) => now.saturating_sub(*checked) >= ttl,
+                    None => true,
+                });
+                let skipped = before - items.len();
+                if skipped > 0 {
+                    self.shared.log(crate::tr::pick(
+                        format!(
+                            "без снимка: {} адресов пропущено до повтора через {} дней",
+                            skipped, self.retry_missing_days
+                        ),
+                        format!(
+                            "no snapshot: {} addresses skipped until retry in {} days",
+                            skipped, self.retry_missing_days
+                        ),
+                    ));
+                }
+            }
+        }
         if self.limit > 0 {
             items.truncate(self.limit);
         }
@@ -1751,6 +1871,8 @@ impl Engine {
             return Ok(());
         }
 
+        // Файлы появятся в зеркале: список, снятый при уборке, больше не годится.
+        *self.mirror_cache.lock().unwrap() = None;
         let queue = Arc::new(Self::order_interleaved(&todo));
         let next = Arc::new(AtomicUsize::new(0));
         let stop = Arc::new(AtomicBool::new(false));
@@ -1868,6 +1990,7 @@ impl Engine {
         let _ = progress_thread.join();
         let _ = controller.join();
         self.save_content_types();
+        self.save_no_snapshot();
         self.emit("download", 85.0, "", true);
         self.ensure_not_cancelled()
     }
@@ -1902,7 +2025,7 @@ impl Engine {
         let base_rx = Regex::new(r"(?i)<base\b[^>]*>").unwrap();
         let site_rx = Regex::new(&format!(
             r#"(?i)^(?:https?:)?//(?:www\.)?{}(?::\d+)?(/[^"'\s<>()\\]*)"#,
-            regex_lite::escape(&self.host)
+            regex::escape(&self.host)
         ))
         .unwrap();
 
@@ -2002,7 +2125,7 @@ impl Engine {
                                 JournalEntry {
                                     size,
                                     mtime,
-                                    targets: Vec::new(),
+                                    targets: Arc::new(Vec::new()),
                                     page: false,
                                     foreign: is_page,
                                     snapshot,
@@ -2048,13 +2171,11 @@ impl Engine {
                         };
                         if lower.ends_with(".js") {
                             text = site_rx
-                                .replace_all(&text, |caps: &regex_lite::Captures| {
-                                    caps[1].to_string()
-                                })
+                                .replace_all(&text, |caps: &regex::Captures| caps[1].to_string())
                                 .into_owned();
                         } else {
                             text = attr_rx
-                                .replace_all(&text, |caps: &regex_lite::Captures| {
+                                .replace_all(&text, |caps: &regex::Captures| {
                                     let attr = &caps[1];
                                     let (value, quote) = if let Some(v) = caps.get(2) {
                                         (v.as_str(), "\"")
@@ -2072,7 +2193,7 @@ impl Engine {
                                 })
                                 .into_owned();
                             text = srcset_rx
-                                .replace_all(&text, |caps: &regex_lite::Captures| {
+                                .replace_all(&text, |caps: &regex::Captures| {
                                     let attr = &caps[1];
                                     let quote = if caps.get(2).is_some() { "\"" } else { "'" };
                                     let value = caps
@@ -2100,7 +2221,7 @@ impl Engine {
                                 })
                                 .into_owned();
                             text = css_rx
-                                .replace_all(&text, |caps: &regex_lite::Captures| {
+                                .replace_all(&text, |caps: &regex::Captures| {
                                     let url = &caps[1];
                                     format!(
                                         "url({})",
@@ -2132,7 +2253,7 @@ impl Engine {
                             JournalEntry {
                                 size,
                                 mtime,
-                                targets,
+                                targets: Arc::new(targets),
                                 page: is_page,
                                 foreign: false,
                                 snapshot,
@@ -2152,7 +2273,7 @@ impl Engine {
                         JournalEntry {
                             size,
                             mtime,
-                            targets: Vec::new(),
+                            targets: Arc::new(Vec::new()),
                             page: false,
                             foreign: false,
                             snapshot,
@@ -2163,12 +2284,15 @@ impl Engine {
                 .collect()
         });
 
-        self.reset_site_list();
+        // Один обход готовой копии на все нужды: уборка сирот, проверка и отчёт.
+        let site_files = Arc::new(walk_files(&self.site_dir));
+        self.site_files.store(site_files.len(), Ordering::Relaxed);
+        *self.site_cache.lock().unwrap() = Some(Arc::clone(&site_files));
         let mut journal_new = HashMap::with_capacity(results.len());
-        let mut targets_all: Vec<(String, Vec<String>)> = Vec::with_capacity(results.len());
+        let mut targets_all: Vec<Arc<Vec<String>>> = Vec::with_capacity(results.len());
         for (rel, entry) in results {
             if !entry.targets.is_empty() {
-                targets_all.push((rel.clone(), entry.targets.clone()));
+                targets_all.push(Arc::clone(&entry.targets));
             }
             journal_new.insert(rel, entry);
         }
@@ -2181,7 +2305,7 @@ impl Engine {
         // Осиротевшие файлы прошлой копии убираем только при полном прогоне:
         // при ограничении числа адресов часть зеркала просто не скачана.
         if incremental && self.limit == 0 {
-            self.drop_orphans(&files);
+            self.drop_orphans(&files, &site_files);
         }
         self.save_journal();
         self.site_files
@@ -2279,8 +2403,9 @@ impl Engine {
         Some(key)
     }
 
-    /// Удаляет из копии файлы, которых нет в зеркале.
-    fn drop_orphans(&self, files: &[PathBuf]) {
+    /// Удаляет из копии файлы, которых нет в зеркале. Список файлов копии уже снят:
+    /// второй обход дерева на этом шаге не нужен.
+    fn drop_orphans(&self, files: &[PathBuf], site_files: &[PathBuf]) {
         let keep: HashSet<String> = files
             .iter()
             .filter_map(|p| {
@@ -2289,7 +2414,7 @@ impl Engine {
                     .map(|r| r.to_string_lossy().replace('\\', "/").to_lowercase())
             })
             .collect();
-        for path in walk_files(&self.site_dir) {
+        for path in site_files {
             let rel = path
                 .strip_prefix(&self.site_dir)
                 .unwrap_or(path.as_path())
@@ -2297,7 +2422,7 @@ impl Engine {
                 .replace('\\', "/")
                 .to_lowercase();
             if !keep.contains(&rel) {
-                let _ = fs::remove_file(long_path(&path));
+                let _ = fs::remove_file(long_path(path));
             }
         }
     }
@@ -2478,16 +2603,22 @@ impl Engine {
                     .unwrap_or(full)
             })
             .collect();
+        // Ссылка «parts/b» ведёт на файл «parts/b/index.html»: каталоги собираем
+        // заранее одним множеством, иначе на каждую из миллионов ссылок пришлось бы
+        // строить строку с «/index.html».
+        let dirs: HashSet<&str> = known
+            .iter()
+            .filter_map(|key| key.strip_suffix("/index.html"))
+            .collect();
         // Цели не копируем: на большой копии это десятки мегабайт строк.
         let targets = self.ref_targets.lock().unwrap();
         let refs = AtomicUsize::new(0);
         let broken = AtomicUsize::new(0);
         self.in_pool(|| {
-            targets.par_iter().for_each(|(_rel, keys)| {
-                for key in keys {
+            targets.par_iter().for_each(|keys| {
+                for key in keys.iter() {
                     refs.fetch_add(1, Ordering::Relaxed);
-                    let as_dir = format!("{key}/index.html");
-                    if !known.contains(key) && !known.contains(&as_dir) {
+                    if !known.contains(key.as_str()) && !dirs.contains(key.as_str()) {
                         broken.fetch_add(1, Ordering::Relaxed);
                     }
                 }
@@ -2711,7 +2842,23 @@ impl Engine {
         self.ensure_not_cancelled()?;
         // Добор по ссылкам: цели, которых нет в копии, догружаются из архива (ФТ-128).
         let broken = self.broken_keys();
-        let rescued = self.rescue(&broken);
+        // Если в этом прогоне ничего нового не получено, добор повторил бы тот же
+        // неудачный набор запросов: пропускаем и говорим об этом.
+        let fresh = self
+            .shared
+            .counters
+            .ok
+            .load(Ordering::Relaxed)
+            .saturating_sub(self.shared.counters.baseline.load(Ordering::Relaxed));
+        let rescued = if fresh == 0 && !broken.is_empty() {
+            self.shared.log(crate::tr::pick(
+                format!("rescue:skip — копия не менялась, битых {}", broken.len()),
+                format!("rescue:skip — nothing new, broken {}", broken.len()),
+            ));
+            0
+        } else {
+            self.rescue(&broken)
+        };
         if rescued > 0 {
             self.rescued.store(rescued, Ordering::Relaxed);
             self.shared.log(crate::tr::pick(
@@ -2805,8 +2952,8 @@ impl Engine {
         let targets = self.ref_targets.lock().unwrap();
         let mut out: Vec<String> = Vec::new();
         let mut seen: HashSet<&str> = HashSet::new();
-        for (_rel, keys) in targets.iter() {
-            for key in keys {
+        for keys in targets.iter() {
+            for key in keys.iter() {
                 if known.contains(key) || known.contains(&format!("{key}/index.html")) {
                     continue;
                 }
@@ -2831,8 +2978,26 @@ impl Engine {
             return 0;
         }
         let mut done = 0usize;
+        let started = Instant::now();
         for key in missing.iter().take(self.rescue_limit) {
             if self.cancel_token().load(Ordering::Relaxed) {
+                break;
+            }
+            // Бюджет времени: на сайте с тысячами битых ссылок добор иначе занимает
+            // минуты, а пользы почти не приносит (ФТ-128).
+            if self.rescue_budget > 0 && started.elapsed().as_secs() >= self.rescue_budget {
+                self.shared.log(crate::tr::pick(
+                    format!(
+                        "rescue: бюджет {} с исчерпан, добрано {done} из {}",
+                        self.rescue_budget,
+                        missing.len().min(self.rescue_limit)
+                    ),
+                    format!(
+                        "rescue: budget {} s spent, rescued {done} of {}",
+                        self.rescue_budget,
+                        missing.len().min(self.rescue_limit)
+                    ),
+                ));
                 break;
             }
             let url = format!("https://{}/{}", self.host, key.trim_start_matches('/'));
@@ -2861,25 +3026,16 @@ impl Engine {
     /// Тихое получение снимка по адресу: без счётчиков прогресса, только в зеркало.
     /// Дата полученного снимка записывается так же, как при обычной загрузке (ФТ-129).
     fn fetch_target(&self, item: &Item) -> bool {
-        let stub = self.stub_bytes;
-        let mut tried = vec![SnapshotMode::Newest.target(&item.ts)];
-        for stamp in &tried {
-            if let Attempt::Saved { size: _, memento } = self.shared.attempt(item, stamp, stub) {
-                self.remember_snapshot(item, memento.unwrap_or_else(|| stamp.clone()));
-                return true;
+        // Добор делает одну попытку по свежему снимку: цепочка из шести запросов
+        // на каждую из сотен целей — это тысячи запросов к архиву (ФТ-128).
+        let target = SnapshotMode::Newest.target(&item.ts);
+        match self.shared.attempt(item, &target, self.stub_bytes) {
+            Attempt::Saved { size: _, memento } => {
+                self.remember_snapshot(item, memento.unwrap_or(target));
+                true
             }
+            _ => false,
         }
-        for stamp in self.shared.recent_stamps(item, self.fallback_depth) {
-            if tried.iter().any(|t| t == &stamp) {
-                continue;
-            }
-            if let Attempt::Saved { size: _, memento } = self.shared.attempt(item, &stamp, stub) {
-                self.remember_snapshot(item, memento.unwrap_or(stamp));
-                return true;
-            }
-            tried.push(stamp);
-        }
-        false
     }
 
     /// Запомнить дату снимка файла для журнала и отчёта (ФТ-129).
@@ -3556,7 +3712,7 @@ fn parse_journal_line(line: &str) -> Option<(String, JournalEntry)> {
         JournalEntry {
             size,
             mtime,
-            targets,
+            targets: Arc::new(targets),
             page,
             foreign,
             snapshot: json_field(line, "snapshot").unwrap_or_default(),
@@ -3565,6 +3721,9 @@ fn parse_journal_line(line: &str) -> Option<(String, JournalEntry)> {
     ))
 }
 
+/// Обход дерева: список файлов. Тип записи берётся из самого каталога
+/// (`DirEntry::file_type`), без отдельного `stat` на каждый файл — на Windows это
+/// снимает два системных вызова с каждой записи и ускоряет обход на порядок.
 fn walk_files(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
@@ -3574,12 +3733,15 @@ fn walk_files(root: &Path) -> Vec<PathBuf> {
             continue;
         };
         for entry in entries.flatten() {
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
             let path = entry.path();
-            if path.is_dir() {
+            if kind.is_dir() {
                 if seen.insert(path.clone()) {
                     stack.push(path);
                 }
-            } else if path.is_file() && !path.to_string_lossy().ends_with(".part") {
+            } else if kind.is_file() && !is_temp_file(&path) {
                 out.push(path);
             }
         }
@@ -4040,7 +4202,7 @@ mod build_tests {
         assert_eq!(entry.size, 1997);
         assert_eq!(entry.mtime, 1_794_361_782);
         assert!(entry.page);
-        assert_eq!(entry.targets, vec!["img/x.png", "parts/b/index.html"]);
+        assert_eq!(*entry.targets, vec!["img/x.png", "parts/b/index.html"]);
         assert_eq!(entry.snapshot, "", "старая запись без даты снимка читается");
     }
 

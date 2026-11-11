@@ -15,7 +15,7 @@
 //! windows-1251), а объявление может стоять в комментарии.
 
 use encoding_rs::{Encoding, UTF_16BE, UTF_16LE, WINDOWS_1251};
-use regex_lite::Regex;
+use regex::Regex;
 use std::sync::OnceLock;
 
 /// Результат декодирования документа.
