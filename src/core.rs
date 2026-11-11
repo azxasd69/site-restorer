@@ -952,6 +952,36 @@ impl Shared {
     }
 }
 
+/// Свернуть одну строку CDX в карту «адрес → самый поздний снимок» (2.4).
+///
+/// Строка: `[отпечаток, исходный адрес, тип, код, длина]`. Если адрес уже есть,
+/// остаётся снимок с большим отпечатком. `from_window = false` означает добор из
+/// полной истории: тогда страницы не трогаются — они уже взяты из окна (ФТ-128).
+fn fold_row(
+    best: &mut HashMap<String, (String, String, String, u64)>,
+    host: &str,
+    row: &[String],
+    from_window: bool,
+) {
+    if row.len() < 3 {
+        return;
+    }
+    let orig = row[1].clone();
+    let url = paths::normalize_url(&orig, host);
+    if !from_window && paths::file_type(&url) == "html" && best.contains_key(&url) {
+        return;
+    }
+    let ts = row[0].clone();
+    let mime = row[2].clone();
+    let len = row.get(4).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+    match best.get(&url) {
+        Some((old_ts, _, _, _)) if *old_ts >= ts => {}
+        _ => {
+            best.insert(url, (ts, orig, mime, len));
+        }
+    }
+}
+
 /// Временный файл прошлого прогона: `.part` или `.jsonl.part`.
 fn is_temp_file(path: &Path) -> bool {
     path.file_name()
@@ -1683,7 +1713,11 @@ impl Engine {
         // Быстрый запрос выполняется ВСЕГДА: постраничный режим (`page=N`) у
         // web.archive.org поддерживается не для всех сайтов и бывает пустым,
         // а запрос с limit=50000 отдаёт те же данные.
-        let mut rows: Vec<Vec<String>> = Vec::new();
+        // Строки индекса свёртываются в карту сразу, а не копятся в Vec:
+        // 200 страниц по 20 000 строк давали до 4 млн строк в памяти (2.4).
+        let mut best: HashMap<String, (String, String, String, u64)> = HashMap::new();
+        // Сколько строк разобрано: для проверки усечения и для отчёта.
+        let mut parsed_rows = 0usize;
         self.emit(
             "inventory",
             4.0,
@@ -1725,8 +1759,12 @@ impl Engine {
             };
             match result {
                 Ok(fetched) if fetched.status == 200 => {
-                    rows = parse_rows(&fetched.body);
-                    if !rows.is_empty() {
+                    let chunk = parse_rows(&fetched.body);
+                    parsed_rows = chunk.len();
+                    for row in &chunk {
+                        fold_row(&mut best, &self.host, row, true);
+                    }
+                    if !chunk.is_empty() {
                         break;
                     }
                 }
@@ -1781,19 +1819,19 @@ impl Engine {
             }
             break;
         }
-        if !rows.is_empty() {
+        if !best.is_empty() {
             // Список получен, пусть и со второй попытки: отказом это не считаем.
             // Раньше признак ставился на первой сетевой ошибке и не снимался,
             // поэтому отчёт показывал «адресов 1638, индекс не получен».
             self.inv_failed = false;
         }
-        if rows.is_empty() {
+        if best.is_empty() {
             self.shared.log(crate::tr::t(
                 "CDX: быстрый запрос пуст — постраничный обход",
                 "CDX: quick query empty — switching to paging",
             ));
             pages = pages.max(2);
-        } else if rows.len() + QUICK_SLACK >= QUICK_LIMIT {
+        } else if parsed_rows + QUICK_SLACK >= QUICK_LIMIT {
             // Оказаться у самой границы можно и на полном индексе: тогда обход
             // просто пройдёт целиком и снимет признак усечения (ниже).
             self.index_truncated = true;
@@ -1809,7 +1847,7 @@ impl Engine {
         // Оценка страниц бывает недоступна (503/504 на showNumPages): тогда pages = 1,
         // но обход всё равно нужен — иначе обрезанный список останется обрезанным.
         let estimate_known = pages > 1;
-        if rows.is_empty() || self.index_truncated {
+        if best.is_empty() || self.index_truncated {
             let max_pages = if self.index_max_pages == 0 {
                 if estimate_known { pages } else { usize::MAX }
             } else if estimate_known {
@@ -1899,7 +1937,7 @@ impl Engine {
                             self.switch_match_type("пустая первая страница");
                             if self.match_type_now() != before && !restarted {
                                 restarted = true;
-                                rows.clear();
+                                best.clear();
                                 attempts = 0;
                                 self.index_pages = 0;
                                 continue;
@@ -1910,7 +1948,9 @@ impl Engine {
                             ));
                             break;
                         }
-                        rows.extend(chunk);
+                        for row in &chunk {
+                            fold_row(&mut best, &self.host, row, true);
+                        }
                         page += 1;
                         self.index_pages = page;
                         if got > 0 && got < PAGE_LIMIT {
@@ -1932,7 +1972,7 @@ impl Engine {
                             self.switch_match_type("HTTP 504 на странице");
                             if self.match_type_now() != before && !restarted {
                                 restarted = true;
-                                rows.clear();
+                                best.clear();
                                 page = 0;
                                 attempts = 0;
                                 continue;
@@ -2000,7 +2040,6 @@ impl Engine {
 
         // Окно по дате (ФТ-128): страницы берутся из окна, ресурсы — из полной истории,
         // иначе современная страница останется без старых картинок и стилей.
-        let mut extra: Vec<Vec<String>> = Vec::new();
         if let Some(since) = self.since.clone() {
             self.shared.log(crate::tr::pick(
                 format!("адреса ограничены окном с {since}: страницы — из окна, ресурсы — вся история"),
@@ -2010,34 +2049,10 @@ impl Engine {
             if let Ok(fetched) = self.shared.fetch_stream(&full, &mut |_, _| {})
                 && fetched.status == 200
             {
-                extra = parse_rows(&fetched.body);
-            }
-        }
-
-        // Отбор по адресу: один адрес — одна запись, остаётся самый поздний снимок
-        // среди написаний, дающих один адрес (www, порт, схема).
-        let mut best: HashMap<String, (String, String, String, u64)> = HashMap::new();
-        for (row, from_window) in rows
-            .iter()
-            .map(|r| (r, true))
-            .chain(extra.iter().map(|r| (r, false)))
-        {
-            if row.len() < 3 {
-                continue;
-            }
-            let orig = row[1].clone();
-            let url = paths::normalize_url(&orig, &self.host);
-            // Из полной истории добираются только ресурсы: страницы уже взяты из окна.
-            if !from_window && paths::file_type(&url) == "html" && best.contains_key(&url) {
-                continue;
-            }
-            let ts = row[0].clone();
-            let mime = row[2].clone();
-            let len = row.get(4).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
-            match best.get(&url) {
-                Some((old_ts, _, _, _)) if *old_ts >= ts => {}
-                _ => {
-                    best.insert(url, (ts, orig, mime, len));
+                // Из полной истории добираются только ресурсы: страницы уже взяты
+                // из окна, поэтому `from_window = false`.
+                for row in parse_rows(&fetched.body) {
+                    fold_row(&mut best, &self.host, &row, false);
                 }
             }
         }
@@ -4286,6 +4301,73 @@ mod tests {
         assert!(saved.tmp.exists(), "до проверок файл лежит в .part");
         assert_eq!(fs::metadata(&saved.tmp).unwrap().len(), 10_000);
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// 2.4: свёртка строки в карту сохраняет самый поздний снимок и не даёт
+    /// добору из полной истории перебить страницу, взятую из окна по дате.
+    #[test]
+    fn fold_row_keeps_newest_and_spares_window_pages() {
+        let mut best: HashMap<String, (String, String, String, u64)> = HashMap::new();
+        let row = |ts: &str, url: &str, mime: &str| -> Vec<String> {
+            vec![
+                ts.to_string(),
+                url.to_string(),
+                mime.to_string(),
+                "200".to_string(),
+                "10".to_string(),
+            ]
+        };
+        // Старый снимок, затем новый того же адреса.
+        fold_row(
+            &mut best,
+            "example.com",
+            &row("20200101000000", "https://example.com/a", "text/html"),
+            true,
+        );
+        fold_row(
+            &mut best,
+            "example.com",
+            &row("20240101000000", "https://example.com/a", "text/html"),
+            true,
+        );
+        assert_eq!(best.len(), 1, "один адрес — одна запись");
+        assert_eq!(best["https://example.com/a"].0, "20240101000000");
+        // Более старый снимок не должен перебить уже найденный свежий.
+        fold_row(
+            &mut best,
+            "example.com",
+            &row("20190101000000", "https://example.com/a", "text/html"),
+            true,
+        );
+        assert_eq!(best["https://example.com/a"].0, "20240101000000");
+        // Добор из полной истории не трогает страницу, взятую из окна.
+        fold_row(
+            &mut best,
+            "example.com",
+            &row("20250101000000", "https://example.com/a", "text/html"),
+            false,
+        );
+        assert_eq!(
+            best["https://example.com/a"].0, "20240101000000",
+            "страница из окна не заменяется добором"
+        );
+        // А ресурс — заменяется: для картинок окно не действует.
+        fold_row(
+            &mut best,
+            "example.com",
+            &row("20200101000000", "https://example.com/i.png", "image/png"),
+            true,
+        );
+        fold_row(
+            &mut best,
+            "example.com",
+            &row("20250101000000", "https://example.com/i.png", "image/png"),
+            false,
+        );
+        assert_eq!(best["https://example.com/i.png"].0, "20250101000000");
+        // Короткая строка игнорируется, а не паникует.
+        fold_row(&mut best, "example.com", &["только".to_string()], true);
+        assert_eq!(best.len(), 2);
     }
 
     /// ФТ-149: смена режима сопоставления меняет сам запрос к CDX.
