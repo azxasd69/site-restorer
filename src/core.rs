@@ -178,6 +178,16 @@ enum Attempt {
 }
 
 /// Ответ архива.
+/// Заголовки ответа без тела: общая часть всех видов запроса.
+#[derive(Clone, Debug, Default)]
+pub struct Head {
+    pub status: u16,
+    pub retry_after: Option<f64>,
+    pub content_type: Option<String>,
+    /// Фактическое время отданного снимка (`Memento-Datetime`, ФТ-129).
+    pub memento: Option<String>,
+}
+
 struct Fetched {
     status: u16,
     body: Vec<u8>,
@@ -426,57 +436,126 @@ impl Shared {
         }
     }
 
-    fn fetch(&self, url: &str) -> Result<Fetched, String> {
+    /// Заголовки ответа: всё, что нужно вызывающему до чтения тела.
+    ///
+    /// Вынесено отдельно, чтобы `fetch`, `fetch_stream` и потоковая запись (Д-50)
+    /// собирались одной шапкой: раньше она была скопирована дважды, и каждая
+    /// новая доработка добавляла третью копию.
+    fn open(&self, index: bool, url: &str) -> Result<(Head, ureq::Body), String> {
         self.wait_if_paused();
         self.rate_wait();
-        let mut resp = self
-            .agent
+        let agent = if index {
+            &self.agent_index
+        } else {
+            &self.agent
+        };
+        let resp = agent
             .get(url)
             .header("User-Agent", UA)
             .header("Accept", "*/*")
             .call()
             .map_err(|e| e.to_string())?;
-        let status = resp.status().as_u16();
-        let retry_after = resp
-            .headers()
-            .get("retry-after")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.parse::<f64>().ok());
-        let content_type = resp
-            .headers()
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .map(|v| v.to_string());
-        let memento = resp
-            .headers()
-            .get("memento-datetime")
-            .and_then(|v| v.to_str().ok())
-            .and_then(stamp_from_http_date);
-        // Д-23: тело читается порциями, и между блоками проверяется отмена —
-        // остановка не ждёт таймаута текущего запроса, соединение закрывается сразу.
-        // Побочно снимается потолок 10 МиБ, который был у `read_to_vec` в ureq 3.
-        let mut body: Vec<u8> = Vec::new();
-        {
-            let mut reader = resp.body_mut().as_reader();
-            let mut chunk = [0u8; 64 * 1024];
-            loop {
-                if self.cancel.load(Ordering::Relaxed) {
-                    return Err("cancelled".to_string());
-                }
-                let read = match reader.read(&mut chunk) {
-                    Ok(0) => break,
-                    Ok(n) => n,
-                    Err(err) => return Err(err.to_string()),
-                };
-                body.extend_from_slice(&chunk[..read]);
+        let head = Head {
+            status: resp.status().as_u16(),
+            retry_after: resp
+                .headers()
+                .get("retry-after")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse::<f64>().ok()),
+            content_type: resp
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .map(|v| v.to_string()),
+            memento: resp
+                .headers()
+                .get("memento-datetime")
+                .and_then(|v| v.to_str().ok())
+                .and_then(stamp_from_http_date),
+        };
+        Ok((head, resp.into_body()))
+    }
+
+    /// Прочитать тело целиком. Между блоками проверяется отмена (Д-23):
+    /// остановка не ждёт таймаута запроса, соединение закрывается сразу.
+    /// Побочно снимается потолок 10 МиБ, который был у `read_to_vec` в ureq 3.
+    fn read_all(&self, body: ureq::Body) -> Result<Vec<u8>, String> {
+        let mut out: Vec<u8> = Vec::new();
+        let mut reader = body.into_reader();
+        let mut chunk = [0u8; 64 * 1024];
+        loop {
+            if self.cancel.load(Ordering::Relaxed) {
+                return Err("cancelled".to_string());
+            }
+            match reader.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => out.extend_from_slice(&chunk[..n]),
+                Err(err) => return Err(err.to_string()),
             }
         }
+        Ok(out)
+    }
+
+    /// То же чтение, но с отчётом о прогрессе: `on_progress(получено байт, число строк)`.
+    /// Нужно для индекса — ответ в десятки мегабайт идёт долго, и без счётчиков
+    /// полоса «замирает».
+    fn read_progress(
+        &self,
+        body: ureq::Body,
+        on_progress: &mut impl FnMut(u64, usize),
+    ) -> Result<Vec<u8>, String> {
+        let mut out: Vec<u8> = Vec::new();
+        let mut lines = 0usize;
+        let mut last = Instant::now();
+        let mut reader = body.into_reader();
+        let mut chunk = [0u8; 64 * 1024];
+        loop {
+            if self.cancel.load(Ordering::Relaxed) {
+                // Частичный ответ нельзя отдавать как инвентарь: получился бы
+                // неполный список адресов без признака ошибки.
+                return Err("cancelled".to_string());
+            }
+            let read = match reader.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => n,
+                Err(err) => return Err(err.to_string()),
+            };
+            let part = &chunk[..read];
+            out.extend_from_slice(part);
+            lines += part.iter().filter(|b| **b == b'\n').count();
+            if last.elapsed() >= Duration::from_millis(200) {
+                on_progress(out.len() as u64, lines);
+                last = Instant::now();
+            }
+        }
+        on_progress(out.len() as u64, lines);
+        Ok(out)
+    }
+
+    fn fetch(&self, url: &str) -> Result<Fetched, String> {
+        let (head, body) = self.open(false, url)?;
         Ok(Fetched {
-            status,
-            body,
-            retry_after,
-            content_type,
-            memento,
+            status: head.status,
+            body: self.read_all(body)?,
+            retry_after: head.retry_after,
+            content_type: head.content_type,
+            memento: head.memento,
+        })
+    }
+
+    /// То же, что `fetch`, но с отчётом о прогрессе чтения (индекс).
+    fn fetch_stream(
+        &self,
+        url: &str,
+        mut on_progress: impl FnMut(u64, usize),
+    ) -> Result<Fetched, String> {
+        let (head, body) = self.open(true, url)?;
+        Ok(Fetched {
+            status: head.status,
+            body: self.read_progress(body, &mut on_progress)?,
+            retry_after: head.retry_after,
+            content_type: head.content_type,
+            memento: head.memento,
         })
     }
 
@@ -484,75 +563,6 @@ impl Shared {
     fn pause_left(&self) -> u64 {
         let until = *self.pause_until.lock().unwrap();
         until.saturating_duration_since(Instant::now()).as_secs()
-    }
-
-    /// То же, что `fetch`, но тело читается порциями: пока идёт чтение,
-    /// вызывается `on_progress(получено байт, число строк)`. Нужно для индекса:
-    /// ответ в десятки мегабайт идёт долго, и без счётчиков полоса «замирает».
-    fn fetch_stream(
-        &self,
-        url: &str,
-        mut on_progress: impl FnMut(u64, usize),
-    ) -> Result<Fetched, String> {
-        self.wait_if_paused();
-        self.rate_wait();
-        let mut resp = self
-            .agent_index
-            .get(url)
-            .header("User-Agent", UA)
-            .header("Accept", "*/*")
-            .call()
-            .map_err(|e| e.to_string())?;
-        let status = resp.status().as_u16();
-        let retry_after = resp
-            .headers()
-            .get("retry-after")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.parse::<f64>().ok());
-        let content_type = resp
-            .headers()
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .map(|v| v.to_string());
-        let memento = resp
-            .headers()
-            .get("memento-datetime")
-            .and_then(|v| v.to_str().ok())
-            .and_then(stamp_from_http_date);
-        let mut body: Vec<u8> = Vec::new();
-        let mut lines = 0usize;
-        let mut last = Instant::now();
-        {
-            let mut reader = resp.body_mut().as_reader();
-            let mut chunk = [0u8; 64 * 1024];
-            loop {
-                if self.cancel.load(Ordering::Relaxed) {
-                    // Частичный ответ нельзя отдавать как инвентарь: получился бы
-                    // неполный список адресов без признака ошибки.
-                    return Err("cancelled".to_string());
-                }
-                let read = match reader.read(&mut chunk) {
-                    Ok(0) => break,
-                    Ok(n) => n,
-                    Err(err) => return Err(err.to_string()),
-                };
-                let part = &chunk[..read];
-                body.extend_from_slice(part);
-                lines += part.iter().filter(|b| **b == b'\n').count();
-                if last.elapsed() >= Duration::from_millis(200) {
-                    on_progress(body.len() as u64, lines);
-                    last = Instant::now();
-                }
-            }
-        }
-        on_progress(body.len() as u64, lines);
-        Ok(Fetched {
-            status,
-            body,
-            retry_after,
-            content_type,
-            memento,
-        })
     }
 
     /// Поставить глобальную паузу: воркеры увидят её перед следующим запросом.
@@ -1732,6 +1742,12 @@ impl Engine {
             }
             break;
         }
+        if !rows.is_empty() {
+            // Список получен, пусть и со второй попытки: отказом это не считаем.
+            // Раньше признак ставился на первой сетевой ошибке и не снимался,
+            // поэтому отчёт показывал «адресов 1638, индекс не получен».
+            self.inv_failed = false;
+        }
         if rows.is_empty() {
             self.shared.log(crate::tr::t(
                 "CDX: быстрый запрос пуст — постраничный обход",
@@ -1924,9 +1940,11 @@ impl Engine {
                     }
                 }
             }
-            if finished && !self.inv_failed {
-                // Обход прошёл до конца: прежнее усечение больше не действует.
+            if finished {
+                // Обход прошёл до конца: прежнее усечение больше не действует,
+                // а прежние сетевые отказы на страницах уже не важны.
                 self.index_truncated = false;
+                self.inv_failed = false;
             } else if self.index_truncated && !self.inv_failed {
                 self.shared.log(crate::tr::pick(
                     format!(
