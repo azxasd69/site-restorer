@@ -30,8 +30,14 @@ const TIMEOUT_FILE: u64 = 60;
 const TIMEOUT_INDEX: u64 = 120;
 /// Общий предел запроса (ПР-5): внешняя страховка поверх двух предыдущих.
 const TIMEOUT_TOTAL: u64 = 180;
-/// Размер выборки быстрого запроса индекса (ФТ-149): ровно столько строк — признак усечения.
+/// Размер выборки быстрого запроса индекса (ФТ-149).
+/// Архив отдаёт примерно столько строк, сколько попросили, но шапка JSON и
+/// неразобранные строки съедают несколько: на nginx.org при реальном усечении
+/// разбор дал 49 990 строк вместо 50 000. Поэтому усечение определяется не
+/// точным равенством, а попаданием в полосу допуска (проверено 12.11.2026).
 const QUICK_LIMIT: usize = 50_000;
+/// Допуск на шапку JSON и потери разбора при проверке усечения.
+const QUICK_SLACK: usize = 32;
 /// Предел страниц обхода по умолчанию (ФТ-149), задаётся `--index-max-pages`.
 const DEFAULT_INDEX_MAX_PAGES: usize = 200;
 /// Сколько более старых снимков пробовать, если свежий непригоден (ФТ-127).
@@ -1550,6 +1556,11 @@ impl Engine {
         )
     }
 
+    /// Текущий режим сопоставления (для сравнения до и после переключения).
+    fn match_type_now(&self) -> MatchType {
+        *self.shared.match_type.lock().unwrap()
+    }
+
     /// Переключить режим сопоставления (ФТ-149): на 504 домен не отдаётся,
     /// а префикс отвечает. Пишем в журнал один раз, чтобы не засорять вывод.
     fn switch_match_type(&self, reason: &str) {
@@ -1605,7 +1616,6 @@ impl Engine {
         // web.archive.org поддерживается не для всех сайтов и бывает пустым,
         // а запрос с limit=50000 отдаёт те же данные.
         let mut rows: Vec<Vec<String>> = Vec::new();
-        let quick = self.quick_query(self.since.as_deref());
         self.emit(
             "inventory",
             4.0,
@@ -1617,6 +1627,9 @@ impl Engine {
         // сайтов вообще не поддерживается. Сетевая ошибка значит, что порт схемы может
         // быть закрыт: тогда переключаем схему и пробуем снова (ОШ-2, ОШ-3).
         for attempt in 0..ARCHIVE_TRIES {
+            // Запрос собирается на каждой попытке: при 504 режим сопоставления
+            // переключается, и повтор должен уйти уже в новом режиме (ФТ-149).
+            let quick = self.quick_query(self.since.as_deref());
             let result = {
                 let started = Instant::now();
                 let mut on_index = |bytes: u64, lines: usize| {
@@ -1706,24 +1719,36 @@ impl Engine {
                 "CDX: quick query empty — switching to paging",
             ));
             pages = pages.max(2);
-        } else if rows.len() >= QUICK_LIMIT {
+        } else if rows.len() + QUICK_SLACK >= QUICK_LIMIT {
+            // Оказаться у самой границы можно и на полном индексе: тогда обход
+            // просто пройдёт целиком и снимет признак усечения (ниже).
             self.index_truncated = true;
-        } else {
-            // Быстрый запрос вернул весь индекс: страниц обходить не пришлось,
-            // но для отчёта считаем покрытие полным (иначе «0 страниц»).
-            self.index_pages = pages;
-            self.shared.log(crate::tr::t(
-                "CDX: список обрезан на 50000 адресах",
-                "CDX: address list truncated at 50000",
+            self.shared.log(crate::tr::pick(
+                format!("CDX: список обрезан на {QUICK_LIMIT} адресах"),
+                format!("CDX: address list truncated at {QUICK_LIMIT}"),
             ));
+        } else {
+            // Быстрый запрос вернул весь индекс: обход не нужен, покрытие полное.
+            // Иначе в отчёте стояло бы «0 страниц» при полном индексе.
+            self.index_pages = pages.max(1);
         }
-        if (rows.is_empty() || self.index_truncated) && pages > 1 {
+        // Оценка страниц бывает недоступна (503/504 на showNumPages): тогда pages = 1,
+        // но обход всё равно нужен — иначе обрезанный список останется обрезанным.
+        let estimate_known = pages > 1;
+        if rows.is_empty() || self.index_truncated {
             let max_pages = if self.index_max_pages == 0 {
-                pages
+                if estimate_known { pages } else { usize::MAX }
+            } else if estimate_known {
+                pages.min(self.index_max_pages).max(1)
             } else {
-                pages.min(self.index_max_pages)
+                self.index_max_pages
             };
-            if max_pages < pages {
+            let shown_pages = if max_pages == usize::MAX {
+                pages.max(2)
+            } else {
+                max_pages
+            };
+            if estimate_known && max_pages < pages {
                 self.index_truncated = true;
                 self.shared.log(crate::tr::pick(
                     format!(
@@ -1736,6 +1761,9 @@ impl Engine {
             }
             let mut page = 0usize;
             let mut attempts = 0u32;
+            let mut restarted = false;
+            // Обход закончился на странице короче PAGE_LIMIT — индекс собран целиком.
+            let mut finished = false;
             while page < max_pages {
                 if self.shared.cancel.load(Ordering::Relaxed) {
                     return Err("cancelled".to_string());
@@ -1744,7 +1772,7 @@ impl Engine {
                 let page_no = page;
                 self.emit(
                     "inventory",
-                    4.0 + 4.0 * page_no as f32 / max_pages as f32,
+                    4.0 + 4.0 * page_no as f32 / shown_pages as f32,
                     &crate::tr::pick(
                         format!("CDX: страница {} из {}", page_no + 1, max_pages),
                         format!("CDX: page {} of {}", page_no + 1, max_pages),
@@ -1757,7 +1785,7 @@ impl Engine {
                         let secs = started.elapsed().as_secs_f64();
                         let inner = 1.0 - (-secs / 15.0).exp();
                         let overall =
-                            4.0 + 4.0 * (page_no as f32 + inner as f32) / max_pages as f32;
+                            4.0 + 4.0 * (page_no as f32 + inner as f32) / shown_pages as f32;
                         self.emit(
                             "inventory",
                             overall,
@@ -1785,10 +1813,36 @@ impl Engine {
                         attempts = 0;
                         let chunk = parse_rows(&fetched.body);
                         let got = chunk.len();
+                        // Пустая первая страница при непустом списке — не конец
+                        // индекса, а отказ режима: на крупных доменах archive.org
+                        // отдаёт по страницам только prefix (проверено на nginx.org,
+                        // где domain отдал заголовок без строк).
+                        if got == 0 && page == 0 {
+                            // Пустая страница — не конец индекса. Если есть куда
+                            // переключить режим, начинаем заново; если режим уже
+                            // prefix, обход недоступен и об этом надо сказать прямо.
+                            let before = self.match_type_now();
+                            self.switch_match_type("пустая первая страница");
+                            if self.match_type_now() != before && !restarted {
+                                restarted = true;
+                                rows.clear();
+                                attempts = 0;
+                                self.index_pages = 0;
+                                continue;
+                            }
+                            self.shared.log(crate::tr::t(
+                                "CDX: постраничный обход не отдаёт записей — индекс остаётся обрезанным",
+                                "CDX: paging returns nothing — the index stays truncated",
+                            ));
+                            break;
+                        }
                         rows.extend(chunk);
                         page += 1;
                         self.index_pages = page;
-                        if got < PAGE_LIMIT {
+                        if got > 0 && got < PAGE_LIMIT {
+                            // Конец доказывает только непустая короткая страница:
+                            // пустой ответ означает отказ, а не конец индекса.
+                            finished = true;
                             break;
                         }
                         continue;
@@ -1796,6 +1850,20 @@ impl Engine {
                     Ok(fetched) => {
                         let code = fetched.status;
                         let retry = fetched.retry_after;
+                        if code == 504 {
+                            // Режим сопоставления влияет на разбиение на страницы:
+                            // продолжать в новом режиме нельзя — собранные страницы
+                            // пришлось бы смешать с чужими. Начинаем обход заново.
+                            let before = self.match_type_now();
+                            self.switch_match_type("HTTP 504 на странице");
+                            if self.match_type_now() != before && !restarted {
+                                restarted = true;
+                                rows.clear();
+                                page = 0;
+                                attempts = 0;
+                                continue;
+                            }
+                        }
                         if code == 429 || code >= 500 {
                             attempts += 1;
                             if attempts >= 3 {
@@ -1836,6 +1904,21 @@ impl Engine {
                         continue;
                     }
                 }
+            }
+            if finished && !self.inv_failed {
+                // Обход прошёл до конца: прежнее усечение больше не действует.
+                self.index_truncated = false;
+            } else if self.index_truncated && !self.inv_failed {
+                self.shared.log(crate::tr::pick(
+                    format!(
+                        "CDX: обход не дал полного индекса (страниц {}) — копия останется неполной",
+                        self.index_pages
+                    ),
+                    format!(
+                        "CDX: paging did not cover the index ({} pages) — the copy will stay incomplete",
+                        self.index_pages
+                    ),
+                ));
             }
         }
 
@@ -4079,6 +4162,32 @@ mod tests {
         assert_eq!(parse_pages("12"), Some(12));
         assert_eq!(parse_pages(""), None);
         assert_eq!(parse_pages(r#"{"pages": 0}"#), None);
+    }
+
+    /// ФТ-149: смена режима сопоставления меняет сам запрос к CDX.
+    /// Проверяется отдельно, потому что до правки запрос собирался один раз
+    /// до цикла повторов и переключение на prefix на повтор не влияло.
+    #[test]
+    fn match_type_changes_query() {
+        let dir = std::env::temp_dir().join(format!(
+            "sr-matchtype-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::create_dir_all(&dir);
+        let engine = Engine::new("example.com", &dir, 1, 0).unwrap();
+        assert!(
+            engine.quick_query(None).contains("matchType=domain"),
+            "по умолчанию режим domain"
+        );
+        engine.switch_match_type("тест");
+        let after = engine.quick_query(None);
+        assert!(
+            after.contains("matchType=prefix"),
+            "после 504 запрос должен идти в режиме prefix: {after}"
+        );
+        assert_eq!(engine.match_type_now(), MatchType::Prefix);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// ФТ-151: заголовочная строка инвентаря с водяным знаком не мешает чтению
