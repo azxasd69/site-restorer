@@ -74,7 +74,7 @@ jobs:
             target: x86_64-unknown-linux-musl
             features: "cli"
             apt: musl-tools
-            rustflags: "-C linker=musl-gcc"
+            rustflags: "-C linker=musl-gcc -C target-cpu=x86-64"
             out: SiteRestorer-linux-x64-cli
             max_mb: 15
           - os: ubuntu-latest
@@ -83,35 +83,35 @@ jobs:
             apt: >-
               libxkbcommon-dev libgl1-mesa-dev libegl1-mesa-dev libx11-dev libxcursor-dev
               libxrandr-dev libxi-dev libwayland-dev libfontconfig1-dev
-            rustflags: ""
+            rustflags: "-C target-cpu=x86-64"
             out: SiteRestorer-linux-x64-gui
             max_mb: 45
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             features: "gui"
             apt: ""
-            rustflags: "-C target-feature=+crt-static"
+            rustflags: "-C target-cpu=x86-64 -C target-feature=+crt-static"
             out: SiteRestorer-windows-x64.exe
             max_mb: 45
           - os: windows-latest
             target: i686-pc-windows-msvc
             features: "gui"
             apt: ""
-            rustflags: "-C target-feature=+crt-static"
+            rustflags: "-C target-cpu=x86-64 -C target-feature=+crt-static"
             out: SiteRestorer-windows-x86.exe
             max_mb: 35
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             features: "cli"
             apt: ""
-            rustflags: "-C target-feature=+crt-static"
+            rustflags: "-C target-cpu=x86-64 -C target-feature=+crt-static"
             out: SiteRestorer-windows-x64-cli.exe
             max_mb: 15
           - os: windows-latest
             target: i686-pc-windows-msvc
             features: "cli"
             apt: ""
-            rustflags: "-C target-feature=+crt-static"
+            rustflags: "-C target-cpu=x86-64 -C target-feature=+crt-static"
             out: SiteRestorer-windows-x86-cli.exe
             max_mb: 10
     runs-on: ${{ matrix.os }}
@@ -156,6 +156,38 @@ jobs:
         if: matrix.features == 'gui' && matrix.os == 'ubuntu-latest'
         run: cargo clippy --all-targets --release -- -D warnings
 
+      # Политика платформ: собранное под glibc-раннером не должно требовать
+      # версию выше 2.28, иначе двоичник не запустится на RHEL 8 / Debian 10.
+      - name: glibc floor (только linux-gnu)
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          set -e
+          SRC="target/${{ matrix.target }}/release/site-restorer"
+          MAX=$(objdump -T "$SRC" | grep -oE 'GLIBC_2\.[0-9]+' | sort -Vu | tail -1)
+          echo "максимальная требуемая версия glibc: $MAX"
+          # До Д-58 пол не выполняется (сборка идёт на glibc-раннере), поэтому
+          # проверка предупреждает, а не блокирует: иначе нельзя выпустить 3.6.0.
+          # После Д-58 включить строгий режим: GLIBC_FLOOR_STRICT=1.
+          if [ "$(printf '%s\n' "$MAX" | sed 's/GLIBC_//')" \> "2.28" ]; then
+            if [ "${GLIBC_FLOOR_STRICT:-0}" = "1" ]; then
+              echo "::error::бинарник требует glibc $MAX — политика разрешает не выше 2.28"
+              exit 1
+            fi
+            echo "::warning::бинарник требует glibc $MAX — пол 2.28 не достигнут (пункт Д-58)"
+          fi
+
+      # Манифест Windows: asInvoker, PerMonitorV2, longPathAware, supportedOS.
+      - name: Windows manifest
+        if: startsWith(matrix.target, 'x86_64-pc-windows') || startsWith(matrix.target, 'i686-pc-windows')
+        shell: pwsh
+        run: |
+          $exe = "target/${{ matrix.target }}/release/site-restorer.exe"
+          $text = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($exe))
+          $need = @('longPathAware', 'PerMonitorV2', 'asInvoker', '8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a')
+          $missing = $need | Where-Object { -not $text.Contains($_) }
+          if ($missing) { Write-Error "в манифесте нет: $($missing -join ', ')"; exit 1 }
+          Write-Output "манифест на месте: $($need -join ', ')"
+
       - name: Collect binary
         shell: bash
         run: |
@@ -189,9 +221,46 @@ jobs:
           name: rust-${{ matrix.target }}-${{ matrix.features }}
           path: dist/${{ matrix.out }}
 
+      # Отладочные символы архивируются, но в дистрибутив не попадают
+      # (политика платформ: PDB/dSYM — артефакт сборки, не поставка).
+      - uses: actions/upload-artifact@v4
+        if: startsWith(matrix.target, 'x86_64-pc-windows') || startsWith(matrix.target, 'i686-pc-windows')
+        continue-on-error: true
+        with:
+          name: pdb-${{ matrix.target }}-${{ matrix.features }}
+          path: target/${{ matrix.target }}/release/site-restorer.pdb
+          if-no-files-found: ignore
+
+  # Перечень состава сборки (SBOM, CycloneDX) — требование политики платформ.
+  # Прикладывается к релизу как отдельный файл, чтобы у потребителя был список
+  # компонентов с версиями и лицензиями.
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo-cyclonedx
+        run: |
+          set -e
+          cargo install cargo-cyclonedx --locked --version "^0.5" || cargo install cargo-cyclonedx --locked
+
+      - name: SBOM
+        run: |
+          set -e
+          cargo cyclonedx --format json --output-file sbom.cdx.json
+          ls -l sbom.cdx.json
+          python3 -c "import json,sys; d=json.load(open('sbom.cdx.json')); print('компонентов:', len(d.get('components', [])))"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.cdx.json
+
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [rust]
+    needs: [rust, sbom]
     runs-on: ubuntu-latest
     steps:
       # checkout первым: его git clean удаляет untracked-файлы, поэтому
@@ -202,6 +271,13 @@ jobs:
         with:
           path: assets
           merge-multiple: true
+
+      # SBOM кладём рядом с бинарниками: имя без каталога, чтобы попал в SHA256SUMS.
+      - name: SBOM into assets
+        run: |
+          set -e
+          if [ -f assets/sbom.cdx.json ]; then mv assets/sbom.cdx.json assets/SBOM-site-restorer.cdx.json; fi
+          ls -la assets
 
       - name: Package Linux bundle
         run: |

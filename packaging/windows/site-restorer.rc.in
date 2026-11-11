@@ -4,6 +4,10 @@
 
 1 ICON "packaging/icons/site-restorer.ico"
 
+// Манифест: asInvoker, PerMonitorV2, longPathAware, supportedOS Win10/11.
+// Тип 24 (RT_MANIFEST), идентификатор 1 — так его находит загрузчик Windows.
+1 24 "packaging/windows/site-restorer.manifest"
+
 1 VERSIONINFO
 FILEVERSION {{VERSION_NUM}}
 PRODUCTVERSION {{VERSION_NUM}}

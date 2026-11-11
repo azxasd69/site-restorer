@@ -14,6 +14,7 @@ use std::process::Command;
 fn main() {
     println!("cargo:rerun-if-changed=packaging/windows/site-restorer.rc.in");
     println!("cargo:rerun-if-changed=packaging/icons/site-restorer.ico");
+    println!("cargo:rerun-if-changed=packaging/windows/site-restorer.manifest");
 
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
@@ -28,6 +29,14 @@ fn main() {
         .collect::<Vec<_>>();
     let version_num = format!(
         "{},{},{},0",
+        nums.first().copied().unwrap_or(0),
+        nums.get(1).copied().unwrap_or(0),
+        nums.get(2).copied().unwrap_or(0)
+    );
+    // Манифесту нужна версия с точками и четырьмя числами: с «3.5.2» Windows
+    // не запускает программу (ошибка 14001, «параллельная конфигурация неверна»).
+    let version_dot = format!(
+        "{}.{}.{}.0",
         nums.first().copied().unwrap_or(0),
         nums.get(1).copied().unwrap_or(0),
         nums.get(2).copied().unwrap_or(0)
@@ -48,8 +57,23 @@ fn main() {
         println!("cargo:warning=иконка не скопирована: сборка без иконки");
         return;
     }
+    // Манифест тоже кладём рядом: rc.exe ищет его по относительному пути.
+    let manifest_src = manifest.join("packaging/windows/site-restorer.manifest");
+    match fs::read_to_string(&manifest_src) {
+        Ok(text) => {
+            let filled = text.replace("{{VERSION_DOT}}", &version_dot);
+            if fs::write(out.join("site-restorer.manifest"), filled).is_err() {
+                println!("cargo:warning=манифест не записан: сборка без манифеста");
+            }
+        }
+        Err(err) => println!("cargo:warning=манифест не прочитан ({err}): сборка без манифеста"),
+    }
     let source = template
         .replace("packaging/icons/site-restorer.ico", "site-restorer.ico")
+        .replace(
+            "packaging/windows/site-restorer.manifest",
+            "site-restorer.manifest",
+        )
         .replace("{{VERSION}}", &version)
         .replace("{{VERSION_NUM}}", &version_num);
     let rc_name = "site-restorer.rc";

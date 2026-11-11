@@ -91,8 +91,32 @@ Python и Go не собираются и не публикуются: `legacy/p
 ## Проверка релиза
 
 ```bash
-gh release view vX.Y.Z --json assets --jq '.assets[].name'   # ровно 8 имён
+gh release view vX.Y.Z --json assets --jq '.assets[].name'   # ровно 9 имён (ПЛ-11: с SBOM)
 curl -sL .../releases/download/vX.Y.Z/SHA256SUMS.txt          # суммы на месте
 ./SiteRestorer-windows-x64.exe --version                      # версия совпадает
 sha256sum -c SHA256SUMS.txt                                   # сходится
 ```
+
+### Проверки платформ (ТЗ 4.12, docs/PLATFORMS.md)
+
+| Что | Как | Ожидание |
+|---|---|---|
+| Манифест Windows | `mt.exe -nologo -inputresource:SiteRestorer-windows-x64.exe`;#1 -out:m.xml` и поиск `longPathAware`, `PerMonitorV2`, `asInvoker` | все три значения на месте (ПЛ-7) |
+| Подсистема оконной сборки | `dumpbin /headers` → `subsystem` | `2 (Windows GUI)`; у консольной — `3` |
+| Статический CRT | `dumpbin /dependents` | нет `VCRUNTIME140`, `MSVCP140`, `api-ms-win-crt-*` (ПЛ-7) |
+| Пол glibc | `objdump -T SiteRestorer-linux-x64-gui \| grep -oE 'GLIBC_2\.[0-9]+' \| sort -Vu \| tail -1` | не выше `2.28` (ПЛ-6); до Д-58 показывает 2.39 |
+| Базовая ISA | проверить `RUSTFLAGS` матрицы и `.cargo/config.toml` | `-C target-cpu=x86-64`, нет `native`/`v2`/`avx` (ПЛ-3, ПЛ-4) |
+| SBOM | файл `SBOM-site-restorer.cdx.json` в ассетах, компонент больше нуля | приложен и входит в суммы (ПЛ-11) |
+| Отладочные символы | артефакты `pdb-*` в сборке, в релизе `.pdb` нет | символы архивируются, но не поставляются (ПЛ-9) |
+
+Проверки манифеста, glibc и пола выполняются в конвейере автоматически; таблица
+нужна для ручной проверки после публикации и при разборе жалоб «не запускается».
+
+### Если файл не запускается у пользователя
+
+1. Спросить вывод `--version` в консоли: он работает даже при проблемах с окном.
+2. Ошибка 14001 («параллельная конфигурация неверна») — повреждён или неверен
+   манифест: пересобрать, проверить `assemblyIdentity` (версия четырьмя числами).
+3. Сообщение про OpenGL — графический бэкенд (ПЛ-13, пункт Д-60): пока GUI на
+   glow, в среде без OpenGL 3.3 окно не откроется, нужен консольный режим.
+4. `GLIBC_2.xx not found` — сборка не уложилась в пол 2.28 (ПЛ-6, пункт Д-58).

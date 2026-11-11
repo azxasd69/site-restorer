@@ -903,8 +903,14 @@ impl Shared {
         }
         let full = self.mirror.join(&item.path);
         if fs::rename(&saved.tmp, &full).is_err() {
-            let _ = fs::copy(&saved.tmp, &full);
-            let _ = fs::remove_file(&saved.tmp);
+            // Windows: rename НЕ перезаписывает существующий файл, поэтому сначала
+            // убираем старый (docs/PLATFORMS.md, «атомарная запись»). Копирование
+            // оставлено последней страховкой для чужих файловых систем.
+            let _ = fs::remove_file(&full);
+            if fs::rename(&saved.tmp, &full).is_err() {
+                let _ = fs::copy(&saved.tmp, &full);
+                let _ = fs::remove_file(&saved.tmp);
+            }
         }
         // Файл мог не пережить переименование: успех считаем только по факту.
         let size = fs::metadata(&full).ok().filter(|m| m.len() > 0)?.len() as usize;

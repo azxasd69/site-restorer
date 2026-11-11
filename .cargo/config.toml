@@ -1,0 +1,18 @@
+# Базовая ISA и линковка по платформам (docs/PLATFORMS.md).
+#
+# Здесь записано то, что действует при локальной сборке. В CI те же значения
+# передаются через RUSTFLAGS — и это важно: переменная окружения RUSTFLAGS
+# ПОЛНОСТЬЮ перекрывает rustflags из этого файла, а не дополняет их.
+#
+# Базовая ISA зафиксирована как x86-64 (SSE2). Запрещены: target-cpu=native и
+# любые x86-64-v2/v3/v4, глобальные +avx,+avx2,+fma,+sse4.*. Ускорения — только
+# runtime dispatch с обязательным скалярным путём.
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-cpu=x86-64", "-C", "target-feature=+crt-static"]
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "target-cpu=x86-64"]
+
+[target.x86_64-unknown-linux-musl]
+rustflags = ["-C", "target-cpu=x86-64"]

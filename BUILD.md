@@ -102,6 +102,41 @@ site-restorer --version
 У архивного Go-варианта были свои `--stage` и `--sanitize`; в актуальной
 реализации их нет.
 
+## Платформы и базовая ISA
+
+Правила и обоснования — `docs/PLATFORMS.md` (требования ТЗ ПЛ-1…ПЛ-14).
+
+- Обязательные релизные таргеты: `x86_64-pc-windows-msvc`,
+  `x86_64-unknown-linux-gnu`, macOS universal2 (`x86_64-apple-darwin` +
+  `aarch64-apple-darwin`). 32-битные сборки выпускаются до 3.7 включительно,
+  затем прекращаются (пункт Д-57).
+- Базовая ISA — x86-64 (SSE2): `-C target-cpu=x86-64`. Значение задано в
+  `.cargo/config.toml`; в конвейере те же флаги передаются через `RUSTFLAGS`.
+  Помните: `RUSTFLAGS` **перекрывает** настройку из файла целиком, а не
+  дополняет её — если задаёте переменную, базовая ISA должна быть в ней.
+- Запрещено: `target-cpu=native`, `x86-64-v2/v3/v4`, глобальные
+  `+avx,+avx2,+fma,+sse4.*`. Ускорения — только через runtime dispatch со
+  скалярным путём.
+- Windows: статический CRT (`+crt-static`) и манифест (asInvoker, PerMonitorV2,
+  longPathAware, supportedOS 10/11) встраиваются сборкой. Проверить, что
+  манифест на месте, можно так:
+
+```
+mt.exe -nologo -inputresource:target\release\site-restorer.exe`;#1 -out:m.xml
+```
+
+- Linux: собранное под glibc должно требовать не выше 2.28. Проверка:
+
+```
+objdump -T target/x86_64-unknown-linux-gnu/release/site-restorer \
+  | grep -oE 'GLIBC_2\.[0-9]+' | sort -Vu | tail -1
+```
+
+  Сборка на `ubuntu-latest` даёт 2.39 — задача Д-58 (zigbuild или manylinux).
+- Профиль релиза: `opt-level = 3`, `lto = "thin"`, `codegen-units = 1`,
+  `debug = "line-tables-only"`. Замер: 8,7 МБ против 7,2 МБ у прежнего
+  size-профиля при норме 45 МБ. Отладочные символы в поставку не входят.
+
 ## Что проверяется автоматически
 
 На каждый push и pull request:
@@ -116,6 +151,8 @@ site-restorer --version
 
 - гейт «тег = версия в `Cargo.toml`» (иначе сборка падает);
 - сборка шести бинарников, у каждого — `--version` и лимит размера;
+- проверка наличия манифеста в Windows-сборках и пола glibc в linux-gnu;
+- `SBOM-site-restorer.cdx.json` (перечень состава сборки, ПЛ-11);
 - `SiteRestorer-linux-x64.tar.gz`, `SHA256SUMS.txt`, релиз-ноты из `CHANGELOG.md`.
 
 Те же команды локально — в разделе выше.

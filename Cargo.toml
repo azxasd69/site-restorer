@@ -18,11 +18,20 @@ ureq = "3.5.1"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# Профиль релиза — по политике платформ (docs/PLATFORMS.md).
+#
+# Замер 12.11.2026, GUI windows-x64: opt-level="z"+lto=true → 7,2 МБ;
+# opt-level=3+lto="thin"+debug="line-tables-only" → 8,7 МБ. Разница 1,5 МБ при
+# норме ПР-6 45 МБ, поэтому принят профиль политики: он даёт более быстрый код и
+# читаемые строки в отладочной информации. Отладочные символы в поставку не идут:
+# CI забирает .pdb отдельным артефактом (cargo делает его при split-debuginfo).
 [profile.release]
-opt-level = "z"
-lto = true
+opt-level = 3
+lto = "thin"
 codegen-units = 1
+debug = "line-tables-only"
+split-debuginfo = "packed"
 panic = "abort"
-strip = "symbols"
+strip = "none"
 
 
