@@ -65,6 +65,10 @@ pub struct App {
     types: [usize; 8],
     rx: Option<Receiver<Msg>>,
     cancel: Option<Arc<AtomicBool>>,
+    /// Признак паузы: ядро видит его перед каждым запросом (Д-20).
+    paused_flag: Option<Arc<AtomicBool>>,
+    /// Состояние кнопки паузы.
+    paused: bool,
     pending_start: bool,
     /// Первый кадр: отдать фокус полю адреса, чтобы Ctrl+V работал сразу.
     focus_site: bool,
@@ -162,6 +166,8 @@ impl App {
             types: [0; 8],
             rx: None,
             cancel: None,
+            paused_flag: None,
+            paused: false,
             pending_start: std::env::var("SR_AUTOSTART")
                 .map(|v| !v.is_empty())
                 .unwrap_or(false),
@@ -302,6 +308,8 @@ impl App {
             let _ = tx_progress.send(Msg::Progress(Box::new(p.clone())));
         });
         self.cancel = Some(engine.cancel_token());
+        self.paused_flag = Some(engine.pause_token());
+        self.paused = false;
         self.rx = Some(rx);
         self.running = true;
         self.overall = 0.0;
@@ -315,11 +323,13 @@ impl App {
         std::thread::spawn(move || {
             let result = engine.run().map(|o| {
                 format!(
-                    "скачано {} из {}, страниц {}, битых ссылок {} — отчёт: {}",
+                    "скачано {} из {}, страниц {}, битых {}; снимки {} — {}; отчёт: {}",
                     o.ok,
                     o.total,
                     o.stats.pages,
                     o.stats.broken,
+                    o.oldest,
+                    o.newest,
                     o.report.display()
                 )
             });
@@ -352,7 +362,22 @@ impl App {
         }
     }
 
+    /// Пауза и продолжение: запросы в полёте заканчиваются, новые ждут (Д-20).
+    fn toggle_pause(&mut self) {
+        let Some(flag) = &self.paused_flag else {
+            return;
+        };
+        self.paused = !self.paused;
+        flag.store(self.paused, Ordering::Relaxed);
+        let t = self.lang.t();
+        self.push_log(if self.paused { t.paused } else { t.resumed }, Level::Warn);
+    }
+
     fn stop(&mut self) {
+        self.paused = false;
+        if let Some(flag) = &self.paused_flag {
+            flag.store(false, Ordering::Relaxed);
+        }
         if let Some(cancel) = &self.cancel {
             cancel.store(true, Ordering::Relaxed);
             let t = self.lang.t();
@@ -783,6 +808,10 @@ impl eframe::App for App {
                 ui.horizontal(|ui| {
                     if action_button(ui, t.start, 0, !self.running, 112.0, ACCENT) {
                         self.start();
+                    }
+                    let pause_label = if self.paused { t.resume } else { t.pause };
+                    if action_button(ui, pause_label, 1, self.running, 116.0, MUTED) {
+                        self.toggle_pause();
                     }
                     if action_button(ui, t.stop, 1, self.running, 108.0, ERR) {
                         self.stop();

@@ -30,7 +30,7 @@ mod tr;
 /// Версия берётся из Cargo.toml.
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-use core::{Engine, Progress};
+use core::{Engine, Progress, SnapshotMode};
 use std::path::PathBuf;
 
 /// В GUI-сборке подсистема windows, поэтому консоли у процесса нет. Если
@@ -163,6 +163,21 @@ unsafe fn init_com() {
     let _ = unsafe { OleInitialize(std::ptr::null_mut()) };
 }
 
+/// Есть ли графический сеанс: нужен для понятного сообщения до открытия окна (Д-13).
+#[cfg(feature = "gui")]
+fn graphics_available() -> bool {
+    #[cfg(all(unix, feature = "gui"))]
+    {
+        let display = std::env::var("DISPLAY").unwrap_or_default();
+        let wayland = std::env::var("WAYLAND_DISPLAY").unwrap_or_default();
+        return !display.trim().is_empty() || !wayland.trim().is_empty();
+    }
+    #[cfg(not(all(unix, feature = "gui")))]
+    {
+        true
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let console_mode = args
@@ -182,6 +197,23 @@ fn main() {
 
     #[cfg(feature = "gui")]
     {
+        // Д-13: до открытия окна проверяем, есть ли графический сеанс. Без него
+        // окно не откроется, а сообщение об этом должно называть пакеты и консоль.
+        if !graphics_available() {
+            let cli = cli_build_name();
+            let text = if std::env::var("SR_LANG").as_deref() == Ok("en") {
+                format!(
+                    "No graphics session found (DISPLAY and WAYLAND_DISPLAY are empty).\n\nInstall the graphics libraries: libgl1 libegl1 libxkbcommon-x11-0 libwayland-client0 (Debian/Ubuntu) or mesa-libGL libxkbcommon wayland (Fedora).\nOr use the command-line build: {cli} --cli --site <address>"
+                )
+            } else {
+                format!(
+                    "Графический сеанс не найден (переменные DISPLAY и WAYLAND_DISPLAY пусты).\n\nУстановите библиотеки графики: libgl1 libegl1 libxkbcommon-x11-0 libwayland-client0 (Debian/Ubuntu) или mesa-libGL libxkbcommon wayland (Fedora).\nЛибо используйте консольную сборку: {cli} --cli --site <адрес>"
+                )
+            };
+            eprintln!("{text}");
+            message_box(&text);
+            std::process::exit(3);
+        }
         // COM нужен до создания окна: без него чтение буфера обмена, которым
         // владеет другой процесс (браузер, блокнот), возвращает пустоту —
         // Ctrl+V «не работает», хотя копирование внутри окна работает.
@@ -222,7 +254,7 @@ fn main() {
                 )
             } else {
                 format!(
-                    "Не удалось открыть окно.\n\n{err}\n\nВидеодрайвер не предоставляет OpenGL 2.0+ (обычное дело в виртуальных машинах и удалённых сеансах).\nВоспользуйтесь консольной сборкой: {cli} --cli --site <адрес>"
+                    "Не удалось открыть окно.\n\n{err}\n\nВидеодрайвер не предоставляет OpenGL 2.0+ (обычное дело в виртуальных машинах и удалённых сеансах).\nПроверьте пакеты графики: libgl1 libegl1 libxkbcommon-x11-0 libwayland-client0.\nВоспользуйтесь консольной сборкой: {cli} --cli --site <адрес>"
                 )
             };
             message_box(&text);
@@ -246,6 +278,22 @@ struct Args {
     threads: usize,
     rate: f64,
     lang: String,
+    /// Режим выбора снимка: newest (по умолчанию), oldest или дата (ФТ-126).
+    snapshot: String,
+    /// Дата снимка для режима «на дату» (ФТ-126).
+    as_of: String,
+    /// Сколько более старых снимков пробовать (ФТ-127).
+    fallback_depth: Option<usize>,
+    /// Срок свежести снимка в днях (ФТ-130).
+    refresh_days: Option<u32>,
+    /// Проверить свежесть всех файлов (ФТ-130).
+    refresh: bool,
+    /// Окно адресов для страниц (ФТ-128).
+    since: String,
+    /// Предел добора по ссылкам (ФТ-128).
+    rescue_limit: Option<usize>,
+    /// Порог «пустой страницы» (ФТ-127).
+    stub_bytes: Option<usize>,
 }
 
 fn parse_args(args: &[String]) -> Args {
@@ -257,6 +305,14 @@ fn parse_args(args: &[String]) -> Args {
         threads: 0,
         rate: 0.0,
         lang: "ru".to_string(),
+        snapshot: "newest".to_string(),
+        as_of: String::new(),
+        fallback_depth: None,
+        refresh_days: None,
+        refresh: false,
+        since: String::new(),
+        rescue_limit: None,
+        stub_bytes: None,
     };
     let mut i = 0;
     while i < args.len() {
@@ -292,6 +348,38 @@ fn parse_args(args: &[String]) -> Args {
                     .unwrap_or(0.0);
                 i += 2;
             }
+            "--snapshot" => {
+                parsed.snapshot = args.get(i + 1).cloned().unwrap_or_default();
+                i += 2;
+            }
+            "--as-of" => {
+                parsed.as_of = args.get(i + 1).cloned().unwrap_or_default();
+                i += 2;
+            }
+            "--fallback-depth" => {
+                parsed.fallback_depth = args.get(i + 1).and_then(|v| v.parse().ok());
+                i += 2;
+            }
+            "--refresh-days" => {
+                parsed.refresh_days = args.get(i + 1).and_then(|v| v.parse().ok());
+                i += 2;
+            }
+            "--refresh" => {
+                parsed.refresh = true;
+                i += 1;
+            }
+            "--since" => {
+                parsed.since = args.get(i + 1).cloned().unwrap_or_default();
+                i += 2;
+            }
+            "--rescue-limit" => {
+                parsed.rescue_limit = args.get(i + 1).and_then(|v| v.parse().ok());
+                i += 2;
+            }
+            "--stub-bytes" => {
+                parsed.stub_bytes = args.get(i + 1).and_then(|v| v.parse().ok());
+                i += 2;
+            }
             _ => i += 1,
         }
     }
@@ -311,8 +399,8 @@ fn cli(args: &[String]) -> i32 {
         eprintln!(
             "{}",
             tr::t(
-                "использование: site-restorer --cli --site <адрес> [--out <папка>] [--workers N] [--threads N] [--rate N] [--limit N]",
-                "usage: site-restorer --cli --site <address> [--out <folder>] [--workers N] [--threads N] [--rate N] [--limit N]",
+                "использование: site-restorer --cli --site <адрес> [--out <папка>] [--workers N] [--threads N] [--rate N] [--limit N]\n  снимки: [--snapshot newest|oldest|<дата>] [--as-of ГГГГ[-ММ[-ДД]]] [--fallback-depth N] [--refresh-days N] [--refresh] [--since ГГГГ[-ММ]] [--rescue-limit N] [--stub-bytes N]",
+                "usage: site-restorer --cli --site <address> [--out <folder>] [--workers N] [--threads N] [--rate N] [--limit N]\n  snapshots: [--snapshot newest|oldest|<date>] [--as-of YYYY[-MM[-DD]]] [--fallback-depth N] [--refresh-days N] [--refresh] [--since YYYY[-MM]] [--rescue-limit N] [--stub-bytes N]",
             )
         );
         return 2;
@@ -331,6 +419,62 @@ fn cli(args: &[String]) -> i32 {
 
     engine.set_rate(parsed.rate);
     engine.set_build_threads(parsed.threads);
+    // Режим снимка: по умолчанию самый свежий; oldets и дата — для воспроизводимости (ФТ-126).
+    let snapshot_text = if parsed.as_of.trim().is_empty() {
+        parsed.snapshot.clone()
+    } else {
+        parsed.as_of.clone()
+    };
+    match SnapshotMode::parse(&snapshot_text) {
+        Some(mode) => engine.set_snapshot(mode),
+        None => {
+            eprintln!(
+                "{}",
+                tr::pick(
+                    format!("не разобрал режим снимка: {:?}", snapshot_text),
+                    format!("cannot parse snapshot mode: {:?}", snapshot_text),
+                )
+            );
+            return 2;
+        }
+    }
+    if let Some(depth) = parsed.fallback_depth {
+        engine.set_fallback_depth(depth);
+    }
+    if let Some(days) = parsed.refresh_days {
+        engine.set_refresh_days(days);
+    }
+    if parsed.refresh {
+        engine.set_refresh(true);
+    }
+    if !parsed.since.trim().is_empty() {
+        let digits: String = parsed
+            .since
+            .chars()
+            .filter(|c| c.is_ascii_digit())
+            .collect();
+        if digits.len() < 4 {
+            eprintln!(
+                "{}",
+                tr::pick(
+                    format!("не разобрал дату окна: {:?}", parsed.since),
+                    format!("cannot parse the window date: {:?}", parsed.since),
+                )
+            );
+            return 2;
+        }
+        let mut bound = digits;
+        while bound.len() < 14 {
+            bound.push('0');
+        }
+        engine.set_since(Some(bound));
+    }
+    if let Some(limit) = parsed.rescue_limit {
+        engine.set_rescue_limit(limit);
+    }
+    if let Some(bytes) = parsed.stub_bytes {
+        engine.set_stub_bytes(bytes);
+    }
     engine.set_progress_handler(|p: &Progress| match p.stage {
         "log" => println!("{}", p.text),
         "download" => {
@@ -453,6 +597,35 @@ fn cli(args: &[String]) -> i32 {
             println!(
                 "{}",
                 tr::pick(
+                    format!(
+                        "снимки: {} — {} (добор {}, без снимка {}, перезаписей {}, по ссылкам {})",
+                        outcome.oldest,
+                        outcome.newest,
+                        outcome.fallbacks,
+                        outcome
+                            .total
+                            .saturating_sub(outcome.ok)
+                            .min(outcome.fallbacks),
+                        outcome.collisions,
+                        outcome.rescued
+                    ),
+                    format!(
+                        "snapshots: {} — {} (fallbacks {}, no snapshot {}, collisions {}, rescued {})",
+                        outcome.oldest,
+                        outcome.newest,
+                        outcome.fallbacks,
+                        outcome
+                            .total
+                            .saturating_sub(outcome.ok)
+                            .min(outcome.fallbacks),
+                        outcome.collisions,
+                        outcome.rescued
+                    )
+                )
+            );
+            println!(
+                "{}",
+                tr::pick(
                     format!("копия:  {}", outcome.site.display()),
                     format!("copy:   {}", outcome.site.display())
                 )
@@ -466,7 +639,7 @@ fn cli(args: &[String]) -> i32 {
             );
             // Машиночитаемый итог: одна строка, чтобы прогон разбирался скриптом.
             println!(
-                "RESULT {{\"ok\":{},\"total\":{},\"files\":{},\"mirror\":{},\"unique\":{},\"pages\":{},\"foreign\":{},\"refs\":{},\"broken\":{},\"site\":\"{}\",\"report\":\"{}\"}}",
+                "RESULT {{\"ok\":{},\"total\":{},\"files\":{},\"mirror\":{},\"unique\":{},\"pages\":{},\"foreign\":{},\"refs\":{},\"broken\":{},\"fallbacks\":{},\"collisions\":{},\"rescued\":{},\"oldest\":\"{}\",\"newest\":\"{}\",\"site\":\"{}\",\"report\":\"{}\"}}",
                 outcome.ok,
                 outcome.total,
                 outcome.site_files,
@@ -476,6 +649,11 @@ fn cli(args: &[String]) -> i32 {
                 outcome.stats.foreign,
                 outcome.stats.refs,
                 outcome.stats.broken,
+                outcome.fallbacks,
+                outcome.collisions,
+                outcome.rescued,
+                outcome.oldest,
+                outcome.newest,
                 json_escape(&outcome.site.to_string_lossy()),
                 json_escape(&outcome.report.to_string_lossy()),
             );

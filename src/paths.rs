@@ -87,6 +87,19 @@ pub fn safe_seg(seg: &str) -> String {
     seg
 }
 
+/// Адрес -> относительный путь с учётом хоста: страницы поддоменов живут в своей папке,
+/// иначе `mail.example.com/index.html` и `example.com/index.html` — один файл (ФТ-131).
+pub fn url_to_local_path_in(url: &str, main_host: &str) -> String {
+    let parts = parse(url);
+    let rel = url_to_local_path(url);
+    let host = parts.host.trim_start_matches("www.");
+    let main = main_host.trim_start_matches("www.");
+    if host.is_empty() || main.is_empty() || host == main {
+        return rel;
+    }
+    format!("{}/{}", safe_seg(&parts.host), rel)
+}
+
 /// Адрес -> относительный путь файла в копии. Один адрес всегда даёт один путь.
 pub fn url_to_local_path(url: &str) -> String {
     let parts = parse(url);

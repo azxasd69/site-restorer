@@ -26,6 +26,16 @@ const ARCHIVE_PRIMARY: &str = "https://web.archive.org";
 const ARCHIVE_FALLBACK: &str = "http://web.archive.org";
 /// Сколько попыток даётся на обращение к индексу архива.
 const ARCHIVE_TRIES: u32 = 5;
+/// Сколько более старых снимков пробовать, если свежий непригоден (ФТ-127).
+const DEFAULT_FALLBACK_DEPTH: usize = 5;
+/// Верхний предел глубины добора: больше — это уже обход архива, а не добор.
+const MAX_FALLBACK_DEPTH: usize = 20;
+/// Через сколько дней снимок считается устаревшим для повторного прогона (ФТ-130).
+const DEFAULT_REFRESH_DAYS: u32 = 30;
+/// Предел добора по ссылкам: сколько отсутствующих целей догружать за прогон (ФТ-128).
+const DEFAULT_RESCUE_LIMIT: usize = 500;
+/// Порог «пустой страницы»: короче — считаем заглушкой и берём более старый снимок (ФТ-127).
+const DEFAULT_STUB_BYTES: usize = 256;
 const ERROR_MARKERS: [&[u8]; 3] = [
     b"This page is not available",
     b"doesn't have that page archived",
@@ -43,6 +53,60 @@ pub struct Item {
     pub mime: String,
     pub path: String,
     pub kind: &'static str,
+    /// Длина записи в архиве (сжатые байты): по ней оценивается потребность в месте.
+    pub len: u64,
+}
+
+/// Режим выбора снимка (ФТ-126).
+///
+/// `Newest` — цель «сейчас»: архив отдаёт самый свежий снимок адреса.
+/// `Oldest` — отпечаток из индекса, то есть самый ранний снимок: поведение 3.4.0,
+/// нужно для воспроизводимости прежних копий.
+/// `At` — снимок, ближайший к указанной дате.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SnapshotMode {
+    Newest,
+    Oldest,
+    At(String),
+}
+
+impl SnapshotMode {
+    /// Разбор значения командной строки. Дата принимается как 4, 6, 8 или 14 цифр.
+    pub fn parse(text: &str) -> Option<Self> {
+        let value = text.trim().to_ascii_lowercase();
+        match value.as_str() {
+            "newest" | "latest" | "fresh" => return Some(Self::Newest),
+            "oldest" | "first" => return Some(Self::Oldest),
+            _ => {}
+        }
+        let digits: String = value.chars().filter(|c| c.is_ascii_digit()).collect();
+        if digits.is_empty() || digits.len() > 14 {
+            return None;
+        }
+        let mut stamp = digits;
+        while stamp.len() < 14 {
+            stamp.push('0');
+        }
+        Some(Self::At(stamp))
+    }
+
+    /// Метка для журнала сборки.
+    fn tag(&self) -> String {
+        match self {
+            Self::Newest => "newest".to_string(),
+            Self::Oldest => "oldest".to_string(),
+            Self::At(stamp) => format!("at:{stamp}"),
+        }
+    }
+
+    /// Целевая дата воспроизведения для адреса с отпечатком `ts`.
+    fn target(&self, ts: &str) -> String {
+        match self {
+            Self::Newest => stamp_now(),
+            Self::Oldest => ts.to_string(),
+            Self::At(stamp) => stamp.clone(),
+        }
+    }
 }
 
 /// Снимок прогресса для UI и CLI.
@@ -66,8 +130,31 @@ pub struct Progress {
     pub types: [(&'static str, usize, usize); 4],
 }
 
-/// Ответ архива: код, тело, `Retry-After`, `Content-Type`.
-type Fetched = (u16, Vec<u8>, Option<f64>, Option<String>);
+/// Чем закончилась попытка получить снимок по одному отпечатку.
+enum Attempt {
+    /// Снимок пригоден и записан.
+    Saved {
+        size: usize,
+        /// Фактическое время снимка из ответа (`Memento-Datetime`).
+        memento: Option<String>,
+    },
+    /// Снимка по этому отпечатку нет (архив ответил 404).
+    Absent,
+    /// Снимок есть, но содержимое непригодно: пусто, заглушка, чужой адрес.
+    Unusable,
+    /// Сбой сети или отказ архива после повторов.
+    Failed,
+}
+
+/// Ответ архива.
+struct Fetched {
+    status: u16,
+    body: Vec<u8>,
+    retry_after: Option<f64>,
+    content_type: Option<String>,
+    /// Фактическое время отданного снимка (`Memento-Datetime`, ФТ-129).
+    memento: Option<String>,
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Stats {
@@ -93,6 +180,15 @@ pub struct Outcome {
     pub mirror_files: usize,
     /// Уникальных путей в инвентаре: столько файлов максимум может быть в зеркале.
     pub unique_paths: usize,
+    /// Сколько файлов получено добором к более старым снимкам (ФТ-127).
+    pub fallbacks: usize,
+    /// Сколько адресов отброшено из-за совпадения путей копии (ФТ-131).
+    pub collisions: usize,
+    /// Сколько целей добрано по ссылкам (ФТ-128).
+    pub rescued: usize,
+    /// Самый старый и самый новый снимок в копии: `ГГГГ-ММ-ДД` (ФТ-129).
+    pub oldest: String,
+    pub newest: String,
 }
 
 pub type Cb = Arc<dyn Fn(&Progress) + Send + Sync>;
@@ -155,6 +251,12 @@ struct Counters {
     ok: AtomicUsize,
     missing: AtomicUsize,
     errors: AtomicUsize,
+    /// Адреса без пригодного снимка (ФТ-127).
+    no_snapshot: AtomicUsize,
+    /// Сколько файлов получено добором к более старым снимкам (ФТ-127).
+    fallbacks: AtomicUsize,
+    /// Сколько адресов отброшено как совпавшие по пути копии (ФТ-131).
+    collisions: AtomicUsize,
     bytes: AtomicU64,
     win_bytes: AtomicU64,
     win_files: AtomicUsize,
@@ -206,6 +308,18 @@ struct Shared {
     cb: Option<Cb>,
     /// Глобальная пауза после серии 429: её соблюдают все воркеры, а не только контроллер.
     pause_until: Mutex<Instant>,
+    /// Пользователь поставил прогон на паузу (Д-20): новые запросы ждут.
+    paused: Arc<AtomicBool>,
+    /// Режим выбора снимка (ФТ-126): нужен воркерам.
+    snapshot: Mutex<SnapshotMode>,
+    /// Порог «пустой страницы» (ФТ-127).
+    stub_bytes: AtomicUsize,
+    /// Глубина добора к более старым снимкам (ФТ-127).
+    fallback_depth: AtomicUsize,
+    /// Файлы, которые надо скачать заново, несмотря на наличие на диске (ФТ-130).
+    refresh: Mutex<HashSet<String>>,
+    /// Дата снимка каждого файла зеркала: путь относительно зеркала -> отпечаток.
+    snapshots: Mutex<HashMap<String, String>>,
     /// Минимальный интервал между запросами (наносекунды), 0 — без ограничения.
     rate_nanos: AtomicU64,
     rate_next: Mutex<Instant>,
@@ -276,8 +390,19 @@ impl Shared {
             .get("content-type")
             .and_then(|v| v.to_str().ok())
             .map(|v| v.to_string());
+        let memento = resp
+            .headers()
+            .get("memento-datetime")
+            .and_then(|v| v.to_str().ok())
+            .and_then(stamp_from_http_date);
         let body = resp.body_mut().read_to_vec().map_err(|e| e.to_string())?;
-        Ok((status, body, retry_after, content_type))
+        Ok(Fetched {
+            status,
+            body,
+            retry_after,
+            content_type,
+            memento,
+        })
     }
 
     /// Сколько секунд осталось до конца общей паузы.
@@ -314,6 +439,11 @@ impl Shared {
             .get("content-type")
             .and_then(|v| v.to_str().ok())
             .map(|v| v.to_string());
+        let memento = resp
+            .headers()
+            .get("memento-datetime")
+            .and_then(|v| v.to_str().ok())
+            .and_then(stamp_from_http_date);
         let mut body: Vec<u8> = Vec::new();
         let mut lines = 0usize;
         let mut last = Instant::now();
@@ -341,13 +471,29 @@ impl Shared {
             }
         }
         on_progress(body.len() as u64, lines);
-        Ok((status, body, retry_after, content_type))
+        Ok(Fetched {
+            status,
+            body,
+            retry_after,
+            content_type,
+            memento,
+        })
     }
 
     /// Поставить глобальную паузу: воркеры увидят её перед следующим запросом.
     fn pause(&self, seconds: f64) {
         let until = Instant::now() + Duration::from_secs_f64(seconds.max(0.0));
         *self.pause_until.lock().unwrap() = until;
+    }
+
+    /// Ждёт, пока пользователь не снимет паузу (Д-20). Остановка прерывает ожидание.
+    fn wait_for_pause(&self) {
+        while self.paused.load(Ordering::Relaxed) {
+            if self.cancel.load(Ordering::Relaxed) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
     }
 
     fn wait_if_paused(&self) {
@@ -398,6 +544,9 @@ impl Shared {
         }
     }
 
+    /// Получает снимок адреса: сначала самый свежий пригодный, затем — добор к более
+    /// старым (ФТ-126, ФТ-127). Старые снимки запрашиваются только при непригодности
+    /// свежего; сбой сети добором не заменяется.
     fn fetch_one(&self, item: &Item) {
         if self.cancel.load(Ordering::Relaxed) {
             return;
@@ -406,125 +555,233 @@ impl Shared {
         if let Ok(meta) = fs::metadata(&full)
             && meta.len() > 0
         {
-            self.counters.done.fetch_add(1, Ordering::Relaxed);
-            self.counters.ok.fetch_add(1, Ordering::Relaxed);
-            self.types.lock().unwrap().slot(item.kind)[0] += 1;
-            return;
-        }
-
-        let year = &item.ts[..4.min(item.ts.len())];
-        let current = 1970 + (now_secs() / 31_556_952) as usize;
-        let mut tries: Vec<String> = vec![format!("/web/{}id_/{}", item.ts, item.url)];
-        for y in [
-            current,
-            current.saturating_sub(1),
-            current.saturating_sub(2),
-        ] {
-            let ys = y.to_string();
-            if ys != year {
-                tries.push(format!("/web/{ys}id_/{}", item.url));
-            }
-        }
-
-        let mut ok = false;
-        let mut missing = false;
-        let mut size = 0usize;
-        for path_q in &tries {
-            if self.cancel.load(Ordering::Relaxed) {
+            let stale = self
+                .refresh
+                .lock()
+                .map(|set| set.contains(&item.path))
+                .unwrap_or(false);
+            if !stale {
+                self.counters.done.fetch_add(1, Ordering::Relaxed);
+                self.counters.ok.fetch_add(1, Ordering::Relaxed);
+                self.types.lock().unwrap().slot(item.kind)[0] += 1;
                 return;
             }
-            let url = format!("{}{path_q}", self.archive_base());
-            for attempt in 0..2u32 {
-                let (status, body, retry_after, content_type) = match self.fetch(&url) {
-                    Ok(res) => res,
-                    Err(err) => {
-                        self.log(crate::tr::pick(
-                            format!("сеть: {err}"),
-                            format!("network: {err}"),
-                        ));
-                        // Сетевая ошибка может означать, что закрыт порт схемы:
-                        // пробуем другую схему, не бросая загрузку (ОШ-2).
-                        self.switch_archive("сеть недоступна");
-                        self.sleep(0.6 * (attempt + 1) as f64);
-                        continue;
-                    }
-                };
-                if status == 200 && body.len() > 20 && !is_error_page(&body) {
-                    if let Some(parent) = full.parent() {
-                        let _ = fs::create_dir_all(parent);
-                    }
-                    let tmp = tmp_path(&full);
-                    if fs::write(&tmp, &body).is_ok() {
-                        if fs::rename(&tmp, &full).is_err() {
-                            let _ = fs::copy(&tmp, &full);
-                            let _ = fs::remove_file(&tmp);
-                        }
-                        // файл мог не пережить переименование — считаем успех только по факту
-                        if let Ok(meta) = fs::metadata(&full)
-                            && meta.len() > 0
-                        {
-                            ok = true;
-                            size = body.len();
-                            // Индекс обещает страницу, а приходит картинка или PDF:
-                            // файл сохраняем как есть, но страницей не считаем (ОШ-5).
-                            if item.kind == "html" && crate::encoding::looks_binary(&body) {
-                                self.note_foreign();
-                                if console_verbose()
-                                    && self.foreign_logged.fetch_add(1, Ordering::Relaxed) < 3
-                                {
-                                    self.log(crate::tr::pick(
-                                        format!("вместо страницы — двоичный файл: {}", item.path),
-                                        format!("binary content behind a page path: {}", item.path),
-                                    ));
-                                }
-                            }
-                            if let Some(ct) = content_type {
-                                self.content_types
-                                    .lock()
-                                    .unwrap()
-                                    .insert(item.path.clone(), ct);
-                            }
-                        }
-                    }
-                    break;
+            // Снимок устарел: файл удаляем, иначе цепочка сочтёт его готовым.
+            let _ = fs::remove_file(long_path(&full));
+        }
+
+        let mode = self
+            .snapshot
+            .lock()
+            .map(|m| m.clone())
+            .unwrap_or(SnapshotMode::Newest);
+        let stub = self.stub_bytes.load(Ordering::Relaxed);
+        let depth = self.fallback_depth.load(Ordering::Relaxed);
+
+        let target = mode.target(&item.ts);
+        let mut result = self.attempt(item, &target, stub);
+        let mut used_stamp = target.clone();
+        let mut fell_back = false;
+
+        // Добор запускается только при отсутствии или непригодности (ФТ-127).
+        if depth > 0 && matches!(result, Attempt::Absent | Attempt::Unusable) {
+            for stamp in self.recent_stamps(item, depth) {
+                if self.cancel.load(Ordering::Relaxed) {
+                    return;
                 }
-                if status == 429 {
-                    self.counters.win_429.fetch_add(1, Ordering::Relaxed);
-                    let wait = retry_after.unwrap_or(20.0 * (attempt + 1) as f64);
-                    self.log(crate::tr::pick(
-                        format!("429: пауза {wait:.0} с"),
-                        format!("429: pause {wait:.0}s"),
-                    ));
-                    self.sleep(wait);
+                if stamp == target {
                     continue;
                 }
-                if status == 404 {
-                    missing = true;
+                if let Attempt::Saved { .. } = result {
                     break;
                 }
-                self.sleep(0.8 * (attempt + 1) as f64);
-            }
-            if ok {
-                break;
+                result = self.attempt(item, &stamp, stub);
+                used_stamp = stamp;
+                fell_back = true;
+                if matches!(result, Attempt::Saved { .. } | Attempt::Failed) {
+                    break;
+                }
             }
         }
 
         self.counters.done.fetch_add(1, Ordering::Relaxed);
-        if ok {
-            self.counters.ok.fetch_add(1, Ordering::Relaxed);
-            self.counters
-                .bytes
-                .fetch_add(size as u64, Ordering::Relaxed);
-            self.counters
-                .win_bytes
-                .fetch_add(size as u64, Ordering::Relaxed);
-            self.counters.win_files.fetch_add(1, Ordering::Relaxed);
-            self.types.lock().unwrap().slot(item.kind)[0] += 1;
-        } else if missing {
-            self.counters.missing.fetch_add(1, Ordering::Relaxed);
-        } else {
-            self.counters.errors.fetch_add(1, Ordering::Relaxed);
+        match result {
+            Attempt::Saved { size, memento } => {
+                self.counters.ok.fetch_add(1, Ordering::Relaxed);
+                self.counters
+                    .bytes
+                    .fetch_add(size as u64, Ordering::Relaxed);
+                self.counters
+                    .win_bytes
+                    .fetch_add(size as u64, Ordering::Relaxed);
+                self.counters.win_files.fetch_add(1, Ordering::Relaxed);
+                self.types.lock().unwrap().slot(item.kind)[0] += 1;
+                if fell_back {
+                    self.counters.fallbacks.fetch_add(1, Ordering::Relaxed);
+                    if console_verbose() {
+                        self.log(crate::tr::pick(
+                            format!(
+                                "snapshot:fallback:{} — {}",
+                                memento.as_deref().unwrap_or(&used_stamp),
+                                item.path
+                            ),
+                            format!(
+                                "snapshot:fallback:{} — {}",
+                                memento.as_deref().unwrap_or(&used_stamp),
+                                item.path
+                            ),
+                        ));
+                    }
+                }
+                let stamp = memento.unwrap_or(used_stamp);
+                if let Ok(mut map) = self.snapshots.lock() {
+                    map.insert(item.path.clone(), stamp);
+                }
+            }
+            Attempt::Absent => {
+                self.counters.missing.fetch_add(1, Ordering::Relaxed);
+                self.counters.no_snapshot.fetch_add(1, Ordering::Relaxed);
+                self.log(crate::tr::pick(
+                    format!("snapshot:none — {}", item.path),
+                    format!("snapshot:none — {}", item.path),
+                ));
+            }
+            Attempt::Unusable => {
+                self.counters.missing.fetch_add(1, Ordering::Relaxed);
+                self.counters.no_snapshot.fetch_add(1, Ordering::Relaxed);
+                self.log(crate::tr::pick(
+                    format!("snapshot:unusable — {}", item.path),
+                    format!("snapshot:unusable — {}", item.path),
+                ));
+            }
+            Attempt::Failed => {
+                self.counters.errors.fetch_add(1, Ordering::Relaxed);
+            }
         }
+    }
+
+    /// Одна попытка: `/web/<отпечаток>id_/<адрес>`.
+    fn attempt(&self, item: &Item, stamp: &str, stub: usize) -> Attempt {
+        let url = format!("{}/web/{stamp}id_/{}", self.archive_base(), item.url);
+        let mut transport_failed = false;
+        for attempt in 0..2u32 {
+            if self.cancel.load(Ordering::Relaxed) {
+                return Attempt::Failed;
+            }
+            self.wait_for_pause();
+            let fetched = match self.fetch(&url) {
+                Ok(fetched) => fetched,
+                Err(err) => {
+                    transport_failed = true;
+                    self.log(crate::tr::pick(
+                        format!("сеть: {err}"),
+                        format!("network: {err}"),
+                    ));
+                    // Закрытый порт схемы: пробуем другую схему (ОШ-2).
+                    self.switch_archive("сеть недоступна");
+                    self.sleep(0.6 * (attempt + 1) as f64);
+                    continue;
+                }
+            };
+            let status = fetched.status;
+            if status == 429 {
+                self.counters.win_429.fetch_add(1, Ordering::Relaxed);
+                let wait = fetched.retry_after.unwrap_or(20.0 * (attempt + 1) as f64);
+                self.log(crate::tr::pick(
+                    format!("429: пауза {wait:.0} с"),
+                    format!("429: pause {wait:.0}s"),
+                ));
+                self.sleep(wait);
+                continue;
+            }
+            if status == 404 {
+                return Attempt::Absent;
+            }
+            if status == 200 {
+                return match self.store(item, &fetched, stub) {
+                    Some(saved) => saved,
+                    None => Attempt::Unusable,
+                };
+            }
+            // 3xx без пригодного содержимого и прочие коды: содержимого нет.
+            if (300..400).contains(&status) {
+                return Attempt::Unusable;
+            }
+            transport_failed = true;
+            self.sleep(0.8 * (attempt + 1) as f64);
+        }
+        if transport_failed {
+            Attempt::Failed
+        } else {
+            Attempt::Unusable
+        }
+    }
+
+    /// Проверяет пригодность ответа и записывает файл. `None` — содержимое непригодно.
+    fn store(&self, item: &Item, fetched: &Fetched, stub: usize) -> Option<Attempt> {
+        let body = &fetched.body;
+        if body.is_empty() || is_error_page(body) {
+            return None;
+        }
+        let html = item.kind == "html";
+        if html && (body.len() < stub.max(20) || !looks_like_markup(body)) {
+            return None;
+        }
+        let full = self.mirror.join(&item.path);
+        if let Some(parent) = full.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let tmp = tmp_path(&full);
+        if fs::write(&tmp, body).is_err() {
+            return None;
+        }
+        if fs::rename(&tmp, &full).is_err() {
+            let _ = fs::copy(&tmp, &full);
+            let _ = fs::remove_file(&tmp);
+        }
+        // Файл мог не пережить переименование: успех считаем только по факту.
+        let size = fs::metadata(&full).ok().filter(|m| m.len() > 0)?.len() as usize;
+        if html && crate::encoding::looks_binary(body) {
+            self.note_foreign();
+            if console_verbose() && self.foreign_logged.fetch_add(1, Ordering::Relaxed) < 3 {
+                self.log(crate::tr::pick(
+                    format!("вместо страницы — двоичный файл: {}", item.path),
+                    format!("binary content behind a page path: {}", item.path),
+                ));
+            }
+        }
+        if let Some(ct) = &fetched.content_type {
+            self.content_types
+                .lock()
+                .unwrap()
+                .insert(item.path.clone(), ct.clone());
+        }
+        Some(Attempt::Saved {
+            size,
+            memento: fetched.memento.clone(),
+        })
+    }
+
+    /// Последние снимки адреса по индексу, от свежего к старому (для добора).
+    fn recent_stamps(&self, item: &Item, depth: usize) -> Vec<String> {
+        let query = format!(
+            "{}/cdx/search/cdx?url={}&output=json&fl=timestamp&filter=statuscode:200&limit=-{}",
+            self.archive_base(),
+            urlencode(&item.url),
+            depth
+        );
+        let Ok(fetched) = self.fetch(&query) else {
+            return Vec::new();
+        };
+        if fetched.status != 200 {
+            return Vec::new();
+        }
+        let mut stamps: Vec<String> = parse_rows(&fetched.body)
+            .into_iter()
+            .filter_map(|row| row.first().cloned())
+            .collect();
+        stamps.sort_by(|a, b| b.cmp(a));
+        stamps
     }
 }
 
@@ -549,6 +806,22 @@ pub struct Engine {
     pub workers: usize,
     /// Сколько потоков отдаётся сборке и проверке (0 — по числу ядер).
     pub build_threads: usize,
+    /// Режим выбора снимка (ФТ-126).
+    pub snapshot: SnapshotMode,
+    /// Сколько более старых снимков пробовать при непригодном свежем (ФТ-127).
+    pub fallback_depth: usize,
+    /// Через сколько дней снимок считается устаревшим для повторного прогона (ФТ-130).
+    pub refresh_days: u32,
+    /// Проверить свежесть всех файлов, не глядя на журнал (ФТ-130).
+    pub refresh: bool,
+    /// Окно адресов для страниц: запрос `from=` в индексе (ФТ-128).
+    pub since: Option<String>,
+    /// Предел добора по ссылкам (ФТ-128); 0 — выключено.
+    pub rescue_limit: usize,
+    /// Порог «пустой страницы» в байтах (ФТ-127).
+    pub stub_bytes: usize,
+    /// Адреса, добранные по ссылкам в этом прогоне.
+    pub rescued: AtomicUsize,
     shared: Arc<Shared>,
     cb: Option<Cb>,
     started: Instant,
@@ -590,6 +863,11 @@ struct JournalEntry {
     /// Под именем страницы лежит не страница (картинка, PDF): повторный прогон
     /// должен давать тот же счётчик, иначе «не страница» обнуляется.
     foreign: bool,
+    /// Фактическая дата снимка (ФТ-129): показывается в отчёте.
+    snapshot: String,
+    /// Когда файл получен или проверен (секунды Unix): по этому времени
+    /// решается, перекачивать ли его при повторном прогоне (ФТ-130).
+    checked: u64,
 }
 
 impl Engine {
@@ -611,6 +889,14 @@ impl Engine {
             limit,
             workers: workers.clamp(1, 64),
             build_threads: 0,
+            snapshot: SnapshotMode::Newest,
+            fallback_depth: DEFAULT_FALLBACK_DEPTH,
+            refresh_days: DEFAULT_REFRESH_DAYS,
+            refresh: false,
+            since: None,
+            rescue_limit: DEFAULT_RESCUE_LIMIT,
+            stub_bytes: DEFAULT_STUB_BYTES,
+            rescued: AtomicUsize::new(0),
             shared: Arc::new(Shared {
                 agent: ureq::Agent::new_with_config(config),
                 agent_archive: ARCHIVE_PRIMARY.to_string(),
@@ -621,6 +907,12 @@ impl Engine {
                 gate: Gate::new(MIN_THREADS),
                 cancel: Arc::new(AtomicBool::new(false)),
                 counters: Counters::default(),
+                paused: Arc::new(AtomicBool::new(false)),
+                snapshot: Mutex::new(SnapshotMode::Newest),
+                stub_bytes: AtomicUsize::new(DEFAULT_STUB_BYTES),
+                fallback_depth: AtomicUsize::new(DEFAULT_FALLBACK_DEPTH),
+                refresh: Mutex::new(HashSet::new()),
+                snapshots: Mutex::new(HashMap::new()),
                 types: Mutex::new(TypeCounts::default()),
                 cb: None,
                 pause_until: Mutex::new(Instant::now()),
@@ -734,6 +1026,10 @@ impl Engine {
         let rate = self.shared.rate_nanos.load(Ordering::Relaxed);
         let next = *self.shared.rate_next.lock().unwrap();
         let ct = self.shared.content_types.lock().unwrap().clone();
+        let paused_flag = Arc::clone(&self.shared.paused);
+        let mode = self.shared.snapshot.lock().unwrap().clone();
+        let stub = self.shared.stub_bytes.load(Ordering::Relaxed);
+        let depth = self.shared.fallback_depth.load(Ordering::Relaxed);
         self.shared = Arc::new(Shared {
             agent: self.shared.agent.clone(),
             agent_archive: self.shared.agent_archive.clone(),
@@ -748,6 +1044,12 @@ impl Engine {
             counters: Counters::default(),
             types: Mutex::new(TypeCounts::default()),
             cb: Some(shared),
+            paused: paused_flag,
+            snapshot: Mutex::new(mode),
+            stub_bytes: AtomicUsize::new(stub),
+            fallback_depth: AtomicUsize::new(depth),
+            refresh: Mutex::new(HashSet::new()),
+            snapshots: Mutex::new(HashMap::new()),
             pause_until: Mutex::new(paused),
             rate_nanos: AtomicU64::new(rate),
             rate_next: Mutex::new(next),
@@ -803,6 +1105,54 @@ impl Engine {
     }
 
     #[allow(dead_code)] // публичный API для внешних обвязок
+    /// Режим выбора снимка (ФТ-126).
+    pub fn set_snapshot(&mut self, mode: SnapshotMode) {
+        self.snapshot = mode.clone();
+        if let Ok(mut shared) = self.shared.snapshot.lock() {
+            *shared = mode;
+        }
+    }
+
+    /// Глубина добора к более старым снимкам (ФТ-127); 0 — выключить добор.
+    pub fn set_fallback_depth(&mut self, depth: usize) {
+        self.fallback_depth = depth.min(MAX_FALLBACK_DEPTH);
+        self.shared
+            .fallback_depth
+            .store(self.fallback_depth, Ordering::Relaxed);
+    }
+
+    /// Срок свежести снимка для повторного прогона, в днях (ФТ-130).
+    pub fn set_refresh_days(&mut self, days: u32) {
+        self.refresh_days = days;
+    }
+
+    /// Проверить свежесть всех файлов заново (ФТ-130).
+    pub fn set_refresh(&mut self, refresh: bool) {
+        self.refresh = refresh;
+    }
+
+    /// Окно адресов для страниц (ФТ-128).
+    pub fn set_since(&mut self, since: Option<String>) {
+        self.since = since;
+    }
+
+    /// Предел добора по ссылкам (ФТ-128).
+    pub fn set_rescue_limit(&mut self, limit: usize) {
+        self.rescue_limit = limit;
+    }
+
+    /// Порог «пустой страницы» (ФТ-127).
+    pub fn set_stub_bytes(&mut self, bytes: usize) {
+        self.stub_bytes = bytes;
+        self.shared.stub_bytes.store(bytes, Ordering::Relaxed);
+    }
+
+    /// Признак паузы: общий для ядра и интерфейса. В консольной сборке паузы нет.
+    #[cfg_attr(not(feature = "gui"), allow(dead_code))]
+    pub fn pause_token(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.shared.paused)
+    }
+
     pub fn cancel_token(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.shared.cancel)
     }
@@ -846,6 +1196,92 @@ impl Engine {
     }
 
     // ------------------------------------------------------------ inventory
+    /// Файлы, чей снимок старше `--refresh-days` или которые нужно проверить заново (ФТ-130).
+    /// Работает только в режиме «самый свежий»: в режиме `oldest` журнал ведёт себя как в 3.4.0.
+    fn stale_paths(&self) -> HashSet<String> {
+        if self.snapshot == SnapshotMode::Oldest && !self.refresh {
+            return HashSet::new();
+        }
+        let journal = self.load_journal();
+        if journal.is_empty() {
+            return HashSet::new();
+        }
+        let ttl_secs = if self.refresh {
+            0
+        } else {
+            u64::from(self.refresh_days) * 86_400
+        };
+        let now = now_secs();
+        journal
+            .into_iter()
+            .filter(|(path, entry)| {
+                if !self.mirror.join(path).exists() {
+                    return false;
+                }
+                // Срок считается от последней проверки, а не от даты снимка:
+                // у мёртвого сайта свежих снимков нет, но проверять их всё равно надо.
+                now.saturating_sub(entry.checked) >= ttl_secs
+            })
+            .map(|(path, _)| path)
+            .collect()
+    }
+
+    /// Запрос списка адресов: одна строка на адрес, самый ранний снимок, длина записи.
+    fn quick_query(&self, from: Option<&str>) -> String {
+        let mut extra = String::from(
+            "output=json&fl=timestamp,original,mimetype,statuscode,length&filter=statuscode:200&collapse=urlkey&limit=50000",
+        );
+        if let Some(from) = from {
+            extra.push_str("&from=");
+            extra.push_str(from);
+        }
+        self.cdx_query(&extra)
+    }
+
+    /// Страница индекса в резервном постраничном обходе.
+    fn paged_query(&self, page: usize) -> String {
+        let mut extra = format!(
+            "output=json&fl=timestamp,original,mimetype,statuscode,length&filter=statuscode:200&collapse=urlkey&limit={PAGE_LIMIT}&page={page}"
+        );
+        if let Some(from) = &self.since {
+            extra.push_str("&from=");
+            extra.push_str(from);
+        }
+        self.cdx_query(&extra)
+    }
+
+    /// Свободное место на диске, где лежит папка результата (Д-15).
+    fn free_space(&self) -> Option<u64> {
+        free_bytes(&self.out)
+    }
+
+    /// Потребность в месте: длина записей индекса (сжатые байты) с запасом на распаковку
+    /// и вторую копию дерева.
+    fn estimate_bytes(&self) -> u64 {
+        let sum: u64 = self.items.iter().map(|item| item.len).sum();
+        sum.saturating_mul(3)
+    }
+
+    /// Удалить временные файлы прошлых прогонов (Д-16).
+    fn cleanup_temp(&self) -> usize {
+        let mut removed = 0usize;
+        for dir in [&self.mirror, &self.site_dir, &self.out, &self.data_dir] {
+            if !dir.exists() {
+                continue;
+            }
+            for path in walk_files(dir) {
+                let temp = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.ends_with(".part") || n.ends_with(".jsonl.part"));
+                if temp && fs::remove_file(long_path(&path)).is_ok() {
+                    removed += 1;
+                }
+            }
+        }
+        removed
+    }
+
     fn cdx_query(&self, extra: &str) -> String {
         format!(
             "{}/cdx/search/cdx?url={}&matchType=domain&{}",
@@ -867,14 +1303,14 @@ impl Engine {
             .shared
             .fetch(&self.cdx_query("showNumPages=true&output=json"))
         {
-            Ok((200, body, _, _)) => {
-                if let Some(n) = parse_pages(&String::from_utf8_lossy(&body)) {
+            Ok(fetched) if fetched.status == 200 => {
+                if let Some(n) = parse_pages(&String::from_utf8_lossy(&fetched.body)) {
                     pages = n;
                 }
             }
-            Ok((code, _, _, _)) => self
+            Ok(fetched) => self
                 .shared
-                .log(format!("CDX: оценка недоступна (HTTP {code})")),
+                .log(format!("CDX: оценка недоступна (HTTP {})", fetched.status)),
             Err(err) => self.shared.log(crate::tr::pick(
                 format!("CDX: оценка — ошибка {err}"),
                 format!("CDX: estimate failed: {err}"),
@@ -885,9 +1321,7 @@ impl Engine {
         // web.archive.org поддерживается не для всех сайтов и бывает пустым,
         // а запрос с limit=50000 отдаёт те же данные.
         let mut rows: Vec<Vec<String>> = Vec::new();
-        let query = self.cdx_query(
-            "output=json&fl=timestamp,original,mimetype,statuscode&filter=statuscode:200&collapse=urlkey&limit=50000",
-        );
+        let quick = self.quick_query(self.since.as_deref());
         self.emit(
             "inventory",
             4.0,
@@ -922,16 +1356,18 @@ impl Engine {
                         false,
                     );
                 };
-                self.shared.fetch_stream(&query, &mut on_index)
+                self.shared.fetch_stream(&quick, &mut on_index)
             };
             match result {
-                Ok((200, body, _, _)) => {
-                    rows = parse_rows(&body);
+                Ok(fetched) if fetched.status == 200 => {
+                    rows = parse_rows(&fetched.body);
                     if !rows.is_empty() {
                         break;
                     }
                 }
-                Ok((code, _, retry, _)) => {
+                Ok(fetched) => {
+                    let code = fetched.status;
+                    let retry = fetched.retry_after;
                     self.shared.log(crate::tr::pick(
                         format!("CDX: список — HTTP {code}"),
                         format!("CDX: list — HTTP {code}"),
@@ -996,9 +1432,7 @@ impl Engine {
                 if self.shared.cancel.load(Ordering::Relaxed) {
                     return Err("cancelled".to_string());
                 }
-                let query = self.cdx_query(&format!(
-                    "output=json&fl=timestamp,original,mimetype,statuscode&filter=statuscode:200&collapse=urlkey&limit={PAGE_LIMIT}&page={page}"
-                ));
+                let query = self.paged_query(page);
                 let page_no = page;
                 self.emit(
                     "inventory",
@@ -1039,9 +1473,9 @@ impl Engine {
                     self.shared.fetch_stream(&query, &mut on_page)
                 };
                 match result {
-                    Ok((200, body, _, _)) => {
+                    Ok(fetched) if fetched.status == 200 => {
                         attempts = 0;
-                        let chunk = parse_rows(&body);
+                        let chunk = parse_rows(&fetched.body);
                         let got = chunk.len();
                         rows.extend(chunk);
                         page += 1;
@@ -1050,7 +1484,9 @@ impl Engine {
                         }
                         continue;
                     }
-                    Ok((code, _, retry, _)) => {
+                    Ok(fetched) => {
+                        let code = fetched.status;
+                        let retry = fetched.retry_after;
                         if code == 429 || code >= 500 {
                             attempts += 1;
                             if attempts >= 3 {
@@ -1094,34 +1530,89 @@ impl Engine {
             }
         }
 
-        let mut best: HashMap<String, (String, String, String)> = HashMap::new();
-        for row in &rows {
+        // Окно по дате (ФТ-128): страницы берутся из окна, ресурсы — из полной истории,
+        // иначе современная страница останется без старых картинок и стилей.
+        let mut extra: Vec<Vec<String>> = Vec::new();
+        if let Some(since) = self.since.clone() {
+            self.shared.log(crate::tr::pick(
+                format!("адреса ограничены окном с {since}: страницы — из окна, ресурсы — вся история"),
+                format!("address list limited from {since}: pages from the window, assets from full history"),
+            ));
+            let full = self.quick_query(None);
+            if let Ok(fetched) = self.shared.fetch_stream(&full, &mut |_, _| {})
+                && fetched.status == 200
+            {
+                extra = parse_rows(&fetched.body);
+            }
+        }
+
+        // Отбор по адресу: один адрес — одна запись, остаётся самый поздний снимок
+        // среди написаний, дающих один адрес (www, порт, схема).
+        let mut best: HashMap<String, (String, String, String, u64)> = HashMap::new();
+        for (row, from_window) in rows
+            .iter()
+            .map(|r| (r, true))
+            .chain(extra.iter().map(|r| (r, false)))
+        {
             if row.len() < 3 {
                 continue;
             }
-            let ts = row[0].clone();
             let orig = row[1].clone();
-            let mime = row[2].clone();
             let url = paths::normalize_url(&orig, &self.host);
+            // Из полной истории добираются только ресурсы: страницы уже взяты из окна.
+            if !from_window && paths::file_type(&url) == "html" && best.contains_key(&url) {
+                continue;
+            }
+            let ts = row[0].clone();
+            let mime = row[2].clone();
+            let len = row.get(4).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
             match best.get(&url) {
-                Some((old_ts, _, _)) if *old_ts >= ts => {}
+                Some((old_ts, _, _, _)) if *old_ts >= ts => {}
                 _ => {
-                    best.insert(url, (ts, orig, mime));
+                    best.insert(url, (ts, orig, mime, len));
                 }
             }
         }
 
-        let mut items: Vec<Item> = best
-            .into_iter()
-            .map(|(url, (ts, orig, mime))| Item {
-                path: paths::url_to_local_path(&url),
+        // Один путь копии — одна версия (ФТ-131): из адресов, дающих один файл,
+        // остаётся самый свежий снимок; остальные не скачиваются вовсе.
+        let mut by_path: HashMap<String, Item> = HashMap::with_capacity(best.len());
+        let mut collisions = 0usize;
+        for (url, (ts, orig, mime, len)) in best {
+            let item = Item {
+                path: paths::url_to_local_path_in(&url, &self.host),
                 kind: paths::file_type(&url),
                 url,
                 ts,
                 orig,
                 mime,
-            })
-            .collect();
+                len,
+            };
+            match by_path.get(&item.path) {
+                Some(prev) if keep_previous(&item, prev) => {
+                    collisions += 1;
+                }
+                Some(_) => {
+                    collisions += 1;
+                    by_path.insert(item.path.clone(), item);
+                }
+                None => {
+                    by_path.insert(item.path.clone(), item);
+                }
+            }
+        }
+        self.shared
+            .counters
+            .collisions
+            .store(collisions, Ordering::Relaxed);
+        if collisions > 0 {
+            self.shared.log(crate::tr::pick(
+                format!("одна страница на несколько адресов: отброшено {collisions}"),
+                format!("one file per several addresses: {collisions} dropped"),
+            ));
+        }
+
+        let mut items: Vec<Item> = by_path.into_values().collect();
         items.sort_by(|a, b| a.url.cmp(&b.url));
         if self.limit > 0 {
             items.truncate(self.limit);
@@ -1136,13 +1627,14 @@ impl Engine {
         let mut inv = String::new();
         for item in &items {
             inv.push_str(&format!(
-                "{{\"url\":\"{}\",\"ts\":\"{}\",\"orig\":\"{}\",\"mime\":\"{}\",\"path\":\"{}\",\"type\":\"{}\"}}\n",
+                "{{\"url\":\"{}\",\"ts\":\"{}\",\"orig\":\"{}\",\"mime\":\"{}\",\"path\":\"{}\",\"type\":\"{}\",\"len\":{}}}\n",
                 json_escape(&item.url),
                 json_escape(&item.ts),
                 json_escape(&item.orig),
                 json_escape(&item.mime),
                 json_escape(&item.path),
-                item.kind
+                item.kind,
+                item.len
             ));
         }
         fs::write(self.data_dir.join("inventory.jsonl"), inv).map_err(|e| e.to_string())?;
@@ -1202,14 +1694,43 @@ impl Engine {
 
     fn download(&mut self) -> Result<(), String> {
         fs::create_dir_all(&self.mirror).map_err(|e| e.to_string())?;
+        // Что перекачать заново: снимок старше срока свежести (ФТ-130).
+        let refresh = self.stale_paths();
+        if !refresh.is_empty() {
+            self.shared.log(crate::tr::pick(
+                format!(
+                    "свежесть: {} файлов старше {} дней, перекачиваю",
+                    refresh.len(),
+                    self.refresh_days
+                ),
+                format!(
+                    "freshness: {} files older than {} days, re-downloading",
+                    refresh.len(),
+                    self.refresh_days
+                ),
+            ));
+            if let Ok(mut set) = self.shared.refresh.lock() {
+                *set = refresh;
+            }
+        }
         let mut todo: Vec<Item> = Vec::new();
         let mut already = 0usize;
         for item in &self.items {
             let full = self.mirror.join(&item.path);
             match fs::metadata(&full) {
                 Ok(meta) if meta.len() > 0 => {
-                    already += 1;
-                    self.shared.types.lock().unwrap().slot(item.kind)[0] += 1;
+                    let stale = self
+                        .shared
+                        .refresh
+                        .lock()
+                        .map(|set| set.contains(&item.path))
+                        .unwrap_or(false);
+                    if stale {
+                        todo.push(item.clone());
+                    } else {
+                        already += 1;
+                        self.shared.types.lock().unwrap().slot(item.kind)[0] += 1;
+                    }
                 }
                 _ => todo.push(item.clone()),
             }
@@ -1408,6 +1929,15 @@ impl Engine {
                         .site_dir
                         .join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
 
+                    // Дата снимка файла: записывается в журнал, показывается в отчёте (ФТ-129).
+                    let snapshot = self
+                        .shared
+                        .snapshots
+                        .lock()
+                        .ok()
+                        .and_then(|map| map.get(&rel).cloned())
+                        .or_else(|| journal.get(&rel).map(|prev| prev.snapshot.clone()))
+                        .unwrap_or_default();
                     let meta = fs::metadata(src).ok()?;
                     let size = meta.len();
                     let mtime = meta
@@ -1475,6 +2005,8 @@ impl Engine {
                                     targets: Vec::new(),
                                     page: false,
                                     foreign: is_page,
+                                    snapshot,
+                                    checked: now_secs(),
                                 },
                             ));
                         }
@@ -1603,6 +2135,8 @@ impl Engine {
                                 targets,
                                 page: is_page,
                                 foreign: false,
+                                snapshot,
+                                checked: now_secs(),
                             },
                         ));
                     }
@@ -1621,6 +2155,8 @@ impl Engine {
                             targets: Vec::new(),
                             page: false,
                             foreign: false,
+                            snapshot,
+                            checked: now_secs(),
                         },
                     ))
                 })
@@ -1783,13 +2319,16 @@ impl Engine {
         lines.filter_map(parse_journal_line).collect()
     }
 
-    /// Метка журнала: формат, версия сборки и хост.
+    /// Метка журнала: формат, версия сборки, хост, режим снимка и окно адресов.
+    /// Смена режима или окна делает журнал непригодным: копия собирается заново.
     fn journal_tag(&self) -> String {
         format!(
-            "#journal {} {} {}",
+            "#journal {} {} {} {} {}",
             JOURNAL_FORMAT,
             env!("CARGO_PKG_VERSION"),
-            self.host
+            self.host,
+            self.snapshot.tag(),
+            self.since.as_deref().unwrap_or("-")
         )
     }
 
@@ -1802,8 +2341,13 @@ impl Engine {
             out.push_str("{\"path\":\"");
             out.push_str(&json_escape(rel));
             out.push_str(&format!(
-                "\",\"size\":{},\"mtime\":{},\"page\":{},\"foreign\":{},\"targets\":[",
-                entry.size, entry.mtime, entry.page, entry.foreign
+                "\",\"size\":{},\"mtime\":{},\"page\":{},\"foreign\":{},\"snapshot\":\"{}\",\"checked\":{},\"targets\":[",
+                entry.size,
+                entry.mtime,
+                entry.page,
+                entry.foreign,
+                json_escape(&entry.snapshot),
+                entry.checked
             ));
             for (i, key) in entry.targets.iter().enumerate() {
                 if i > 0 {
@@ -1825,6 +2369,42 @@ impl Engine {
         if fs::write(&tmp, out).is_ok() {
             let _ = fs::rename(&tmp, &path);
         }
+    }
+
+    /// Самый старый и самый новый снимок копии по журналу (ФТ-129).
+    fn snapshot_range(&self) -> (String, String) {
+        let journal = self.journal.lock().unwrap();
+        let mut oldest = String::new();
+        let mut newest = String::new();
+        for entry in journal.values() {
+            if entry.snapshot.len() < 8 {
+                continue;
+            }
+            if oldest.is_empty() || entry.snapshot < oldest {
+                oldest = entry.snapshot.clone();
+            }
+            if newest.is_empty() || entry.snapshot > newest {
+                newest = entry.snapshot.clone();
+            }
+        }
+        (stamp_readable(&oldest), stamp_readable(&newest))
+    }
+
+    /// Сколько файлов копии старше трёх лет и их доля в процентах (ФТ-129).
+    fn old_share(&self, years: u32) -> (usize, usize) {
+        let journal = self.journal.lock().unwrap();
+        let mut old = 0usize;
+        let mut total = 0usize;
+        for entry in journal.values() {
+            if entry.snapshot.len() < 8 {
+                continue;
+            }
+            total += 1;
+            if stamp_age_days(&entry.snapshot).is_some_and(|days| days > years * 365) {
+                old += 1;
+            }
+        }
+        (old, total)
     }
 
     /// «windows-1251: 120, koi8-r: 2» — для журнала и отчёта.
@@ -1960,6 +2540,23 @@ impl Engine {
             .collect::<HashSet<&str>>()
             .len();
         let tr2 = |ru: &str, en: &str| crate::tr::pick(ru.to_string(), en.to_string());
+        let (oldest, newest) = self.snapshot_range();
+        let (old_n, old_total) = self.old_share(3);
+        let old_pct = 100.0 * old_n as f32 / old_total.max(1) as f32;
+        // Копия не может быть свежее архива: если больше половины файлов старше трёх лет,
+        // это надо сказать прямо, а не прятать в таблице (ФТ-129).
+        let fresh_warn = if old_total > 0 && old_n * 2 > old_total {
+            tr2(
+                &format!(
+                    "Больше половины файлов копии старше трёх лет ({old_n} из {old_total}): архив не содержит более свежих снимков этих адресов."
+                ),
+                &format!(
+                    "More than half of the copy is older than three years ({old_n} of {old_total}): the archive holds no fresher snapshots for these addresses."
+                ),
+            )
+        } else {
+            String::new()
+        };
         let doc = REPORT_TMPL
             .replace("{{lang}}", if crate::tr::is_english() { "en" } else { "ru" })
             .replace("{{t_title}}", &tr2("Отчёт:", "Report:"))
@@ -2032,6 +2629,49 @@ impl Engine {
                     .to_string(),
             )
             .replace("{{rows}}", &rows)
+            .replace("{{t_snap_new}}", &tr2("Самый новый снимок", "Newest snapshot"))
+            .replace("{{t_snap_old}}", &tr2("Самый старый снимок", "Oldest snapshot"))
+            .replace("{{t_snap_range}}", &tr2("Годы снимков", "Snapshot years"))
+            .replace("{{t_old}}", &tr2("Файлов старше трёх лет", "Files older than three years"))
+            .replace("{{t_fallbacks}}", &tr2("Добрано к старым снимкам", "Fell back to older snapshots"))
+            .replace("{{t_no_snapshot}}", &tr2("Без пригодного снимка", "No usable snapshot"))
+            .replace("{{t_collisions}}", &tr2("Перезаписей путей", "Path collisions"))
+            .replace("{{t_rescued}}", &tr2("Добрано по ссылкам", "Rescued by links"))
+            .replace("{{t_snapshot}}", &tr2("Снимки", "Snapshots"))
+            .replace("{{t_fresh}}", &tr2("Свежесть копии", "Copy freshness"))
+            .replace("{{snap_new}}", &newest)
+            .replace("{{snap_old}}", &oldest)
+            .replace("{{snap_range}}", &format!("{oldest} — {newest}"))
+            .replace("{{old_files}}", &format!("{old_n} ({old_pct:.0}%)"))
+            .replace(
+                "{{fallbacks}}",
+                &self
+                    .shared
+                    .counters
+                    .fallbacks
+                    .load(Ordering::Relaxed)
+                    .to_string(),
+            )
+            .replace(
+                "{{no_snapshot}}",
+                &self
+                    .shared
+                    .counters
+                    .no_snapshot
+                    .load(Ordering::Relaxed)
+                    .to_string(),
+            )
+            .replace(
+                "{{collisions}}",
+                &self
+                    .shared
+                    .counters
+                    .collisions
+                    .load(Ordering::Relaxed)
+                    .to_string(),
+            )
+            .replace("{{rescued}}", &self.rescued.load(Ordering::Relaxed).to_string())
+            .replace("{{fresh_warn}}", &fresh_warn)
             .replace("{{encodings}}", &self.report_encodings());
         let path = self.out.join("report.html");
         fs::write(&path, doc).map_err(|e| e.to_string())?;
@@ -2051,15 +2691,40 @@ impl Engine {
 
     pub fn run(&mut self) -> Result<Outcome, String> {
         fs::create_dir_all(&self.out).map_err(|e| e.to_string())?;
+        // Временные файлы прошлых прогонов: при прерывании они остаются (Д-16).
+        let removed = self.cleanup_temp();
+        if removed > 0 {
+            self.shared.log(crate::tr::pick(
+                format!("уборка: удалено временных файлов {removed}"),
+                format!("cleanup: removed {removed} temporary files"),
+            ));
+        }
         self.load_content_types();
         self.inventory()?;
         self.ensure_not_cancelled()?;
+        self.check_space()?;
         self.download()?;
         self.ensure_not_cancelled()?;
         self.build()?;
         self.ensure_not_cancelled()?;
-        let stats = self.verify();
+        let mut stats = self.verify();
         self.ensure_not_cancelled()?;
+        // Добор по ссылкам: цели, которых нет в копии, догружаются из архива (ФТ-128).
+        let broken = self.broken_keys();
+        let rescued = self.rescue(&broken);
+        if rescued > 0 {
+            self.rescued.store(rescued, Ordering::Relaxed);
+            self.shared.log(crate::tr::pick(
+                format!("rescue:ok:{rescued} — добрано по ссылкам, пересобираю"),
+                format!("rescue:ok:{rescued} — rescued by links, rebuilding"),
+            ));
+            *self.mirror_cache.lock().unwrap() = None;
+            self.mirror_files.store(0, Ordering::Relaxed);
+            self.build()?;
+            self.ensure_not_cancelled()?;
+            stats = self.verify();
+            self.ensure_not_cancelled()?;
+        }
         let report = self.report(stats)?;
         self.emit("report", 100.0, crate::tr::t("готово", "done"), true);
         let mut types = [0usize; 8];
@@ -2090,13 +2755,201 @@ impl Engine {
                 .map(|i| i.path.as_str())
                 .collect::<HashSet<&str>>()
                 .len(),
+            fallbacks: self.shared.counters.fallbacks.load(Ordering::Relaxed),
+            collisions: self.shared.counters.collisions.load(Ordering::Relaxed),
+            rescued: self.rescued.load(Ordering::Relaxed),
+            oldest: self.snapshot_range().0,
+            newest: self.snapshot_range().1,
         })
+    }
+
+    /// Проверка свободного места до загрузки (Д-15). Оценка — по длине записей индекса
+    /// с запасом: распаковка и вторая копия дерева.
+    fn check_space(&self) -> Result<(), String> {
+        let Some(free) = self.free_space() else {
+            return Ok(());
+        };
+        let need = self.estimate_bytes();
+        if need == 0 || need <= free {
+            return Ok(());
+        }
+        let message = crate::tr::pick(
+            format!(
+                "недостаточно места: нужно около {} МБ, свободно {} МБ. Укажите другую папку или освободите место",
+                need / 1_048_576,
+                free / 1_048_576
+            ),
+            format!(
+                "not enough space: about {} MB needed, {} MB free. Choose another folder or free some space",
+                need / 1_048_576,
+                free / 1_048_576
+            ),
+        );
+        self.shared.log(message.clone());
+        Err(message)
+    }
+
+    /// Ключи целей ссылок, которых нет в копии (для добора по ссылкам).
+    fn broken_keys(&self) -> Vec<String> {
+        let files = self.site_list();
+        let root = norm_key(&self.site_dir.to_string_lossy().replace('\\', "/")).to_lowercase();
+        let known: HashSet<String> = files
+            .iter()
+            .map(|p| {
+                let full = norm_key(&p.to_string_lossy().replace('\\', "/")).to_lowercase();
+                full.strip_prefix(&root)
+                    .map(|rest| rest.trim_start_matches('/').to_string())
+                    .unwrap_or(full)
+            })
+            .collect();
+        let targets = self.ref_targets.lock().unwrap();
+        let mut out: Vec<String> = Vec::new();
+        let mut seen: HashSet<&str> = HashSet::new();
+        for (_rel, keys) in targets.iter() {
+            for key in keys {
+                if known.contains(key) || known.contains(&format!("{key}/index.html")) {
+                    continue;
+                }
+                // Ключи с хэшем запроса и чужие хосты не восстанавливаются по адресу.
+                if key.contains("__q_")
+                    || key.contains('/') && key.split('/').next() == Some(&self.host)
+                {
+                    continue;
+                }
+                if seen.insert(key.as_str()) {
+                    out.push(key.clone());
+                }
+            }
+        }
+        out
+    }
+
+    /// Добор по ссылкам (ФТ-128): отсутствующие цели догружаются снимком по их адресу.
+    /// Один проход, не больше `rescue_limit` адресов.
+    fn rescue(&mut self, missing: &[String]) -> usize {
+        if self.rescue_limit == 0 || missing.is_empty() {
+            return 0;
+        }
+        let mut done = 0usize;
+        for key in missing.iter().take(self.rescue_limit) {
+            if self.cancel_token().load(Ordering::Relaxed) {
+                break;
+            }
+            let url = format!("https://{}/{}", self.host, key.trim_start_matches('/'));
+            let item = Item {
+                kind: paths::file_type(&url),
+                ts: String::new(),
+                orig: url.clone(),
+                mime: String::new(),
+                path: key.clone(),
+                url,
+                len: 0,
+            };
+            if self.fetch_target(&item) {
+                done += 1;
+            }
+        }
+        if !missing.is_empty() && done == 0 && console_verbose() {
+            self.shared.log(crate::tr::pick(
+                format!("rescue:fail:{}", missing.len().min(self.rescue_limit)),
+                format!("rescue:fail:{}", missing.len().min(self.rescue_limit)),
+            ));
+        }
+        done
+    }
+
+    /// Тихое получение снимка по адресу: без счётчиков прогресса, только в зеркало.
+    /// Дата полученного снимка записывается так же, как при обычной загрузке (ФТ-129).
+    fn fetch_target(&self, item: &Item) -> bool {
+        let stub = self.stub_bytes;
+        let mut tried = vec![SnapshotMode::Newest.target(&item.ts)];
+        for stamp in &tried {
+            if let Attempt::Saved { size: _, memento } = self.shared.attempt(item, stamp, stub) {
+                self.remember_snapshot(item, memento.unwrap_or_else(|| stamp.clone()));
+                return true;
+            }
+        }
+        for stamp in self.shared.recent_stamps(item, self.fallback_depth) {
+            if tried.iter().any(|t| t == &stamp) {
+                continue;
+            }
+            if let Attempt::Saved { size: _, memento } = self.shared.attempt(item, &stamp, stub) {
+                self.remember_snapshot(item, memento.unwrap_or(stamp));
+                return true;
+            }
+            tried.push(stamp);
+        }
+        false
+    }
+
+    /// Запомнить дату снимка файла для журнала и отчёта (ФТ-129).
+    fn remember_snapshot(&self, item: &Item, stamp: String) {
+        if let Ok(mut map) = self.shared.snapshots.lock() {
+            map.insert(item.path.clone(), stamp);
+        }
     }
 }
 
 /// Подробные сообщения о кодировках — только в CLI (в GUI журнал короткий).
 fn console_verbose() -> bool {
     std::env::var("SR_QUIET").is_err()
+}
+
+/// Какую версию оставить, когда два адреса дают один путь копии (ФТ-131):
+/// свежий снимок важнее; при равенстве — адрес каталога, затем более короткий адрес.
+fn keep_previous(candidate: &Item, current: &Item) -> bool {
+    if candidate.ts != current.ts {
+        return candidate.ts < current.ts;
+    }
+    let candidate_dir = candidate.url.ends_with('/');
+    let current_dir = current.url.ends_with('/');
+    if candidate_dir != current_dir {
+        return current_dir;
+    }
+    candidate.url.len() >= current.url.len()
+}
+
+/// Свободное место на диске для каталога. Платформенные вызовы: без внешних зависимостей.
+fn free_bytes(path: &Path) -> Option<u64> {
+    if !path.exists() {
+        return None;
+    }
+    #[cfg(windows)]
+    {
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn GetDiskFreeSpaceExW(
+                directory: *const u16,
+                free_available: *mut u64,
+                total: *mut u64,
+                free_total: *mut u64,
+            ) -> i32;
+        }
+        let mut wide: Vec<u16> = path.to_string_lossy().encode_utf16().collect();
+        wide.push(0);
+        let mut free_available = 0u64;
+        // SAFETY: строка с завершающим нулём, все указатели ведут на локальные переменные.
+        let ok = unsafe {
+            GetDiskFreeSpaceExW(
+                wide.as_ptr(),
+                &mut free_available,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        return (ok != 0).then_some(free_available);
+    }
+    #[cfg(unix)]
+    {
+        use std::ffi::CString;
+        let c_path = CString::new(path.to_string_lossy().as_bytes()).ok()?;
+        let mut stats: libc::statvfs = unsafe { std::mem::zeroed() };
+        // SAFETY: путь корректен, структура целиком заполняется вызовом.
+        let ok = unsafe { libc::statvfs(c_path.as_ptr(), &mut stats) };
+        return (ok == 0).then(|| stats.f_bavail as u64 * stats.f_frsize as u64);
+    }
+    #[allow(unreachable_code)]
+    None
 }
 
 fn label(kind: &str) -> &'static str {
@@ -2151,6 +3004,99 @@ fn size_text(bytes: u64) -> String {
     }
 }
 
+/// Метка времени «сейчас» в формате архива: ГГГГММДДччммсс по UTC.
+fn stamp_now() -> String {
+    let secs = now_secs();
+    stamp_from_secs(secs)
+}
+
+/// Метка времени из секунд Unix в формате архива.
+fn stamp_from_secs(secs: u64) -> String {
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    let (year, month, day) = civil_from_days(days);
+    format!(
+        "{year:04}{month:02}{day:02}{:02}{:02}{:02}",
+        rem / 3600,
+        (rem % 3600) / 60,
+        rem % 60
+    )
+}
+
+/// Гражданская дата по числу дней от 1970-01-01 (алгоритм Говарда Хиннанта).
+fn civil_from_days(days: i64) -> (i64, u64, u64) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let year = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    (if month <= 2 { year + 1 } else { year }, month, day)
+}
+
+/// Разбор `Memento-Datetime` архива: `Tue, 10 Nov 2026 17:07:55 GMT`.
+/// Понимает и формат ISO (`2026-11-10T17:07:55Z`) — он встречается у зеркал.
+fn stamp_from_http_date(text: &str) -> Option<String> {
+    const MONTHS: [&str; 12] = [
+        "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+    ];
+    let value = text.trim();
+    // ISO: 2026-11-10T17:07:55Z
+    if value.len() >= 19 && value.as_bytes().get(4) == Some(&b'-') {
+        let digits: String = value
+            .chars()
+            .filter(|c| c.is_ascii_digit())
+            .take(14)
+            .collect();
+        return (digits.len() == 14).then_some(digits);
+    }
+    let mut parts = value.split_whitespace();
+    let _weekday = parts.next()?;
+    let day: u32 = parts.next()?.trim_end_matches(',').parse().ok()?;
+    let month_name = parts.next()?.to_ascii_lowercase();
+    let month = MONTHS.iter().position(|m| *m == month_name)? as u32 + 1;
+    let year: i64 = parts.next()?.parse().ok()?;
+    let time = parts.next()?;
+    let mut clock = time.split(':');
+    let hour: u32 = clock.next()?.parse().ok()?;
+    let minute: u32 = clock.next()?.parse().ok()?;
+    let second: u32 = clock.next()?.parse().ok()?;
+    Some(format!(
+        "{year:04}{month:02}{day:02}{hour:02}{minute:02}{second:02}"
+    ))
+}
+
+/// Дата снимка в виде `ГГГГ-ММ-ДД` для отчёта и журнала.
+fn stamp_readable(ts: &str) -> String {
+    if ts.len() < 8 {
+        return ts.to_string();
+    }
+    format!("{}-{}-{}", &ts[..4], &ts[4..6], &ts[6..8])
+}
+
+/// Сколько дней прошло с даты снимка до сейчас.
+fn stamp_age_days(ts: &str) -> Option<u32> {
+    let year: i64 = ts.get(..4)?.parse().ok()?;
+    let month: i64 = ts.get(4..6)?.parse().ok()?;
+    let day: i64 = ts.get(6..8)?.parse().ok()?;
+    let stamp_secs = days_from_civil(year, month as u64, day as u64) as u64 * 86_400;
+    Some(((now_secs().saturating_sub(stamp_secs)) / 86_400) as u32)
+}
+
+/// Дни от 1970-01-01 для гражданской даты (обратный к `civil_from_days`).
+fn days_from_civil(year: i64, month: u64, day: u64) -> i64 {
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = (y - era * 400) as u64;
+    let mp = if month > 2 { month - 3 } else { month + 9 };
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe as i64 - 719_468
+}
+
 /// Прочитать инвентарь с диска. Понимает и прежний формат (адрес, путь, тип),
 /// и текущий (с меткой снимка, исходным адресом и типом содержимого): файл
 /// прежней версии должен читаться новой.
@@ -2170,6 +3116,7 @@ pub fn read_inventory(file: &Path) -> Vec<Item> {
                 ts: json_field(line, "ts").unwrap_or_default(),
                 orig: json_field(line, "orig").unwrap_or_else(|| url.clone()),
                 mime: json_field(line, "mime").unwrap_or_default(),
+                len: json_number(line, "len").unwrap_or(0),
                 url,
                 path,
             })
@@ -2443,6 +3390,17 @@ fn parse_pages(text: &str) -> Option<usize> {
     None
 }
 
+/// Похоже ли содержимое на страницу: есть начало разметки в первых килобайтах.
+fn looks_like_markup(body: &[u8]) -> bool {
+    let head = &body[..body.len().min(2048)];
+    let text = String::from_utf8_lossy(head).to_ascii_lowercase();
+    text.contains("<html")
+        || text.contains("<!doctype")
+        || text.contains("<head")
+        || text.contains("<body")
+        || text.contains("<title")
+}
+
 fn is_error_page(body: &[u8]) -> bool {
     let head = &body[..body.len().min(2000)];
     ERROR_MARKERS
@@ -2476,7 +3434,7 @@ fn now_secs() -> u64 {
 }
 
 /// Формат журнала сборки. Меняется, когда меняется смысл записей.
-const JOURNAL_FORMAT: u32 = 1;
+const JOURNAL_FORMAT: u32 = 2;
 
 /// Каталог вывода в абсолютном виде: относительный путь нельзя склеивать
 /// с префиксом длинного пути, иначе файловые операции Windows его не находят.
@@ -2590,6 +3548,8 @@ fn parse_journal_line(line: &str) -> Option<(String, JournalEntry)> {
             targets,
             page,
             foreign,
+            snapshot: json_field(line, "snapshot").unwrap_or_default(),
+            checked: json_number(line, "checked").unwrap_or(0),
         },
     ))
 }
@@ -2634,6 +3594,14 @@ th,td{padding:9px 12px;border-bottom:1px solid #eee;text-align:left}th{backgroun
 <div class="c"><div class="k">{{t_pages}}</div><div class="v">{{pages}}</div></div>
 <div class="c"><div class="k">{{t_files}}</div><div class="v">{{site_files}}</div></div></div>
 <h2>{{t_types}}</h2><table><tr><th>{{t_type}}</th><th class="n">{{t_downloaded}}</th><th class="n">{{t_total}}</th><th class="n">{{t_share}}</th></tr>{{rows}}</table>
+<h2>{{t_fresh}}</h2><table>
+<tr><td>{{t_snap_range}}</td><td class="n">{{snap_range}}</td></tr>
+<tr><td>{{t_old}}</td><td class="n">{{old_files}}</td></tr>
+<tr><td>{{t_fallbacks}}</td><td class="n">{{fallbacks}}</td></tr>
+<tr><td>{{t_no_snapshot}}</td><td class="n">{{no_snapshot}}</td></tr>
+<tr><td>{{t_collisions}}</td><td class="n">{{collisions}}</td></tr>
+<tr><td>{{t_rescued}}</td><td class="n">{{rescued}}</td></tr></table>
+{{fresh_warn}}
 <h2>{{t_integrity}}</h2><table>
 <tr><td>{{t_mirror}}</td><td class="n">{{mirror_files}}</td></tr>
 <tr><td>{{t_unique}}</td><td class="n">{{unique_paths}}</td></tr>
@@ -2643,6 +3611,7 @@ th,td{padding:9px 12px;border-bottom:1px solid #eee;text-align:left}th{backgroun
 {{encodings}}
 <tr><td>{{t_404}}</td><td class="n">{{missing}}</td></tr>
 <tr><td>{{t_errors}}</td><td class="n">{{errors}}</td></tr></table>
+<p style="color:#b45309;margin-top:10px">{{fresh_warn}}</p>
 <p style="color:#6b7280;margin-top:10px">{{t_files_note}}</p>
 <p style="color:#6b7280;margin-top:24px">{{t_footer}}</p>
 </div></body></html>"#;
@@ -3040,12 +4009,12 @@ mod build_tests {
             "журнал помечен форматом и версией"
         );
         // Подменяем метку: журнал чужой версии не должен приниматься.
-        let broken = text.replacen("#journal 1", "#journal 0", 1);
+        let broken = text.replacen("#journal 2", "#journal 1", 1);
         fs::write(&path, broken).unwrap();
         let engine = Engine::new("example.com", &root, 1, 0).unwrap();
         engine.build().expect("сборка без журнала проходит");
         let after = fs::read_to_string(&path).unwrap();
-        assert!(after.starts_with(&format!("#journal 1 {}", env!("CARGO_PKG_VERSION"))));
+        assert!(after.starts_with(&format!("#journal 2 {}", env!("CARGO_PKG_VERSION"))));
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -3061,6 +4030,277 @@ mod build_tests {
         assert_eq!(entry.mtime, 1_794_361_782);
         assert!(entry.page);
         assert_eq!(entry.targets, vec!["img/x.png", "parts/b/index.html"]);
+        assert_eq!(entry.snapshot, "", "старая запись без даты снимка читается");
+    }
+
+    /// ФТ-129: дата снимка из журнала переживает запись и чтение.
+    #[test]
+    fn journal_keeps_snapshot_date() {
+        let line = concat!(
+            "{\"path\":\"index.html\",\"size\":42,\"mtime\":1794361782,\"page\":true,",
+            "\"foreign\":false,\"snapshot\":\"20251115050209\",\"targets\":[]}"
+        );
+        let (_path, entry) = parse_journal_line(line).expect("строка с датой снимка");
+        assert_eq!(entry.snapshot, "20251115050209");
+        assert_eq!(stamp_readable(&entry.snapshot), "2025-11-15");
+    }
+
+    /// ФТ-126: режим снимка разбирается из командной строки и попадает в метку журнала.
+    #[test]
+    fn snapshot_mode_parses_and_marks_journal() {
+        assert_eq!(SnapshotMode::parse("newest"), Some(SnapshotMode::Newest));
+        assert_eq!(SnapshotMode::parse("OLDEST"), Some(SnapshotMode::Oldest));
+        assert_eq!(
+            SnapshotMode::parse("2023-03-01"),
+            Some(SnapshotMode::At("20230301000000".to_string()))
+        );
+        assert_eq!(
+            SnapshotMode::parse("2024"),
+            Some(SnapshotMode::At("20240000000000".to_string()))
+        );
+        assert_eq!(SnapshotMode::parse("позавчера"), None);
+        assert_eq!(SnapshotMode::Newest.tag(), "newest");
+        assert_eq!(
+            SnapshotMode::At("20230301000000".to_string()).tag(),
+            "at:20230301000000"
+        );
+    }
+
+    /// ФТ-129: `Memento-Datetime` архива разбирается в отпечаток, включая вариант ISO.
+    #[test]
+    fn memento_datetime_is_parsed() {
+        assert_eq!(
+            stamp_from_http_date("Tue, 10 Nov 2026 17:07:55 GMT"),
+            Some("20261110170755".to_string())
+        );
+        assert_eq!(
+            stamp_from_http_date("Mon, 09 Nov 2026 13:03:57 GMT"),
+            Some("20260911130357".to_string().replace("20260911", "20261109"))
+        );
+        assert_eq!(
+            stamp_from_http_date("2026-11-10T17:07:55Z"),
+            Some("20261110170755".to_string())
+        );
+        assert_eq!(stamp_from_http_date("не дата"), None);
+    }
+
+    /// Календарные преобразования: обратный переход совпадает с прямым.
+    #[test]
+    fn civil_dates_round_trip() {
+        for (year, month, day) in [(1970, 1, 1), (2015, 11, 1), (2026, 11, 10), (2024, 2, 29)] {
+            let days = days_from_civil(year, month, day);
+            assert_eq!(civil_from_days(days), (year, month, day));
+        }
+        // 2026-11-10T17:07:55Z
+        let stamp = stamp_from_secs(1_794_330_475);
+        assert!(
+            stamp.starts_with("2026"),
+            "метка времени в 2026 году: {stamp}"
+        );
+        assert_eq!(stamp.len(), 14);
+    }
+
+    /// ФТ-131: при совпадении пути остаётся свежий снимок, при равенстве — адрес каталога.
+    #[test]
+    fn keep_previous_prefers_fresh_snapshot() {
+        let item = |url: &str, ts: &str| Item {
+            url: url.to_string(),
+            ts: ts.to_string(),
+            orig: url.to_string(),
+            mime: "text/html".to_string(),
+            path: "index.html".to_string(),
+            kind: "html",
+            len: 0,
+        };
+        let fresh = item("https://example.com/index.html", "20260101000000");
+        let old = item("https://example.com/", "20150101000000");
+        assert!(!keep_previous(&fresh, &old), "свежий вытесняет старый");
+        assert!(keep_previous(&old, &fresh), "старый не вытесняет свежий");
+
+        let dir = item("https://example.com/", "20260101000000");
+        let page = item("https://example.com/index.html", "20260101000000");
+        assert!(
+            !keep_previous(&dir, &page),
+            "при равенстве остаётся адрес каталога"
+        );
+        assert!(keep_previous(&page, &dir));
+    }
+
+    /// ФТ-127: пригодность проверяется по разметке и порогу пустой страницы.
+    #[test]
+    fn markup_detection_distinguishes_stub() {
+        assert!(looks_like_markup(b"<!DOCTYPE html><html><body>x"));
+        assert!(looks_like_markup(b"<html><head><title>x</title>"));
+        assert!(!looks_like_markup(b"Not Found"));
+        assert!(!looks_like_markup(b""));
+    }
+
+    /// Д-20: пауза задерживает новые запросы, снятие паузы их отпускает.
+    #[test]
+    fn pause_blocks_new_requests() {
+        let root = workdir("pause");
+        let engine = Engine::new("example.com", &root, 1, 0).unwrap();
+        let flag = engine.pause_token();
+        flag.store(true, Ordering::Relaxed);
+        let shared = Arc::clone(&engine.shared);
+        let started = Instant::now();
+        let worker = std::thread::spawn(move || {
+            shared.wait_for_pause();
+            started.elapsed()
+        });
+        std::thread::sleep(Duration::from_millis(120));
+        flag.store(false, Ordering::Relaxed);
+        let waited = worker.join().unwrap();
+        assert!(
+            waited >= Duration::from_millis(100),
+            "пауза должна задерживать запрос, прошло {waited:?}"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Д-25: ограничитель конкурентности держит лимит и отпускает всех при его смене.
+    #[test]
+    fn gate_respects_limit() {
+        let gate = Arc::new(Gate::new(1));
+        let inflight = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let mut workers = Vec::new();
+        for _ in 0..4 {
+            let gate = Arc::clone(&gate);
+            let inflight = Arc::clone(&inflight);
+            let peak = Arc::clone(&peak);
+            workers.push(std::thread::spawn(move || {
+                gate.acquire();
+                let now = inflight.fetch_add(1, Ordering::Relaxed) + 1;
+                peak.fetch_max(now, Ordering::Relaxed);
+                std::thread::sleep(Duration::from_millis(20));
+                inflight.fetch_sub(1, Ordering::Relaxed);
+                gate.release();
+            }));
+        }
+        std::thread::sleep(Duration::from_millis(40));
+        gate.set_limit(3);
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        assert_eq!(gate.limit(), 3, "лимит меняется на ходу");
+        assert!(peak.load(Ordering::Relaxed) <= 3, "лимит не превышается");
+    }
+
+    /// Д-25: счётчики — атомарные и складываются без потерь.
+    #[test]
+    fn counters_add_up_under_threads() {
+        let counters = Arc::new(Counters::default());
+        let mut workers = Vec::new();
+        for _ in 0..8 {
+            let counters = Arc::clone(&counters);
+            workers.push(std::thread::spawn(move || {
+                for _ in 0..500 {
+                    counters.done.fetch_add(1, Ordering::Relaxed);
+                    counters.ok.fetch_add(1, Ordering::Relaxed);
+                    counters.bytes.fetch_add(10, Ordering::Relaxed);
+                }
+            }));
+        }
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        assert_eq!(counters.done.load(Ordering::Relaxed), 4000);
+        assert_eq!(counters.ok.load(Ordering::Relaxed), 4000);
+        assert_eq!(counters.bytes.load(Ordering::Relaxed), 40_000);
+    }
+
+    /// ФТ-130: файл с устаревшим снимком попадает в перекачку, свежий — нет.
+    #[test]
+    fn stale_paths_uses_snapshot_age() {
+        let root = workdir("stale");
+        put(&root, "old.html", b"<html><body>old</body></html>");
+        put(&root, "new.html", b"<html><body>new</body></html>");
+        let engine = build(&root);
+        // Подменяем время проверки в журнале: один файл проверен давно, другой сегодня.
+        let path = root.join("data").join("build.jsonl");
+        let text = fs::read_to_string(&path).unwrap();
+        let mut out = String::new();
+        for line in text.lines() {
+            if !line.starts_with('{') {
+                out.push_str(line);
+                out.push('\n');
+                continue;
+            }
+            let checked = if line.contains("old.html") {
+                0
+            } else {
+                now_secs()
+            };
+            let patched = match line.find("\"checked\":") {
+                Some(at) => {
+                    let head = &line[..at + "\"checked\":".len()];
+                    let tail: String = line[at + "\"checked\":".len()..]
+                        .chars()
+                        .skip_while(|c| c.is_ascii_digit())
+                        .collect();
+                    format!("{head}{checked}{tail}")
+                }
+                None => line.to_string(),
+            };
+            out.push_str(&patched);
+            out.push('\n');
+        }
+        fs::write(&path, out).unwrap();
+
+        let mut second = Engine::new("example.com", &root, 1, 0).unwrap();
+        second.set_snapshot(SnapshotMode::Newest);
+        second.set_refresh_days(30);
+        let stale = second.stale_paths();
+        assert!(stale.contains("old.html"), "старый снимок перекачивается");
+        assert!(!stale.contains("new.html"), "свежий снимок не трогаем");
+
+        // В режиме oldest журнал ведёт себя как в 3.4.0: перекачки нет.
+        second.set_snapshot(SnapshotMode::Oldest);
+        assert!(second.stale_paths().is_empty());
+        let _ = engine;
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Д-26: числа отчёта совпадают с содержимым копии.
+    #[test]
+    fn report_numbers_match_copy() {
+        let root = workdir("reportnb");
+        put(
+            &root,
+            "index.html",
+            b"<html><body><a href=\"/a.html\">a</a><img src=\"/i.png\"><a href=\"/gone.html\">g</a></body></html>",
+        );
+        put(
+            &root,
+            "a.html",
+            b"<html><body><a href=\"/index.html\">home</a></body></html>",
+        );
+        put(
+            &root,
+            "i.png",
+            b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01\x08\x06\0\0\0",
+        );
+        let engine = build(&root);
+        let stats = engine.verify();
+        engine.report(stats).unwrap();
+
+        // Пересчёт по диску: файлов в копии столько же, сколько лежит в папке site.
+        let files = walk_files(&root.join("site"));
+        let doc = fs::read_to_string(root.join("report.html")).unwrap();
+        assert_eq!(stats.pages, 2, "две страницы");
+        assert_eq!(stats.broken, 1, "одна цель отсутствует");
+        assert!(
+            doc.contains(&format!("<td class='n'>{}</td>", files.len()))
+                || doc.contains(&format!("<div class=\"v\">{}</div>", files.len())),
+            "число файлов копии есть в отчёте ({})",
+            files.len()
+        );
+        assert!(
+            doc.contains("Свежесть копии"),
+            "в отчёте есть раздел свежести"
+        );
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

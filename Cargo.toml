@@ -1,6 +1,6 @@
 [package]
 name = "site-restorer"
-version = "3.4.0"
+version = "3.5.0"
 edition = "2024"
 description = "Восстановление сайта из веб-архива: нативный GUI + CLI"
 
@@ -14,6 +14,9 @@ encoding_rs = "0.8.44"
 rayon = "1.12"
 regex-lite = "0.1"
 ureq = "3.5.1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [profile.release]
 opt-level = "z"
