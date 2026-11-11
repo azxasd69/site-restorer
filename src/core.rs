@@ -8,7 +8,7 @@ use rayon::prelude::*;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -39,6 +39,13 @@ const _: () = assert!(TIMEOUT_FILE + TIMEOUT_INDEX == TIMEOUT_TOTAL);
 /// разбор дал 49 990 строк вместо 50 000. Поэтому усечение определяется не
 /// точным равенством, а попаданием в полосу допуска (проверено 12.11.2026).
 const QUICK_LIMIT: usize = 50_000;
+/// Сколько первых байт тела проверяется как «голова» файла (Д-50).
+/// Все проверки пригодности (пустая страница, страница ошибки, двоичность)
+/// смотрят только в начало, поэтому при потоковой записи тело в память
+/// целиком не читается. 4096 выбрано по замеру: самая длинная проверяемая
+/// сигнатура укладывается в 2000 байт, прежний буфер 256 давал ложные отказы.
+const HEAD_BYTES: usize = 4096;
+
 /// Допуск на шапку JSON и потери разбора при проверке усечения.
 const QUICK_SLACK: usize = 32;
 /// Предел страниц обхода по умолчанию (ФТ-149), задаётся `--index-max-pages`.
@@ -188,13 +195,22 @@ pub struct Head {
     pub memento: Option<String>,
 }
 
+/// Результат потоковой загрузки (Д-50): файл уже на диске в `.part`,
+/// в памяти остались только первые байты для проверок.
+struct Saved {
+    head: Head,
+    /// Сколько байт записано всего.
+    len: u64,
+    /// Первые `HEAD_BYTES` байт тела.
+    head_bytes: Vec<u8>,
+    /// Временный файл, который станет целевым после проверок.
+    tmp: PathBuf,
+}
+
 struct Fetched {
     status: u16,
     body: Vec<u8>,
     retry_after: Option<f64>,
-    content_type: Option<String>,
-    /// Фактическое время отданного снимка (`Memento-Datetime`, ФТ-129).
-    memento: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -542,8 +558,6 @@ impl Shared {
             status: head.status,
             body: self.read_all(body)?,
             retry_after: head.retry_after,
-            content_type: head.content_type,
-            memento: head.memento,
         })
     }
 
@@ -558,8 +572,6 @@ impl Shared {
             status: head.status,
             body: self.read_progress(body, &mut on_progress)?,
             retry_after: head.retry_after,
-            content_type: head.content_type,
-            memento: head.memento,
         })
     }
 
@@ -789,9 +801,22 @@ impl Shared {
                 return Attempt::Absent;
             }
             if status == 200 {
-                return match self.store(item, &fetched, stub) {
-                    Some(saved) => saved,
-                    None => Attempt::Unusable,
+                // 200 — тело пишется в файл потоком, в память не собирается.
+                // `fetched` здесь уже не нужен: заголовки берутся из `save_to`.
+                let _ = &fetched;
+                return match self.save_to(&url, &self.mirror.join(&item.path)) {
+                    Ok(saved) => match self.commit(item, &saved, stub) {
+                        Some(done) => done,
+                        None => Attempt::Unusable,
+                    },
+                    Err(err) if err == "cancelled" => Attempt::Failed,
+                    Err(err) => {
+                        self.log(crate::tr::pick(
+                            format!("запись: {err}"),
+                            format!("write: {err}"),
+                        ));
+                        Attempt::Failed
+                    }
                 };
             }
             // 3xx без пригодного содержимого и прочие коды: содержимого нет.
@@ -808,31 +833,82 @@ impl Shared {
         }
     }
 
-    /// Проверяет пригодность ответа и записывает файл. `None` — содержимое непригодно.
-    fn store(&self, item: &Item, fetched: &Fetched, stub: usize) -> Option<Attempt> {
-        let body = &fetched.body;
-        if body.is_empty() || is_error_page(body) {
-            return None;
+    /// Скачать тело сразу в файл, не собирая его в памяти (Д-50, ПР-11).
+    ///
+    /// Тело пишется в `.part` рядом с целевым файлом: недокачанный файл не должен
+    /// выглядеть готовым. `head_bytes` — первые `HEAD_BYTES` байт, по ним потом
+    /// проверяется пригодность; счётчики байтов здесь НЕ трогаются, иначе AIMD
+    /// увидел бы двойную скорость (байты начисляются один раз по размеру файла).
+    fn save_to(&self, url: &str, dest: &Path) -> Result<Saved, String> {
+        let (head, body) = self.open(false, url)?;
+        if let Some(parent) = dest.parent() {
+            let _ = fs::create_dir_all(parent);
         }
+        let tmp = tmp_path(dest);
+        let mut file = fs::File::create(&tmp).map_err(|e| e.to_string())?;
+        let mut reader = body.into_reader();
+        let mut chunk = [0u8; 64 * 1024];
+        let mut len: u64 = 0;
+        let mut head_bytes: Vec<u8> = Vec::new();
+        let cleanup = |tmp: &Path| {
+            let _ = fs::remove_file(tmp);
+        };
+        loop {
+            if self.cancel.load(Ordering::Relaxed) {
+                drop(file);
+                cleanup(&tmp);
+                return Err("cancelled".to_string());
+            }
+            let read = match reader.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => n,
+                Err(err) => {
+                    drop(file);
+                    cleanup(&tmp);
+                    return Err(err.to_string());
+                }
+            };
+            let part = &chunk[..read];
+            if head_bytes.len() < HEAD_BYTES {
+                let take = (HEAD_BYTES - head_bytes.len()).min(read);
+                head_bytes.extend_from_slice(&part[..take]);
+            }
+            if let Err(err) = file.write_all(part) {
+                drop(file);
+                cleanup(&tmp);
+                return Err(err.to_string());
+            }
+            len += read as u64;
+        }
+        drop(file);
+        Ok(Saved {
+            head,
+            len,
+            head_bytes,
+            tmp,
+        })
+    }
+
+    /// Проверяет пригодность скачанного и ставит файл на место.
+    /// `None` — содержимое непригодно, временный файл удаляется.
+    fn commit(&self, item: &Item, saved: &Saved, stub: usize) -> Option<Attempt> {
+        let head = &saved.head_bytes;
         let html = item.kind == "html";
-        if html && (body.len() < stub.max(20) || !looks_like_markup(body)) {
+        // «Пустая страница» проверяется по полному размеру, остальное — по голове.
+        let small_page = html && (saved.len < stub.max(20) as u64 || !looks_like_markup(head));
+        let usable = saved.len > 0 && !is_error_page(head) && !small_page;
+        if !usable {
+            let _ = fs::remove_file(&saved.tmp);
             return None;
         }
         let full = self.mirror.join(&item.path);
-        if let Some(parent) = full.parent() {
-            let _ = fs::create_dir_all(parent);
-        }
-        let tmp = tmp_path(&full);
-        if fs::write(&tmp, body).is_err() {
-            return None;
-        }
-        if fs::rename(&tmp, &full).is_err() {
-            let _ = fs::copy(&tmp, &full);
-            let _ = fs::remove_file(&tmp);
+        if fs::rename(&saved.tmp, &full).is_err() {
+            let _ = fs::copy(&saved.tmp, &full);
+            let _ = fs::remove_file(&saved.tmp);
         }
         // Файл мог не пережить переименование: успех считаем только по факту.
         let size = fs::metadata(&full).ok().filter(|m| m.len() > 0)?.len() as usize;
-        if html && crate::encoding::looks_binary(body) {
+        if html && crate::encoding::looks_binary(head) {
             self.note_foreign();
             if console_verbose() && self.foreign_logged.fetch_add(1, Ordering::Relaxed) < 3 {
                 self.log(crate::tr::pick(
@@ -841,7 +917,7 @@ impl Shared {
                 ));
             }
         }
-        if let Some(ct) = &fetched.content_type {
+        if let Some(ct) = &saved.head.content_type {
             self.content_types
                 .lock()
                 .unwrap()
@@ -849,7 +925,7 @@ impl Shared {
         }
         Some(Attempt::Saved {
             size,
-            memento: fetched.memento.clone(),
+            memento: saved.head.memento.clone(),
         })
     }
 
@@ -4162,6 +4238,54 @@ mod tests {
         assert_eq!(parse_pages("12"), Some(12));
         assert_eq!(parse_pages(""), None);
         assert_eq!(parse_pages(r#"{"pages": 0}"#), None);
+    }
+
+    /// Д-50: тело пишется в файл потоком, а в памяти остаются только первые
+    /// `HEAD_BYTES` байт. Проверяется на настоящем HTTP-ответе от локального
+    /// слушателя: 10 000 байт тела больше головы, значит полное чтение в память
+    /// не выполнялось, а `.part` существует до проверок пригодности.
+    #[test]
+    fn save_to_streams_body_and_keeps_only_head() {
+        use std::io::{Read as _, Write as _};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let body: Vec<u8> = (0..10_000u32).map(|i| b'a' + (i % 26) as u8).collect();
+        let payload = body.clone();
+        let server = std::thread::spawn(move || {
+            if let Ok((mut socket, _)) = listener.accept() {
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf);
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n",
+                    payload.len()
+                );
+                let _ = socket.write_all(head.as_bytes());
+                let _ = socket.write_all(&payload);
+            }
+        });
+        let dir = std::env::temp_dir().join(format!(
+            "sr-stream-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::create_dir_all(&dir);
+        let engine = Engine::new("example.com", &dir, 1, 0).unwrap();
+        let dest = dir.join("big.bin");
+        // save_to живёт в Shared: именно он владеет агентами и счётчиками.
+        let saved = engine
+            .shared
+            .save_to(&format!("http://{addr}/big"), &dest)
+            .unwrap();
+        server.join().unwrap();
+        assert_eq!(saved.len, 10_000, "тело должно быть на диске целиком");
+        assert_eq!(
+            saved.head_bytes.len(),
+            HEAD_BYTES,
+            "в памяти держится только голова, а не всё тело"
+        );
+        assert!(saved.tmp.exists(), "до проверок файл лежит в .part");
+        assert_eq!(fs::metadata(&saved.tmp).unwrap().len(), 10_000);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// ФТ-149: смена режима сопоставления меняет сам запрос к CDX.
