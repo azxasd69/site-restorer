@@ -18,7 +18,6 @@ pub const UA: &str =
     "SiteRestorer/2.0 (offline mirror tool; respectful crawler; contact: local user)";
 const MIN_THREADS: usize = 2;
 const MAX_THREADS: usize = 24;
-const MAX_PAGES: usize = 200;
 const PAGE_LIMIT: usize = 20_000;
 /// Основной адрес архива: сначала шифрованный канал, открытый — запасной.
 /// Часть сетей блокирует порт 80, часть — только 443 (ОШ-2 в docs/DEFECTS.md).
@@ -26,6 +25,15 @@ const ARCHIVE_PRIMARY: &str = "https://web.archive.org";
 const ARCHIVE_FALLBACK: &str = "http://web.archive.org";
 /// Сколько попыток даётся на обращение к индексу архива.
 const ARCHIVE_TRIES: u32 = 5;
+/// Пределы ожидания (ПР-5, Д-18): файл, запрос индекса; третий предел — общий 180 с.
+const TIMEOUT_FILE: u64 = 60;
+const TIMEOUT_INDEX: u64 = 120;
+/// Общий предел запроса (ПР-5): внешняя страховка поверх двух предыдущих.
+const TIMEOUT_TOTAL: u64 = 180;
+/// Размер выборки быстрого запроса индекса (ФТ-149): ровно столько строк — признак усечения.
+const QUICK_LIMIT: usize = 50_000;
+/// Предел страниц обхода по умолчанию (ФТ-149), задаётся `--index-max-pages`.
+const DEFAULT_INDEX_MAX_PAGES: usize = 200;
 /// Сколько более старых снимков пробовать, если свежий непригоден (ФТ-127).
 const DEFAULT_FALLBACK_DEPTH: usize = 5;
 /// Верхний предел глубины добора: больше — это уже обход архива, а не добор.
@@ -59,6 +67,16 @@ pub struct Item {
     pub kind: &'static str,
     /// Длина записи в архиве (сжатые байты): по ней оценивается потребность в месте.
     pub len: u64,
+}
+
+/// Как сопоставлять адрес с индексом (ФТ-149).
+///
+/// `Domain` — домен и поддомены (по умолчанию). На крупных доменах CDX отвечает 504,
+/// поэтому при отказе переключаемся на `Prefix` и повторяем запрос.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MatchType {
+    Domain,
+    Prefix,
 }
 
 /// Режим выбора снимка (ФТ-126).
@@ -299,6 +317,10 @@ impl TypeCounts {
 /// Состояние, разделяемое воркерами.
 struct Shared {
     agent: ureq::Agent,
+    /// Отдельный агент для индекса: предел ожидания 120 с вместо 60 (Д-18).
+    agent_index: ureq::Agent,
+    /// Текущий режим сопоставления адреса с индексом (ФТ-149).
+    match_type: Mutex<MatchType>,
     agent_archive: String,
     /// Запасной адрес архива; переключение после сетевой ошибки (ОШ-2).
     archive_alt: String,
@@ -409,7 +431,25 @@ impl Shared {
             .get("memento-datetime")
             .and_then(|v| v.to_str().ok())
             .and_then(stamp_from_http_date);
-        let body = resp.body_mut().read_to_vec().map_err(|e| e.to_string())?;
+        // Д-23: тело читается порциями, и между блоками проверяется отмена —
+        // остановка не ждёт таймаута текущего запроса, соединение закрывается сразу.
+        // Побочно снимается потолок 10 МиБ, который был у `read_to_vec` в ureq 3.
+        let mut body: Vec<u8> = Vec::new();
+        {
+            let mut reader = resp.body_mut().as_reader();
+            let mut chunk = [0u8; 64 * 1024];
+            loop {
+                if self.cancel.load(Ordering::Relaxed) {
+                    return Err("cancelled".to_string());
+                }
+                let read = match reader.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(n) => n,
+                    Err(err) => return Err(err.to_string()),
+                };
+                body.extend_from_slice(&chunk[..read]);
+            }
+        }
         Ok(Fetched {
             status,
             body,
@@ -436,7 +476,7 @@ impl Shared {
         self.wait_if_paused();
         self.rate_wait();
         let mut resp = self
-            .agent
+            .agent_index
             .get(url)
             .header("User-Agent", UA)
             .header("Accept", "*/*")
@@ -839,6 +879,12 @@ pub struct Engine {
     pub refresh: bool,
     /// Окно адресов для страниц: запрос `from=` в индексе (ФТ-128).
     pub since: Option<String>,
+    /// Время старта инвентаризации (unix-секунды): верхняя граница окна индекса (ФТ-151).
+    watermark: u64,
+    /// Предел страниц обхода индекса (ФТ-149): 0 — без предела.
+    index_max_pages: usize,
+    /// Индекс пришлось остановить по пределу страниц или по размеру выборки (ФТ-149).
+    index_truncated: bool,
     /// Предел добора по ссылкам (ФТ-128); 0 — выключено.
     pub rescue_limit: usize,
     /// Бюджет времени на добор по ссылкам, секунд (0 — без бюджета).
@@ -906,9 +952,15 @@ impl Engine {
         // Каталог вывода всегда абсолютный: файловые операции Windows не умеют
         // длинный префикс \?\ на относительном пути, а очистка копии через него.
         let out = absolute_dir(out);
-        let config = ureq::Agent::config_builder()
+        // Д-18: раздельные пределы ожидания. Файл — 60 с, индекс — 120 с;
+        // общий предел 180 с остаётся внешней страховкой (ПР-5).
+        let file_config = ureq::Agent::config_builder()
             .http_status_as_error(false)
-            .timeout_global(Some(Duration::from_secs(180)))
+            .timeout_global(Some(Duration::from_secs(TIMEOUT_FILE)))
+            .build();
+        let index_config = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .timeout_global(Some(Duration::from_secs(TIMEOUT_INDEX.min(TIMEOUT_TOTAL))))
             .build();
         Some(Self {
             host,
@@ -924,13 +976,18 @@ impl Engine {
             refresh_days: DEFAULT_REFRESH_DAYS,
             refresh: false,
             since: None,
+            watermark: 0,
+            index_max_pages: DEFAULT_INDEX_MAX_PAGES,
+            index_truncated: false,
             rescue_limit: DEFAULT_RESCUE_LIMIT,
             rescue_budget: DEFAULT_RESCUE_BUDGET,
             retry_missing_days: DEFAULT_RETRY_MISSING_DAYS,
             stub_bytes: DEFAULT_STUB_BYTES,
             rescued: AtomicUsize::new(0),
             shared: Arc::new(Shared {
-                agent: ureq::Agent::new_with_config(config),
+                agent: ureq::Agent::new_with_config(file_config),
+                agent_index: ureq::Agent::new_with_config(index_config),
+                match_type: Mutex::new(MatchType::Domain),
                 agent_archive: ARCHIVE_PRIMARY.to_string(),
                 archive_alt: ARCHIVE_FALLBACK.to_string(),
                 archive_switched: AtomicBool::new(false),
@@ -1059,8 +1116,13 @@ impl Engine {
         let mode = self.shared.snapshot.lock().unwrap().clone();
         let stub = self.shared.stub_bytes.load(Ordering::Relaxed);
         let depth = self.shared.fallback_depth.load(Ordering::Relaxed);
+        // Режим сопоставления снимаем до пересоздания Shared: иначе заимствование
+        // живёт через присваивание (E0506).
+        let match_mode = *self.shared.match_type.lock().unwrap();
         self.shared = Arc::new(Shared {
             agent: self.shared.agent.clone(),
+            agent_index: self.shared.agent_index.clone(),
+            match_type: Mutex::new(match_mode),
             agent_archive: self.shared.agent_archive.clone(),
             archive_alt: self.shared.archive_alt.clone(),
             archive_switched: AtomicBool::new(self.shared.archive_switched.load(Ordering::Relaxed)),
@@ -1167,6 +1229,11 @@ impl Engine {
     }
 
     /// Предел добора по ссылкам (ФТ-128).
+    /// Предел страниц обхода индекса (ФТ-149): 0 — без предела.
+    pub fn set_index_max_pages(&mut self, pages: usize) {
+        self.index_max_pages = pages;
+    }
+
     pub fn set_rescue_limit(&mut self, limit: usize) {
         self.rescue_limit = limit;
     }
@@ -1377,11 +1444,17 @@ impl Engine {
     /// Запрос списка адресов: одна строка на адрес, самый ранний снимок, длина записи.
     fn quick_query(&self, from: Option<&str>) -> String {
         let mut extra = String::from(
-            "output=json&fl=timestamp,original,mimetype,statuscode,length&filter=statuscode:200&collapse=urlkey&limit=50000",
+            "output=json&fl=timestamp,original,mimetype,statuscode,length&filter=statuscode:200&collapse=urlkey",
         );
+        extra.push_str("&limit=");
+        extra.push_str(&QUICK_LIMIT.to_string());
         if let Some(from) = from {
             extra.push_str("&from=");
             extra.push_str(from);
+        }
+        if let Some(to) = self.window_to() {
+            extra.push_str("&to=");
+            extra.push_str(&to);
         }
         self.cdx_query(&extra)
     }
@@ -1394,6 +1467,10 @@ impl Engine {
         if let Some(from) = &self.since {
             extra.push_str("&from=");
             extra.push_str(from);
+        }
+        if let Some(to) = self.window_to() {
+            extra.push_str("&to=");
+            extra.push_str(&to);
         }
         self.cdx_query(&extra)
     }
@@ -1439,15 +1516,45 @@ impl Engine {
     }
 
     fn cdx_query(&self, extra: &str) -> String {
+        let match_type = match *self.shared.match_type.lock().unwrap() {
+            MatchType::Domain => "domain",
+            MatchType::Prefix => "prefix",
+        };
         format!(
-            "{}/cdx/search/cdx?url={}&matchType=domain&{}",
+            "{}/cdx/search/cdx?url={}&matchType={}&{}",
             self.shared.archive_base(),
             urlencode(&self.host),
+            match_type,
             extra
         )
     }
 
+    /// Переключить режим сопоставления (ФТ-149): на 504 домен не отдаётся,
+    /// а префикс отвечает. Пишем в журнал один раз, чтобы не засорять вывод.
+    fn switch_match_type(&self, reason: &str) {
+        let mut current = self.shared.match_type.lock().unwrap();
+        if *current == MatchType::Domain {
+            *current = MatchType::Prefix;
+            self.shared.log(crate::tr::pick(
+                format!("CDX: режим domain недоступен ({reason}), переключаюсь на prefix"),
+                format!("CDX: domain mode unavailable ({reason}), switching to prefix"),
+            ));
+        }
+    }
+
+    /// Верхняя граница окна индекса (ФТ-151): время старта инвентаризации.
+    ///
+    /// Нужна, чтобы «полнота» была проверяемой: индекс живёт, и один и тот же
+    /// запрос в разные минуты отдаёт разное число строк.
+    fn window_to(&self) -> Option<String> {
+        (self.watermark > 0).then(|| stamp_from_secs(self.watermark))
+    }
+
     fn inventory(&mut self) -> Result<(), String> {
+        // Водяной знак фиксируется до первого запроса: всё, что появится в архиве
+        // позже, добрается отдельным проходом (ФТ-151, ФТ-152).
+        self.watermark = now_secs();
+        self.index_truncated = false;
         self.emit(
             "inventory",
             2.0,
@@ -1528,6 +1635,10 @@ impl Engine {
                         format!("CDX: список — HTTP {code}"),
                         format!("CDX: list — HTTP {code}"),
                     ));
+                    // 504 на крупном домене — отказ режима domain: префикс отвечает.
+                    if code == 504 {
+                        self.switch_match_type("HTTP 504");
+                    }
                     if code == 429 || code >= 500 {
                         let wait = retry.unwrap_or(10.0 * (attempt + 1) as f64);
                         self.shared.sleep(wait);
@@ -1574,14 +1685,30 @@ impl Engine {
                 "CDX: quick query empty — switching to paging",
             ));
             pages = pages.max(2);
-        } else if rows.len() >= 50_000 {
+        } else if rows.len() >= QUICK_LIMIT {
+            self.index_truncated = true;
             self.shared.log(crate::tr::t(
                 "CDX: список обрезан на 50000 адресах",
                 "CDX: address list truncated at 50000",
             ));
         }
-        if rows.is_empty() && pages > 1 {
-            let max_pages = pages.min(MAX_PAGES);
+        if (rows.is_empty() || self.index_truncated) && pages > 1 {
+            let max_pages = if self.index_max_pages == 0 {
+                pages
+            } else {
+                pages.min(self.index_max_pages)
+            };
+            if max_pages < pages {
+                self.index_truncated = true;
+                self.shared.log(crate::tr::pick(
+                    format!(
+                        "CDX: индекс обрезан: {max_pages} страниц из {pages} (--index-max-pages)"
+                    ),
+                    format!(
+                        "CDX: index truncated: {max_pages} pages of {pages} (--index-max-pages)"
+                    ),
+                ));
+            }
             let mut page = 0usize;
             let mut attempts = 0u32;
             while page < max_pages {

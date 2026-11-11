@@ -291,6 +291,7 @@ struct Args {
     since: String,
     /// Предел добора по ссылкам (ФТ-128).
     rescue_limit: Option<usize>,
+    index_max_pages: Option<usize>,
     /// Бюджет времени на добор, секунд (ФТ-128).
     rescue_budget: Option<u64>,
     /// Через сколько дней повторять адреса без снимка (ФТ-135).
@@ -315,6 +316,7 @@ fn parse_args(args: &[String]) -> Args {
         refresh: false,
         since: String::new(),
         rescue_limit: None,
+        index_max_pages: None,
         rescue_budget: None,
         retry_missing_days: None,
         stub_bytes: None,
@@ -377,6 +379,10 @@ fn parse_args(args: &[String]) -> Args {
                 parsed.since = args.get(i + 1).cloned().unwrap_or_default();
                 i += 2;
             }
+            "--index-max-pages" => {
+                parsed.index_max_pages = args.get(i + 1).and_then(|v| v.parse().ok());
+                i += 2;
+            }
             "--rescue-limit" => {
                 parsed.rescue_limit = args.get(i + 1).and_then(|v| v.parse().ok());
                 i += 2;
@@ -412,8 +418,8 @@ fn cli(args: &[String]) -> i32 {
         eprintln!(
             "{}",
             tr::t(
-                "использование: site-restorer --cli --site <адрес> [--out <папка>] [--workers N] [--threads N] [--rate N] [--limit N]\n  снимки: [--snapshot newest|oldest|<дата>] [--as-of ГГГГ[-ММ[-ДД]]] [--fallback-depth N] [--refresh-days N] [--refresh] [--since ГГГГ[-ММ]] [--rescue-limit N] [--stub-bytes N]",
-                "usage: site-restorer --cli --site <address> [--out <folder>] [--workers N] [--threads N] [--rate N] [--limit N]\n  snapshots: [--snapshot newest|oldest|<date>] [--as-of YYYY[-MM[-DD]]] [--fallback-depth N] [--refresh-days N] [--refresh] [--since YYYY[-MM]] [--rescue-limit N] [--stub-bytes N]",
+                "использование: site-restorer --cli --site <адрес> [--out <папка>] [--workers N] [--threads N] [--rate N] [--limit N] [--index-max-pages N]\n  снимки: [--snapshot newest|oldest|<дата>] [--as-of ГГГГ[-ММ[-ДД]]] [--fallback-depth N] [--refresh-days N] [--refresh] [--since ГГГГ[-ММ]] [--rescue-limit N] [--stub-bytes N]",
+                "usage: site-restorer --cli --site <address> [--out <folder>] [--workers N] [--threads N] [--rate N] [--limit N] [--index-max-pages N]\n  snapshots: [--snapshot newest|oldest|<date>] [--as-of YYYY[-MM[-DD]]] [--fallback-depth N] [--refresh-days N] [--refresh] [--since YYYY[-MM]] [--rescue-limit N] [--stub-bytes N]",
             )
         );
         return 2;
@@ -481,6 +487,9 @@ fn cli(args: &[String]) -> i32 {
             bound.push('0');
         }
         engine.set_since(Some(bound));
+    }
+    if let Some(pages) = parsed.index_max_pages {
+        engine.set_index_max_pages(pages);
     }
     if let Some(limit) = parsed.rescue_limit {
         engine.set_rescue_limit(limit);
