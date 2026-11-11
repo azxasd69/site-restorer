@@ -30,6 +30,9 @@ const TIMEOUT_FILE: u64 = 60;
 const TIMEOUT_INDEX: u64 = 120;
 /// Общий предел запроса (ПР-5): внешняя страховка поверх двух предыдущих.
 const TIMEOUT_TOTAL: u64 = 180;
+// Проверка согласованности: индекс ждёт заголовки TIMEOUT_FILE и тело TIMEOUT_INDEX,
+// вместе это ровно TIMEOUT_TOTAL.
+const _: () = assert!(TIMEOUT_FILE + TIMEOUT_INDEX == TIMEOUT_TOTAL);
 /// Размер выборки быстрого запроса индекса (ФТ-149).
 /// Архив отдаёт примерно столько строк, сколько попросили, но шапка JSON и
 /// неразобранные строки съедают несколько: на nginx.org при реальном усечении
@@ -976,15 +979,31 @@ impl Engine {
         // Каталог вывода всегда абсолютный: файловые операции Windows не умеют
         // длинный префикс \?\ на относительном пути, а очистка копии через него.
         let out = absolute_dir(out);
-        // Д-18: раздельные пределы ожидания. Файл — 60 с, индекс — 120 с;
-        // общий предел 180 с остаётся внешней страховкой (ПР-5).
+        // Д-18: раздельные пределы ожидания (ПР-5).
+        //
+        // Важное уточнение по ureq 3.5.1 (проверено по исходникам крейта 12.11.2026):
+        // `timeout_global` покрывает ВСЮ операцию вместе с чтением тела, поэтому
+        // прежние 60 с означали «файл должен успеть целиком за минуту» — крупные
+        // файлы обрывались. Для файлов теперь:
+        //   * connect 15 с — установка соединения;
+        //   * recv_response TIMEOUT_FILE (60 с) — ожидание заголовков;
+        //   * per_read 30 с — перезапускается на каждом чтении, то есть ловит
+        //     зависшее соединение, но не ограничивает общую длительность;
+        //   * тело без общего предела — размер файла заранее неизвестен.
+        // Для индекса ответ ограничен по размеру, поэтому там общий предел:
+        // заголовки 60 с + тело TIMEOUT_INDEX (120 с) = TIMEOUT_TOTAL (180 с).
         let file_config = ureq::Agent::config_builder()
             .http_status_as_error(false)
-            .timeout_global(Some(Duration::from_secs(TIMEOUT_FILE)))
+            .timeout_connect(Some(Duration::from_secs(15)))
+            .timeout_recv_response(Some(Duration::from_secs(TIMEOUT_FILE)))
+            .timeout_per_read(Some(Duration::from_secs(30)))
             .build();
         let index_config = ureq::Agent::config_builder()
             .http_status_as_error(false)
-            .timeout_global(Some(Duration::from_secs(TIMEOUT_INDEX.min(TIMEOUT_TOTAL))))
+            .timeout_connect(Some(Duration::from_secs(15)))
+            .timeout_recv_response(Some(Duration::from_secs(TIMEOUT_FILE)))
+            .timeout_recv_body(Some(Duration::from_secs(TIMEOUT_INDEX)))
+            .timeout_per_read(Some(Duration::from_secs(30)))
             .build();
         Some(Self {
             host,
