@@ -71,9 +71,13 @@ objdump -T | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1
 
 **Сделано 12.11.2026 (Д-58):** сборка linux-gnu идёт через `cargo-zigbuild` с
 суффиксом `x86_64-unknown-linux-gnu.2.28`; проверка символов в конвейере переведена
-в строгий режим (`GLIBC_FLOOR_STRICT=1`), то есть превышение пола теперь ломает
-сборку, а не выдаёт предупреждение. Запасной путь, если zigbuild подведёт, —
-контейнер `quay.io/pypa/manylinux_2_28_x86_64`.
+в строгий режим (`GLIBC_FLOOR_STRICT=1`), то есть превышение пола ломает сборку,
+а не выдаёт предупреждение. Запасной путь, если zigbuild подведёт, — контейнер
+`quay.io/pypa/manylinux_2_28_x86_64`.
+
+Замер после правки (первый зелёный прогон конвейера):
+`максимальная требуемая версия glibc: GLIBC_2.28` — пол достигнут; там же проверка
+защит ELF: `PIE, RELRO, BIND_NOW — на месте`.
 
 Статический musl остаётся вариантом CLI по отдельному решению: он не зависит от
 glibc вовсе, но требует отдельной проверки поведения (DNS, локали).
@@ -157,8 +161,8 @@ glibc вовсе, но требует отдельной проверки пов
 | MSRV | **сделано 12.11.2026**: `rust-version = "1.88"` и отдельная задача, собирающая на 1.88 |
 | `cargo deny` | выполняется |
 | SBOM (`cargo cyclonedx`) | **сделано 12.11.2026**: отдельная задача, файл `SBOM-site-restorer.cdx.json` входит в релиз и в контрольные суммы |
-| Windows: Authenticode, проверка mitigations (`High Entropy VA`, `Dynamic base`, `NX compatible`, `Guard CF`) | **не выполняется**: подписи нет, проверка mitigations в конвейер не добавлена (Д-63) |
-| Linux: PIE, `-Wl,-z,relro,-z,now` | не проверяется: нужны явные флаги линковки и проверка `readelf` (Д-63) |
+| Windows: Authenticode, проверка mitigations (`High Entropy VA`, `Dynamic base`, `NX compatible`, `Guard CF`) | **частично сделано 12.11.2026**: три защиты проверяются в конвейере (`dumpbin /headers`); CFG требует сборки всех объектов с `/guard:cf` — вторая часть Д-63; Authenticode ждёт сертификата |
+| Linux: PIE, `-Wl,-z,relro,-z,now` | **сделано 12.11.2026**: проверка `readelf` (Type DYN, GNU_RELRO, BIND_NOW) в конвейере |
 | macOS: hardened runtime | недостижимо до §5 |
 
 Проверка mitigations для Windows делается без подписи: `dumpbin /headers` и
