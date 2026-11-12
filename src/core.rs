@@ -403,7 +403,7 @@ struct Shared {
     /// Карта «отпечаток содержимого → путь канонического файла» (ФТ-145).
     /// Живёт в пределах прогона: по ней адрес с уже скачанным содержимым
     /// получает жёсткую ссылку вместо второго запроса.
-    dedup: Mutex<HashMap<String, String>>,
+    dedup: Mutex<HashMap<String, (String, String)>>,
     /// Обратная сторона: путь копии → канонический путь (поле `same_as`).
     shared_paths: Mutex<HashMap<String, String>>,
     /// Режим выбора снимка (ФТ-126): нужен воркерам.
@@ -729,12 +729,15 @@ impl Shared {
 
         // Уже скачанное содержимое: второй запрос не нужен (ФТ-145, ФТ-146).
         // Отпечаток приходит из индекса, поэтому проверка дешёвая.
+        // Ссылка ставится только при совпадении отпечатка И снимка: отпечаток
+        // относится к записи индекса, а скачивается конкретный снимок (ФТ-145).
         if !item.digest.is_empty()
-            && let Some(canon) = self
+            && let Some((canon, canon_ts)) = self
                 .dedup
                 .lock()
                 .ok()
                 .and_then(|m| m.get(&item.digest).cloned())
+            && canon_ts == item.ts
             && let Some(size) = self.link_shared(item, &canon)
         {
             self.counters.done.fetch_add(1, Ordering::Relaxed);
@@ -827,7 +830,7 @@ impl Shared {
                     && let Ok(mut map) = self.dedup.lock()
                 {
                     map.entry(item.digest.clone())
-                        .or_insert_with(|| item.path.clone());
+                        .or_insert_with(|| (item.path.clone(), item.ts.clone()));
                 }
             }
             Attempt::Absent => {
@@ -863,8 +866,11 @@ impl Shared {
                 return Attempt::Failed;
             }
             self.wait_for_pause();
-            let fetched = match self.fetch(&url) {
-                Ok(fetched) => fetched,
+            // Один запрос на файл: заголовки решают, что делать с телом, и оно же
+            // пишется на диск. Раньше здесь сначала шёл `fetch` (тело в память),
+            // а затем `save_to` качал тот же файл вторым запросом — трафик ×2.
+            let (head, body) = match self.open(false, &url) {
+                Ok(pair) => pair,
                 Err(err) => {
                     transport_failed = true;
                     self.log(crate::tr::pick(
@@ -877,10 +883,10 @@ impl Shared {
                     continue;
                 }
             };
-            let status = fetched.status;
+            let status = head.status;
             if status == 429 {
                 self.counters.win_429.fetch_add(1, Ordering::Relaxed);
-                let wait = fetched.retry_after.unwrap_or(20.0 * (attempt + 1) as f64);
+                let wait = head.retry_after.unwrap_or(20.0 * (attempt + 1) as f64);
                 self.log(crate::tr::pick(
                     format!("429: пауза {wait:.0} с"),
                     format!("429: pause {wait:.0}s"),
@@ -892,10 +898,8 @@ impl Shared {
                 return Attempt::Absent;
             }
             if status == 200 {
-                // 200 — тело пишется в файл потоком, в память не собирается.
-                // `fetched` здесь уже не нужен: заголовки берутся из `save_to`.
-                let _ = &fetched;
-                return match self.save_to(&url, &self.mirror.join(&item.path)) {
+                // 200 — тело того же ответа пишется в файл потоком.
+                return match self.save_body(head, body, &self.mirror.join(&item.path)) {
                     Ok(saved) => match self.commit(item, &saved, stub) {
                         Some(done) => done,
                         None => Attempt::Unusable,
@@ -930,8 +934,8 @@ impl Shared {
     /// выглядеть готовым. `head_bytes` — первые `HEAD_BYTES` байт, по ним потом
     /// проверяется пригодность; счётчики байтов здесь НЕ трогаются, иначе AIMD
     /// увидел бы двойную скорость (байты начисляются один раз по размеру файла).
-    fn save_to(&self, url: &str, dest: &Path) -> Result<Saved, String> {
-        let (head, body) = self.open(false, url)?;
+    /// Записать уже открытое тело в файл (тот же `save_to`, но без второго запроса).
+    fn save_body(&self, head: Head, body: ureq::Body, dest: &Path) -> Result<Saved, String> {
         if let Some(parent) = dest.parent() {
             let _ = fs::create_dir_all(parent);
         }
@@ -3428,8 +3432,7 @@ impl Engine {
         self.download()?;
         // Инвентарь переписывается после загрузки: только теперь известно, какие
         // адреса получили файл ссылкой (ФТ-146).
-        let items = self.items.clone();
-        self.write_inventory(&items)?;
+        self.write_inventory(&self.items)?;
         self.ensure_not_cancelled()?;
         self.build()?;
         self.save_snapshots();
@@ -4526,10 +4529,11 @@ mod tests {
         let engine = Engine::new("example.com", &dir, 1, 0).unwrap();
         let dest = dir.join("big.bin");
         // save_to живёт в Shared: именно он владеет агентами и счётчиками.
-        let saved = engine
+        let (head, body) = engine
             .shared
-            .save_to(&format!("http://{addr}/big"), &dest)
+            .open(false, &format!("http://{addr}/big"))
             .unwrap();
+        let saved = engine.shared.save_body(head, body, &dest).unwrap();
         server.join().unwrap();
         assert_eq!(saved.len, 10_000, "тело должно быть на диске целиком");
         assert_eq!(
