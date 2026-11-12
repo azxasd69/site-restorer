@@ -156,6 +156,7 @@ jobs:
           zig version || python3 -c "import ziglang, shutil, sys; print(shutil.which('python3'))"
 
       - name: Build
+        shell: bash
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
         run: |
