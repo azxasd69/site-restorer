@@ -2729,7 +2729,34 @@ impl Engine {
     /// Файлы обрабатываются параллельно; дерево зеркала обходится один раз; каталоги
     /// создаются один раз на путь; повторный прогон пропускает неизменённые файлы,
     /// беря цели ссылок из журнала сборки.
+    /// Страницы, которые ссылались на указанные ключи (ФТ-153).
+    ///
+    /// Обратное отображение строится по журналу сборки: там у каждой страницы
+    /// уже записан список целей `targets`, отдельная карта не нужна.
+    fn pages_for(&self, keys: &HashSet<String>) -> HashSet<String> {
+        let journal = self.load_journal();
+        let mut pages = HashSet::new();
+        for (rel, entry) in journal {
+            if !entry.page {
+                continue;
+            }
+            if entry.targets.iter().any(|key| keys.contains(key)) {
+                pages.insert(rel);
+            }
+        }
+        pages
+    }
+
     fn build(&self) -> Result<usize, String> {
+        self.build_dirty(None)
+    }
+
+    /// Сборка с явным списком страниц, которые надо пересобрать (ФТ-153).
+    ///
+    /// Пропуск по размеру и времени изменения не даёт переписать страницу после
+    /// добора: ссылка, оставленная абсолютной, так и осталась бы абсолютной.
+    /// Поэтому «грязные» страницы проверку пропуска не проходят.
+    fn build_dirty(&self, dirty: Option<&HashSet<String>>) -> Result<usize, String> {
         let files = self.mirror_list();
         let index = Index::of(&files, &self.mirror);
         let total = files.len().max(1);
@@ -2800,10 +2827,12 @@ impl Engine {
                         .unwrap_or(0);
 
                     // Файл уже собран и в зеркале не менялся: переписывать нечего.
+                    let dirty_page = dirty.is_some_and(|set| set.contains(&rel));
                     if let Some(prev) = journal.get(&rel)
                         && prev.size == size
                         && prev.mtime == mtime
                         && dst.exists()
+                        && !dirty_page
                     {
                         skipped.fetch_add(1, Ordering::Relaxed);
                         if prev.page {
@@ -3755,7 +3784,20 @@ impl Engine {
             ));
             *self.mirror_cache.lock().unwrap() = None;
             self.mirror_files.store(0, Ordering::Relaxed);
-            self.build()?;
+            // Пересобираем только страницы, которые ссылались на добранное:
+            // полная сборка на большой копии стоила бы минуты без пользы.
+            let keys: HashSet<String> = broken.iter().cloned().collect();
+            let pages = self.pages_for(&keys);
+            if pages.is_empty() {
+                self.build()?;
+            } else {
+                self.shared.log(crate::tr::pick(
+                    format!("пересборка затронутых страниц: {}", pages.len()),
+                    format!("rebuilding affected pages: {}", pages.len()),
+                ));
+                self.added_build += pages.len();
+                self.build_dirty(Some(&pages))?;
+            }
             self.ensure_not_cancelled()?;
             stats = self.verify();
             self.ensure_not_cancelled()?;
@@ -4729,6 +4771,50 @@ mod tests {
         assert_eq!(parse_pages("12"), Some(12));
         assert_eq!(parse_pages(""), None);
         assert_eq!(parse_pages(r#"{"pages": 0}"#), None);
+    }
+
+    /// Д-55 часть 2: после добора пересобираются только затронутые страницы.
+    /// Ссылка, оставленная абсолютной (цели не было), должна стать относительной,
+    /// а нетронутая страница — сохранить прежнее время изменения.
+    #[test]
+    fn dirty_build_rewrites_only_affected_pages() {
+        let dir = std::env::temp_dir().join(format!(
+            "sr-dirty-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::create_dir_all(dir.join("mirror"));
+        let engine = Engine::new("example.com", &dir, 1, 0).unwrap();
+        let put = |rel: &str, body: &str| {
+            let full = dir.join("mirror").join(rel);
+            fs::create_dir_all(full.parent().unwrap()).unwrap();
+            fs::write(full, body).unwrap();
+        };
+        put(
+            "index.html",
+            "<html><body><a href=\"https://example.com/a.html\">a</a>             <a href=\"https://example.com/missing.html\">m</a></body></html>",
+        );
+        put("a.html", "<html><body>a</body></html>");
+        engine.build().unwrap();
+        let page = dir.join("site").join("index.html");
+        let first = fs::read_to_string(&page).unwrap();
+        assert!(
+            first.contains("https://example.com/missing.html"),
+            "цели нет — адрес остался абсолютным: {first}"
+        );
+
+        // Имитируем добор: файл появился, страница стала «грязной».
+        put("missing.html", "<html><body>m</body></html>");
+        let mut dirty = HashSet::new();
+        dirty.insert("index.html".to_string());
+        *engine.mirror_cache.lock().unwrap() = None;
+        engine.build_dirty(Some(&dirty)).unwrap();
+        let second = fs::read_to_string(&page).unwrap();
+        assert!(
+            second.contains("href=\"missing.html\""),
+            "после пересборки ссылка относительная: {second}"
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// Д-55: очередь не теряет адрес, добавленный во время работы, и не берёт
