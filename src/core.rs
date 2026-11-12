@@ -2574,25 +2574,51 @@ impl Engine {
                 loop {
                     // Сон дробится на секунды: иначе join ждал бы его конца и
                     // добавлял до двух минут к прогону (замер: 183 с вместо ~60).
+                    // Проверка запускается по времени (120 с) или раньше, если
+                    // прошло 500 файлов: на быстрой сети две минуты — это тысячи
+                    // файлов, и пропущенное не вернуть (ФТ-152).
+                    let mut last_seen = shared.counters.ok.load(Ordering::Relaxed);
                     for _ in 0..120 {
                         if stop.load(Ordering::Relaxed) || shared.cancel.load(Ordering::Relaxed) {
                             return;
                         }
                         std::thread::sleep(Duration::from_secs(1));
+                        let now = shared.counters.ok.load(Ordering::Relaxed);
+                        if now.saturating_sub(last_seen) >= 500 {
+                            last_seen = now;
+                            break;
+                        }
                     }
                     let extra = format!(
                         "output=json&fl=timestamp,original,mimetype,statuscode,length,digest&filter=statuscode:200&collapse=urlkey&from={from}"
                     );
+                    // Режим берём текущий: после 504 основной запрос уже перешёл на
+                    // prefix, и добор должен идти так же.
+                    let mode = match *shared.match_type.lock().unwrap() {
+                        MatchType::Domain => "domain",
+                        MatchType::Prefix => "prefix",
+                    };
                     let query = format!(
-                        "{}/cdx/search/cdx?url={}&matchType=domain&{}",
+                        "{}/cdx/search/cdx?url={}&matchType={mode}&{}",
                         shared.archive_base(),
                         urlencode(&host),
                         extra
                     );
-                    let Ok(fetched) = shared.fetch_stream(&query, &mut |_, _| {}) else {
-                        continue;
+                    let fetched = match shared.fetch_stream(&query, &mut |_, _| {}) {
+                        Ok(fetched) => fetched,
+                        Err(err) => {
+                            shared.log(crate::tr::pick(
+                                format!("добор: запрос не удался ({err})"),
+                                format!("live: request failed ({err})"),
+                            ));
+                            continue;
+                        }
                     };
                     if fetched.status != 200 {
+                        shared.log(crate::tr::pick(
+                            format!("добор: индекс ответил {}", fetched.status),
+                            format!("live: index answered {}", fetched.status),
+                        ));
                         continue;
                     }
                     let mut best: HashMap<String, (String, String, String, u64, String)> =
