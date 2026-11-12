@@ -5,7 +5,8 @@
 
 ## Что выпускаем
 
-Одна реализация — Rust. В релиз попадают шесть бинарников и Linux-бандл:
+Одна реализация — Rust. В релиз попадают четыре сборки, Linux-бандл, суммы и
+перечень состава сборки — **ровно семь файлов** (РЛ-2):
 
 | Файл | Откуда | Лимит размера |
 |---|---|---|
@@ -15,6 +16,7 @@
 | `SiteRestorer-linux-x64-cli` | `--no-default-features`, `x86_64-unknown-linux-musl`, статический | 15 МБ |
 | `SiteRestorer-linux-x64.tar.gz` | оба Linux-бинарника + `.desktop`, иконка, `install.sh`, `README.txt` | — |
 | `SHA256SUMS.txt` | контрольные суммы всех файлов | — |
+| `SBOM-site-restorer.cdx.json` | `cargo cyclonedx`, перечень состава сборки (ПЛ-11) | — |
 
 Python и Go не собираются и не публикуются: `legacy/python` и `ports/go` —
 архив исходников.
@@ -89,7 +91,7 @@ Python и Go не собираются и не публикуются: `legacy/p
 ## Проверка релиза
 
 ```bash
-gh release view vX.Y.Z --json assets --jq '.assets[].name'   # ровно 9 имён (ПЛ-11: с SBOM)
+gh release view vX.Y.Z --json assets --jq '.assets[].name'   # ровно 7 имён (ПЛ-11: с SBOM)
 curl -sL .../releases/download/vX.Y.Z/SHA256SUMS.txt          # суммы на месте
 ./SiteRestorer-windows-x64.exe --version                      # версия совпадает
 sha256sum -c SHA256SUMS.txt                                   # сходится

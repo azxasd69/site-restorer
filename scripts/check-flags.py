@@ -6,16 +6,16 @@
 правка в файле в конвейере не действовала — и это ничем не обнаруживалось
 (ПР-15, Д-69). Скрипт закрывает класс дефектов:
 
-1. в конфигурации сборки нет запрещённых значений (`target-cpu=native`,
-   `x86-64-v2/v3/v4`, глобальные `+avx*`, `+fma`, `+sse4.*`);
+1. в конфигурации сборки нет запрещённых значений (target-cpu=native,
+   x86-64-v2/v3/v4, глобальные +avx*, +fma, +sse4.*);
 2. все цели, которые собирает конвейер, описаны в `.cargo/config.toml`;
-3. конвейер не задаёт `RUSTFLAGS` и `rustflags` ни в одной задаче, кроме замеров;
-4. проверка возможностей и `#[target_feature]` встречаются только в `src/isa.rs`,
-   а функция с `#[target_feature(enable = "avx2")]` обязана принимать пропуск
-   `Avx2` — иначе выключатель `SR_NO_SIMD` обходится новым ускоренным путём.
+3. конвейер не задаёт RUSTFLAGS и rustflags ни в одной задаче, кроме замеров;
+4. проверка возможностей и ускоренные атрибуты встречаются только в src/isa.rs,
+   а функция с target_feature принимает пропуск Avx2 — иначе выключатель
+   SR_NO_SIMD обходится новым ускоренным путём в любом файле.
 
-Исключение ровно одно: вариантная сборка `x86-64-v3` в задаче `isa-bench`
-(числа для сравнения, а не поставка). Задача узнаётся по имени и по содержимому.
+Исключение ровно одно: вариантная сборка x86-64-v3 в задаче isa-bench (числа для
+сравнения, а не поставка). Задача узнаётся по имени и по содержимому.
 
 Скрипт падает, если файл конфигурации или конвейера не найден: пропуск проверки
 из-за отсутствующего файла — ложноотрицательный результат, а не успех.
@@ -27,7 +27,6 @@
 from __future__ import annotations
 
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -36,26 +35,24 @@ ROOT = Path(__file__).resolve().parent.parent
 CONFIG = ".cargo/config.toml"
 WORKFLOWS_DIR = ".github/workflows"
 
-# Значения, запрещённые политикой (docs/PLATFORMS.md §2). Границы слов здесь не
-# годятся: `+avx512f` должен ловиться так же, как `+avx`.
+# Запрещённые значения: ищем подстроки, а не регулярные выражения — так нельзя
+# промахнуться из-за экранирования, а ложные срабатывания отсекаются контекстом.
 FORBIDDEN = [
-    (re.compile(r"target-cpu\s*=\s*native"), "target-cpu=native"),
-    (re.compile(r"x86-64-v2"), "x86-64-v2"),
-    (re.compile(r"x86-64-v3"), "x86-64-v3"),
-    (re.compile(r"x86-64-v4"), "x86-64-v4"),
-    (re.compile(r"target-feature=\+avx"), "глобальный +avx*"),
-    (re.compile(r"target-feature=\+fma"), "глобальный +fma"),
-    (re.compile(r"target-feature=\+sse4"), "глобальный +sse4.*"),
+    ("target-cpu=native", "target-cpu=native"),
+    ("target-cpu = native", "target-cpu=native"),
+    ("x86-64-v2", "x86-64-v2"),
+    ("x86-64-v3", "x86-64-v3"),
+    ("x86-64-v4", "x86-64-v4"),
+    ("target-feature=+avx", "глобальный +avx*"),
+    ("target-feature = +avx", "глобальный +avx*"),
+    ("target-feature=+fma", "глобальный +fma"),
+    ("target-feature=+sse4", "глобальный +sse4.*"),
 ]
 
 CHECKED = ["Cargo.toml", "build.rs", "rust-toolchain.toml"]
 
-# Задача замеров: ей вариантная сборка разрешена.
 BENCH_JOB = "isa-bench"
 BENCH_MARK = "bench_"
-
-# Ключ задачи верхнего уровня: допускаем кавычки и хвостовой комментарий.
-JOB_KEY = re.compile(r'^  "?([A-Za-z0-9_-]+)"?:[ \t]*(?:#.*)?$')
 
 
 def read(path: str) -> str | None:
@@ -79,45 +76,73 @@ def workflow_files() -> dict[str, str]:
     return result
 
 
+def strip_comment(line: str) -> str:
+    """Убрать хвостовой комментарий, если он не внутри кавычек."""
+    quote = ""
+    for index, ch in enumerate(line):
+        if quote:
+            if ch == quote:
+                quote = ""
+        elif ch in {'"', "'"}:
+            quote = ch
+        elif ch == "#":
+            return line[:index]
+    return line
+
+
+def job_name(candidate: str) -> str | None:
+    """Имя задачи из строки вида `  имя:` (возможны кавычки и комментарий)."""
+    text = strip_comment(candidate).rstrip()
+    if not text.endswith(":") or not text.startswith("  "):
+        return None
+    if text.startswith("   "):
+        return None
+    name = text[2:-1].strip()
+    if name[:1] in {'"', "'"} and name[-1:] == name[:1]:
+        name = name[1:-1]
+    if not name or " " in name:
+        return None
+    return name
+
+
 def job_of_lines(text: str) -> list[str | None]:
     """Для каждой строки — имя задачи (или None, если строка вне задачи).
 
-    Задача верхнего уровня в GitHub Actions — ключ с отступом в два пробела
-    внутри `jobs:`. Любая строка без отступа (например, `env:` верхнего уровня)
-    считается «вне задачи» и проверяется отдельно: она действует на все шаги.
+    Задача верхнего уровня — ключ с отступом ровно в два пробела внутри `jobs:`.
+    Строка без отступа закрывает раздел: например, `env:` верхнего уровня
+    действует на все задачи и проверяется отдельно.
     """
     owners: list[str | None] = []
     current: str | None = None
     in_jobs = False
     for line in text.split("\n"):
-        if line.rstrip() == "jobs:":
+        bare = strip_comment(line).rstrip()
+        if bare == "jobs:":
             in_jobs = True
             current = None
             owners.append(None)
             continue
         if in_jobs:
-            match = JOB_KEY.match(line)
-            if match:
-                current = match.group(1)
+            found = job_name(line)
+            if found:
+                current = found
                 owners.append(current)
                 continue
-            # Строка без отступа — конец раздела задач (permissions, env и пр.).
-            if line and not line.startswith(" "):
+            if bare and not bare.startswith(" "):
                 in_jobs = False
                 current = None
         owners.append(current)
     return owners
 
 
-def is_bench_job(text: str, owner: str | None, index: int) -> bool:
+def is_bench_job(text: str, owner: str | None) -> bool:
     """Задача замеров: имя совпадает и в самой задаче есть замер."""
     if owner != BENCH_JOB:
         return False
     owners = job_of_lines(text)
-    lines = text.split("\n")
     block = [
         line
-        for line, name in zip(lines, owners, strict=False)
+        for line, name in zip(text.split("\n"), owners, strict=False)
         if name == BENCH_JOB
     ]
     return BENCH_MARK in "\n".join(block)
@@ -130,40 +155,35 @@ def check_sources(problems: list[str]) -> None:
         return
     for file in sorted(sources.rglob("*.rs")):
         rel = file.relative_to(ROOT).as_posix()
-        text = file.read_text(encoding="utf-8").replace("\r\n", "\n")
-        lines = text.split("\n")
+        lines = file.read_text(encoding="utf-8").replace("\r\n", "\n").split("\n")
         for index, line in enumerate(lines, start=1):
             stripped = line.strip()
             if stripped.startswith("//"):
                 continue
-            if rel != "src/isa.rs" and (
+            in_isa = rel == "src/isa.rs"
+            if not in_isa and (
                 "is_x86_feature_detected" in line
-                or re.search(r"#\[target_feature", line)
+                or "target_feature" in line
+                or "std::arch" in line
                 or "cfg!(target_feature" in line
+                or "#[cfg(target_feature" in line
             ):
                 problems.append(
-                    f"{rel}:{index}: проверка возможностей и #[target_feature] "
+                    f"{rel}:{index}: проверка возможностей и target_feature "
                     "допустимы только в src/isa.rs"
                 )
+                continue
             # Внутри isa.rs: ускоренная функция обязана принимать пропуск Avx2.
-            if rel == "src/isa.rs" and re.search(
-                r"#\[target_feature\(enable = \"(avx2|avx|sse4[^)]*)\"\)\]", line
-            ):
-                signature = ""
-                for follow in lines[index : index + 3]:
-                    if "fn " in follow:
-                        signature = follow
-                        break
-                if "Avx2" not in signature:
+            # Атрибут и подпись могут занимать несколько строк, а enable="avx2"
+            # пишут и без пробелов — поэтому берём текст до открывающей скобки.
+            if in_isa and "#[target_feature" in line:
+                tail = "\n".join(lines[index - 1 : index + 12])
+                signature = tail.split("{", 1)[0]
+                if "fn " in signature and "Avx2" not in signature:
                     problems.append(
-                        f"{rel}:{index}: функция с #[target_feature] не принимает "
+                        f"{rel}:{index}: функция с target_feature не принимает "
                         "пропуск Avx2 — ускоренный путь обойдёт SR_NO_SIMD"
                     )
-            if "std::arch" in line and rel != "src/isa.rs":
-                problems.append(
-                    f"{rel}:{index}: std::arch вне src/isa.rs — интринсики без "
-                    "проверки возможностей"
-                )
 
 
 def main() -> int:
@@ -180,14 +200,22 @@ def main() -> int:
         problems.append(f"{WORKFLOWS_DIR}: нет ни одного файла конвейера")
     else:
         # Конвейер сборки обязан существовать: нужен файл, где есть матрица
-        # целей и шаг cargo build. Простое упоминание «cargo build» в другом
-        # конвейере за сборку не считается.
-        builds = [
-            path
-            for path, text in workflows.items()
-            if re.search(r"^\s+target:\s*", text, re.M)
-            and re.search(r"cargo (build|zigbuild)", text)
-        ]
+        # целей и шаг, который действительно запускает сборку.
+        builds = []
+        for path, text in workflows.items():
+            has_target = any(
+                strip_comment(line).strip().startswith("target:")
+                for line in text.split("\n")
+            )
+            has_build = any(
+                strip_comment(line).strip().startswith("cargo build")
+                or strip_comment(line).strip().startswith("cargo zigbuild")
+                or strip_comment(line).strip().startswith("run: cargo build")
+                or strip_comment(line).strip().startswith("run: cargo zigbuild")
+                for line in text.split("\n")
+            )
+            if has_target and has_build:
+                builds.append(path)
         if not builds:
             problems.append(
                 f"{WORKFLOWS_DIR}: нет конвейера, который собирает проект "
@@ -205,20 +233,22 @@ def main() -> int:
             if line.strip().startswith("#"):
                 continue
             owner = owners[index] if index < len(owners) else None
-            for pattern, label in FORBIDDEN:
-                if not pattern.search(line):
+            for needle, label in FORBIDDEN:
+                if needle not in line:
                     continue
-                if label.startswith("x86-64-v3") and is_bench_job(text, owner, index):
+                if label.startswith("x86-64-v3") and is_bench_job(text, owner):
                     continue
                 problems.append(f"{path}:{index + 1}: запрещено {label}")
 
     # 2. Цели конвейера описаны в файле, у каждой зафиксирована база.
     targets: set[str] = set()
     for text in workflows.values():
-        targets.update(
-            match.strip("\"'")
-            for match in re.findall(r"^\s+target:\s*(\S+)\s*$", text, re.M)
-        )
+        for line in text.split("\n"):
+            bare = strip_comment(line).strip()
+            if bare.startswith("target:"):
+                value = bare[len("target:") :].strip().strip("\"'")
+                if value:
+                    targets.add(value)
     for target in sorted(targets):
         block = f"[target.{target}]"
         if block not in config:
@@ -237,13 +267,13 @@ def main() -> int:
             if line.strip().startswith("#"):
                 continue
             owner = owners[index] if index < len(owners) else None
-            bench = is_bench_job(text, owner, index)
+            bench = is_bench_job(text, owner)
             if "RUSTFLAGS" in line and not bench:
                 problems.append(
                     f"{path}:{index + 1}: RUSTFLAGS вне задачи {BENCH_JOB} — "
                     "флаги должны браться из .cargo/config.toml"
                 )
-            if re.match(r"^\s+rustflags:", line) and not bench:
+            if line.strip().startswith("rustflags:") and not bench:
                 problems.append(
                     f"{path}:{index + 1}: rustflags в матрице — единственный "
                     "источник это .cargo/config.toml"
