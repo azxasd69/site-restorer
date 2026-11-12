@@ -3411,7 +3411,20 @@ impl Engine {
                 json_escape(&same_as)
             ));
         }
-        fs::write(self.data_dir.join("inventory.jsonl"), inv).map_err(|e| e.to_string())
+        // Атомарная запись: прерванный прогон не оставит половину инвентаря
+        // (тот же приём, что для файлов копии: .part + переименование).
+        let path = self.data_dir.join("inventory.jsonl");
+        let tmp = self.data_dir.join("inventory.jsonl.part");
+        fs::write(&tmp, inv).map_err(|e| e.to_string())?;
+        if fs::rename(&tmp, &path).is_err() {
+            // Windows: rename не перезаписывает существующий файл.
+            let _ = fs::remove_file(&path);
+            if fs::rename(&tmp, &path).is_err() {
+                let _ = fs::copy(&tmp, &path);
+                let _ = fs::remove_file(&tmp);
+            }
+        }
+        Ok(())
     }
 
     pub fn run(&mut self) -> Result<Outcome, String> {
