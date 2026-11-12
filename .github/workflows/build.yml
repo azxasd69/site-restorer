@@ -84,6 +84,8 @@ jobs:
               libxkbcommon-dev libgl1-mesa-dev libegl1-mesa-dev libx11-dev libxcursor-dev
               libxrandr-dev libxi-dev libwayland-dev libfontconfig1-dev
             rustflags: "-C target-cpu=x86-64"
+            # Д-58: собираем с полом glibc 2.28 через zigbuild
+            glibc: "2.28"
             out: SiteRestorer-linux-x64-gui
             max_mb: 45
           - os: windows-latest
@@ -142,14 +144,28 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # Д-58: пол glibc 2.28. zigbuild заменяет системный линковщик и подставляет
+      # нужную версию символов; без него сборка на ubuntu-latest требует 2.39.
+      - name: Install zig for glibc floor
+        if: matrix.glibc != ''
+        run: |
+          set -e
+          python3 -m pip install --user ziglang
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          cargo install cargo-zigbuild --locked
+          zig version || python3 -c "import ziglang, shutil, sys; print(shutil.which('python3'))"
+
       - name: Build
-        shell: bash
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
         run: |
           FLAGS=""
           if [ "${{ matrix.features }}" = "cli" ]; then FLAGS="--no-default-features"; fi
-          cargo build --release --target ${{ matrix.target }} $FLAGS
+          if [ -n "${{ matrix.glibc }}" ]; then
+            cargo zigbuild --release --target ${{ matrix.target }}.${{ matrix.glibc }} $FLAGS
+          else
+            cargo build --release --target ${{ matrix.target }} $FLAGS
+          fi
 
       # Clippy для gui-сборки: в test-джобе проверяется только CLI.
       - name: Clippy (gui)
@@ -160,23 +176,47 @@ jobs:
       # версию выше 2.28, иначе двоичник не запустится на RHEL 8 / Debian 10.
       - name: glibc floor (только linux-gnu)
         if: matrix.target == 'x86_64-unknown-linux-gnu'
+        env:
+          # Д-58 сделан: с zigbuild пол обязателен, отступлений больше нет.
+          GLIBC_FLOOR_STRICT: "1"
         run: |
           set -e
           SRC="target/${{ matrix.target }}/release/site-restorer"
           MAX=$(objdump -T "$SRC" | grep -oE 'GLIBC_2\.[0-9]+' | sort -Vu | tail -1)
           echo "максимальная требуемая версия glibc: $MAX"
-          # До Д-58 пол не выполняется (сборка идёт на glibc-раннере), поэтому
-          # проверка предупреждает, а не блокирует: иначе нельзя выпустить 3.6.0.
-          # После Д-58 включить строгий режим: GLIBC_FLOOR_STRICT=1.
           if [ "$(printf '%s\n' "$MAX" | sed 's/GLIBC_//')" \> "2.28" ]; then
-            if [ "${GLIBC_FLOOR_STRICT:-0}" = "1" ]; then
-              echo "::error::бинарник требует glibc $MAX — политика разрешает не выше 2.28"
-              exit 1
-            fi
-            echo "::warning::бинарник требует glibc $MAX — пол 2.28 не достигнут (пункт Д-58)"
+            echo "::error::бинарник требует glibc $MAX — политика разрешает не выше 2.28"
+            exit 1
           fi
 
+      # Д-63: защиты ELF — PIE, RELRO, немедленная привязка символов.
+      - name: ELF hardening (linux)
+        if: startsWith(matrix.target, 'x86_64-unknown-linux')
+        run: |
+          set -e
+          SRC="target/${{ matrix.target }}/release/site-restorer"
+          readelf -h "$SRC" | grep -q "Type:.*DYN" || { echo "::error::нет PIE"; exit 1; }
+          readelf -l "$SRC" | grep -q "GNU_RELRO" || { echo "::error::нет RELRO"; exit 1; }
+          readelf -d "$SRC" | grep -q "BIND_NOW" || { echo "::error::нет BIND_NOW"; exit 1; }
+          echo "ELF: PIE, RELRO, BIND_NOW — на месте"
+
       # Манифест Windows: asInvoker, PerMonitorV2, longPathAware, supportedOS.
+      # Д-63: защиты PE — ASLR с высокой энтропией, DEP, Control Flow Guard.
+      - name: Windows mitigations
+        if: startsWith(matrix.target, 'x86_64-pc-windows')
+        shell: pwsh
+        run: |
+          $exe = "target/${{ matrix.target }}/release/site-restorer.exe"
+          $dumpbin = Get-ChildItem "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $dumpbin) { Write-Output "dumpbin не найден — проверка пропущена"; exit 0 }
+          $h = & $dumpbin.FullName /nologo /headers $exe 2>&1 | Out-String
+          $need = @('High Entropy Virtual Addresses', 'Dynamic base', 'NX compatible', 'Control Flow Guard')
+          $missing = @()
+          foreach ($n in $need) { if ($h -notmatch [regex]::Escape($n)) { $missing += $n } }
+          if ($missing) { Write-Error ("нет защит: " + ($missing -join ', ')); exit 1 }
+          Write-Output "PE: $($need -join ', ') — на месте"
+
       - name: Windows manifest
         if: startsWith(matrix.target, 'x86_64-pc-windows') || startsWith(matrix.target, 'i686-pc-windows')
         shell: pwsh
@@ -187,6 +227,15 @@ jobs:
           $missing = $need | Where-Object { -not $text.Contains($_) }
           if ($missing) { Write-Error "в манифесте нет: $($missing -join ', ')"; exit 1 }
           Write-Output "манифест на месте: $($need -join ', ')"
+
+      # Д-62: cfg-ветви не должны гнить — проверяем каждый таргет, а не только хост.
+      - name: Check target (${{ matrix.target }})
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
+        run: |
+          set -e
+          if [ "${{ matrix.features }}" = "cli" ]; then FLAGS="--no-default-features"; fi
+          cargo check --release --target ${{ matrix.target }} $FLAGS
 
       - name: Collect binary
         shell: bash
@@ -230,6 +279,23 @@ jobs:
           name: pdb-${{ matrix.target }}-${{ matrix.features }}
           path: target/${{ matrix.target }}/release/site-restorer.pdb
           if-no-files-found: ignore
+
+  # Д-61: объявленная минимальная версия должна собираться на деле, иначе она
+  # превращается в строчку в Cargo.toml без смысла.
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain 1.88
+        run: |
+          rustup toolchain install 1.88 --profile minimal
+          rustup override set 1.88
+
+      - name: Check on MSRV
+        env:
+          RUSTFLAGS: "-C target-cpu=x86-64"
+        run: cargo check --no-default-features
 
   # Перечень состава сборки (SBOM, CycloneDX) — требование политики платформ.
   # Генерируется своим скриптом из Cargo.lock: не зависит от установки
