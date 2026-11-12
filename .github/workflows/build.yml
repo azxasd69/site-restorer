@@ -70,6 +70,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Д-57 выполнен 12.11.2026: 32-битные сборки прекращены. Последняя
+          # 32-битная версия — 3.6.0, она остаётся в своём релизе по тегу.
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             features: "cli"
@@ -96,26 +98,12 @@ jobs:
             out: SiteRestorer-windows-x64.exe
             max_mb: 45
           - os: windows-latest
-            target: i686-pc-windows-msvc
-            features: "gui"
-            apt: ""
-            rustflags: "-C target-feature=+crt-static"
-            out: SiteRestorer-windows-x86.exe
-            max_mb: 35
-          - os: windows-latest
             target: x86_64-pc-windows-msvc
             features: "cli"
             apt: ""
             rustflags: "-C target-cpu=x86-64 -C target-feature=+crt-static"
             out: SiteRestorer-windows-x64-cli.exe
             max_mb: 15
-          - os: windows-latest
-            target: i686-pc-windows-msvc
-            features: "cli"
-            apt: ""
-            rustflags: "-C target-feature=+crt-static"
-            out: SiteRestorer-windows-x86-cli.exe
-            max_mb: 10
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -228,7 +216,7 @@ jobs:
           Write-Output "PE: $($need -join ', ') — на месте"
 
       - name: Windows manifest
-        if: startsWith(matrix.target, 'x86_64-pc-windows') || startsWith(matrix.target, 'i686-pc-windows')
+        if: startsWith(matrix.target, 'x86_64-pc-windows')
         shell: pwsh
         run: |
           $exe = "target/${{ matrix.target }}/release/site-restorer.exe"
@@ -284,7 +272,7 @@ jobs:
       # Отладочные символы архивируются, но в дистрибутив не попадают
       # (политика платформ: PDB/dSYM — артефакт сборки, не поставка).
       - uses: actions/upload-artifact@v4
-        if: startsWith(matrix.target, 'x86_64-pc-windows') || startsWith(matrix.target, 'i686-pc-windows')
+        if: startsWith(matrix.target, 'x86_64-pc-windows')
         continue-on-error: true
         with:
           name: pdb-${{ matrix.target }}-${{ matrix.features }}

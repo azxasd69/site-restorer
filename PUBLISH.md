@@ -91,7 +91,9 @@ git push origin v2.4
 ```
 
 Через 3–5 минут на странице **Releases** появятся:
-`SiteRestorer-windows-x64.exe` (x64) и `SiteRestorer-windows-x86.exe` (32-бит) — их и будут скачивать.
+`SiteRestorer-windows-x64.exe` и `SiteRestorer-windows-x64-cli.exe`, сборки для Linux,
+`.tar.gz`, `SHA256SUMS.txt` и SBOM — их и будут скачивать. 32-битных файлов нет
+с 3.6.1 (решение владельца, 12.11.2026): последние лежат в релизе `v3.6.0`.
 
 Если CI не нужен, загрузите exe вручную: **Releases → Draft a new release →**
 тег `v2.4` → прикрепите файлы.

@@ -7,9 +7,10 @@
 ## Что это
 
 - Назначение: восстановление собственного сайта, когда нет ни файлов, ни резервных копий, ни доступа к хостингу.
-- Платформа: Windows 10 (1809+) и Windows 11, x64 и x86. Есть CLI и GUI сборки для Linux (x64).
+- Платформа: Windows 10 (1809+) и Windows 11, x64. Есть CLI и GUI сборки для Linux (x64).
+  С версии 3.6.1 выпускаются только 64-битные сборки; последняя 32-битная — 3.6.0.
 - Реализация: Rust + egui для интерфейса; CLI-бинарник без GUI. Python-версия (`legacy/python`) и порт на Go (`ports/go`) — архив в репозитории, в релизах 3.x не собираются.
-- Размеры: GUI для Windows x64 — 6,2 МБ, x86 — 5,6 МБ, CLI — 1,8 МБ (x86 — 1,3 МБ), статический CLI для Linux — 2,1 МБ, Linux GUI — 7,5 МБ, пакет `.tar.gz` — 4,5 МБ.
+- Размеры: GUI для Windows x64 — 6,2 МБ, CLI — 1,8 МБ, статический CLI для Linux — 2,1 МБ, Linux GUI — 7,5 МБ, пакет `.tar.gz` — 4,5 МБ.
 - Поставка: GitHub Releases, к релизу прилагается `SHA256SUMS.txt` с контрольными суммами.
 - Лицензия: MIT. Исходный код открыт.
 - Языки интерфейса: русский, английский, переключение на лету.
@@ -101,9 +102,9 @@ SiteRestorer-windows-x64.exe --cli --site example.com --out D:\mirror --workers 
 ## Скачать
 
 - x64 (GUI, Rust + egui, 6,2 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64.exe
-- x86 (GUI, 5,6 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x86.exe
+- 32-бит (GUI, 3.6.0, выпуск прекращён): https://github.com/azxasd69/site-restorer/releases/download/v3.6.0/SiteRestorer-windows-x86.exe
 - CLI для Windows x64 (1,8 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64-cli.exe
-- CLI для Windows x86 (1,3 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x86-cli.exe
+- CLI для Windows 32-бит (3.6.0): https://github.com/azxasd69/site-restorer/releases/download/v3.6.0/SiteRestorer-windows-x86-cli.exe
 - CLI для Linux x64 (статический, 2,1 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64-cli
 - Linux GUI x64 (7,5 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64-gui
 - Пакет для Linux (бинари + install.sh + .desktop, 4,5 МБ): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64.tar.gz

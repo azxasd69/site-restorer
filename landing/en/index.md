@@ -7,9 +7,10 @@ Key point: the app recovers only what the archive actually saved; dynamic CMS fe
 ## What it is
 
 - Purpose: restoring your own site when there are no files, no backups and no hosting access.
-- Platform: Windows 10 (1809+) and Windows 11, x64 and x86. CLI and GUI builds for Linux (x64) are published too.
+- Platform: Windows 10 (1809+) and Windows 11, x64. CLI and GUI builds for Linux (x64) are published too.
+  From 3.6.1 only 64-bit builds are published; the last 32-bit build is 3.6.0.
 - Implementation: Rust with an egui GUI, plus a CLI-only binary. The Python build (`legacy/python`) and the Go port (`ports/go`) are archived in the repository and no longer released.
-- Sizes: Windows GUI x64 — 6.2 MB, x86 — 5.6 MB, CLI — 1.8 MB (x86 — 1.3 MB), static Linux CLI — 2.1 MB, Linux GUI — 7.5 MB, Linux `.tar.gz` package — 4.5 MB.
+- Sizes: Windows GUI x64 — 6.2 MB, CLI — 1.8 MB, static Linux CLI — 2.1 MB, Linux GUI — 7.5 MB, Linux `.tar.gz` package — 4.5 MB.
 - Distribution: GitHub Releases, with a `SHA256SUMS.txt` checksum file attached.
 - License: MIT, source code is open.
 - UI languages: Russian, English, switched on the fly.
@@ -101,9 +102,9 @@ What did not come back:
 ## Download
 
 - x64 GUI (Rust + egui, 6.2 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64.exe
-- x86 GUI (5.6 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x86.exe
+- 32-bit GUI (5.6 MB, 3.6.0, no longer built): https://github.com/azxasd69/site-restorer/releases/download/v3.6.0/SiteRestorer-windows-x86.exe
 - Windows x64 CLI (1.8 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64-cli.exe
-- Windows x86 CLI (1.3 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x86-cli.exe
+- Windows 32-bit CLI (3.6.0): https://github.com/azxasd69/site-restorer/releases/download/v3.6.0/SiteRestorer-windows-x86-cli.exe
 - Linux x64 CLI, static (2.1 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64-cli
 - Linux x64 GUI (7.5 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64-gui
 - Linux package (binaries + install.sh + .desktop, 4.5 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64.tar.gz

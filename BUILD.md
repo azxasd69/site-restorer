@@ -13,9 +13,7 @@ Python (`legacy/python`) и Go (`ports/go`) переведены в архив: 
 | Файл | Платформа | Размер | Что внутри |
 |---|---|---|---|
 | `SiteRestorer-windows-x64.exe` | Windows 10/11 x64 | 7,2 МБ | **основной вариант**: окно egui, RU/EN, статический CRT |
-| `SiteRestorer-windows-x86.exe` | Windows 10/11 x86 | 6,4 МБ | то же, 32 бита |
 | `SiteRestorer-windows-x64-cli.exe` | Windows x64 | 2,8 МБ | только командная строка |
-| `SiteRestorer-windows-x86-cli.exe` | Windows x86 | 2,1 МБ | самый маленький бинарник для Windows |
 | `SiteRestorer-linux-x64-gui` | Linux x64 | 8,8 МБ | окно egui (нужны системные X11/GL) |
 | `SiteRestorer-linux-x64-cli` | Linux x64 | 3,3 МБ | статический ELF (`ldd` → not a dynamic executable) |
 | `SiteRestorer-linux-x64.tar.gz` | Linux x64 | 5,3 МБ | оба бинарника + `.desktop`, иконка, `install.sh` |
@@ -43,8 +41,7 @@ Python (`legacy/python`) и Go (`ports/go`) переведены в архив: 
 cargo build --release                                    # GUI + CLI
 cargo build --release --no-default-features              # только CLI
 cargo build --release --no-default-features --target x86_64-unknown-linux-musl   # статика
-rustup target add i686-pc-windows-msvc x86_64-pc-windows-msvc
-cargo build --release --target i686-pc-windows-msvc      # Windows x86
+rustup target add x86_64-pc-windows-msvc
 cargo build --release --target x86_64-pc-windows-msvc    # Windows x64
 ```
 
@@ -108,8 +105,9 @@ site-restorer --version
 
 - Обязательные релизные таргеты: `x86_64-pc-windows-msvc`,
   `x86_64-unknown-linux-gnu`, macOS universal2 (`x86_64-apple-darwin` +
-  `aarch64-apple-darwin`). 32-битные сборки выпускаются до 3.7 включительно,
-  затем прекращаются (пункт Д-57).
+  `aarch64-apple-darwin`). 32-битные сборки прекращены 12.11.2026 (Д-57):
+  последняя версия для 32-битных Windows — 3.6.0, её файлы остаются в релизе
+  по тегу `v3.6.0`.
 - Базовая ISA — x86-64 (SSE2): `-C target-cpu=x86-64`. Значение задано в
   `.cargo/config.toml`; в конвейере те же флаги передаются через `RUSTFLAGS`.
   Помните: `RUSTFLAGS` **перекрывает** настройку из файла целиком, а не
@@ -165,14 +163,14 @@ objdump -T target/x86_64-unknown-linux-gnu/release/site-restorer \
 - Internet Archive ограничивает скорость с одного IP: большие сайты качаются
   часами, ответы 429/503 — нормальная часть работы.
 - Кэпы: 50 000 адресов и 200 страниц CDX на один прогон.
-- 32-битная сборка под Linux (i586) — опциональная цель: `ring` (TLS) не
-  собирается под `i686-unknown-linux-musl` без multilib-тулчейна, поэтому
-  артефакт появляется только когда цель собирается на раннере.
+- 32-битные сборки (Windows x86 и Linux i586) не выпускаются: см. политику
+  платформ. `ring` (TLS) под `i686-unknown-linux-musl` требовал multilib-тулчейна,
+  а 32-битная Windows-сборка удваивала матрицу и нормы размера.
 
 ### GUI и консоль
 
-`SiteRestorer-windows-x64.exe` и `-windows-x86.exe` (GUI) собираются как
-приложения подсистемы windows — окно консоли при запуске не появляется.
-Для командной строки есть `SiteRestorer-windows-*-cli.exe` (сборка
+`SiteRestorer-windows-x64.exe` (GUI) собирается как
+приложение подсистемы windows — окно консоли при запуске не появляется.
+Для командной строки есть `SiteRestorer-windows-x64-cli.exe` (сборка
 с `--no-default-features`); если запустить GUI-файл с `--cli`, он подключится
 к консоли терминала, а при перенаправлении вывода в файл — будет писать в файл.

@@ -29,8 +29,7 @@ Python-версия (`legacy/python`) и порт на Go (`ports/go`) оста�
 | Файл | Платформа | Размер |
 |---|---|---|
 | `SiteRestorer-windows-x64.exe` | Windows 10/11 x64 — **основной** | 6,2 МБ |
-| `SiteRestorer-windows-x86.exe` | Windows 10/11 x86 | 5,6 МБ |
-| `SiteRestorer-windows-x64-cli.exe` / `-x86-cli.exe` | Windows, только командная строка | 1,8 / 1,3 МБ |
+| `SiteRestorer-windows-x64-cli.exe` | Windows x64, только командная строка | 1,8 МБ |
 | `SiteRestorer-linux-x64-gui` | Linux x64, нативное окно (X11/GL) | 7,5 МБ |
 | `SiteRestorer-linux-x64-cli` | Linux x64, статический бинарник (musl) | 2,1 МБ |
 | `SiteRestorer-linux-x64.tar.gz` | Linux x64: оба бинарника + `.desktop`, иконка, `install.sh` | 4,5 МБ |
@@ -239,8 +238,10 @@ cargo build --release --no-default-features             # только CLI
 cargo build --release --target x86_64-unknown-linux-musl --no-default-features   # статический Linux
 ```
 
-Кросс-сборка под Windows x86: `rustup target add i686-pc-windows-msvc` и
-`cargo build --release --target i686-pc-windows-msvc`.
+32-битные сборки прекращены 12.11.2026: последняя версия для 32-битных Windows —
+3.6.0, её файлы остаются в релизе по тегу `v3.6.0`. Причина — в `docs/PLATFORMS.md`
+(раздел 6): политика платформ запрещает `i686`, а поддержка удваивала матрицу и
+нормы размера.
 
 Python-версия и порт на Go больше не собираются: их каталоги оставлены как
 архив исходников, сборки из них в релиз не попадают.
@@ -276,7 +277,7 @@ checks for broken references and writes a coverage report.
 site-restorer --cli --site example.com --out ./mirror
 ```
 
-Windows 10/11 builds (x64 and x86) are published on the Releases page together
+Windows 10/11 builds (x64) are published on the Releases page together
 with Linux binaries and `SHA256SUMS.txt`. Only what the archive actually saved
 can be recovered; dynamic CMS features do not work in a static copy. Use it for
 your own sites and respect the Internet Archive terms and copyright law.

@@ -10,9 +10,7 @@
 | Файл | Откуда | Лимит размера |
 |---|---|---|
 | `SiteRestorer-windows-x64.exe` | `cargo build --release`, target `x86_64-pc-windows-msvc`, `+crt-static` | 45 МБ |
-| `SiteRestorer-windows-x86.exe` | то же, `i686-pc-windows-msvc` | 35 МБ |
 | `SiteRestorer-windows-x64-cli.exe` | `--no-default-features`, `x86_64-pc-windows-msvc` | 15 МБ |
-| `SiteRestorer-windows-x86-cli.exe` | `--no-default-features`, `i686-pc-windows-msvc` | 10 МБ |
 | `SiteRestorer-linux-x64-gui` | features `gui`, target `x86_64-unknown-linux-gnu` | 45 МБ |
 | `SiteRestorer-linux-x64-cli` | `--no-default-features`, `x86_64-unknown-linux-musl`, статический | 15 МБ |
 | `SiteRestorer-linux-x64.tar.gz` | оба Linux-бинарника + `.desktop`, иконка, `install.sh`, `README.txt` | — |
@@ -25,7 +23,7 @@ Python и Go не собираются и не публикуются: `legacy/p
 
 Схема: `SiteRestorer-<os>-<arch>[-cli][.exe]`.
 
-- `<os>` — `windows` или `linux`; `<arch>` — `x64` или `x86`;
+- `<os>` — `windows` или `linux`; `<arch>` — `x64` (32-битных сборок нет с 3.6.1);
 - `-cli` — только консольная сборка, без него — окно;
 - `.exe` — только Windows;
 - версии в имени **нет**: ссылки `releases/latest/download/<имя>` должны жить
@@ -76,7 +74,7 @@ Python и Go не собираются и не публикуются: `legacy/p
 4. Локально: `cargo fmt --check`, `clippy -D warnings`, `nextest run`.
 5. Коммит `chore(release): X.Y.Z`.
 6. `git tag -a vX.Y.Z -m "..." && git push origin main vX.Y.Z`.
-7. CI: гейты → сборки → релиз. Проверить, что в релизе ровно 8 файлов
+7. CI: гейты → сборки → релиз. Проверить, что в релизе ровно 7 файлов (32-битных нет с 3.6.1)
    и размеры совпадают с таблицей.
 8. Обновить размеры в `README.md` и `BUILD.md`, если они изменились; лендинг
    правится только при смене имён файлов (сейчас имена стабильны).
