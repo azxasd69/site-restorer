@@ -5,6 +5,7 @@
 //! кириллический домен (IDN -> punycode).
 
 use regex::Regex;
+use std::borrow::Cow;
 use std::sync::OnceLock;
 
 /// ЙЦУКЕН -> QWERTY по физическим клавишам.
@@ -116,8 +117,13 @@ fn hexval(b: u8) -> Option<u8> {
     }
 }
 
-pub fn pct_decode(s: &str) -> String {
+/// Раскодировать `%XX`. Возвращает `Cow`: если процентов в строке нет (это
+/// большинство адресов), копия не создаётся вовсе (Д-67).
+pub fn pct_decode(s: &str) -> Cow<'_, str> {
     let bytes = s.as_bytes();
+    if !bytes.contains(&b'%') {
+        return Cow::Borrowed(s);
+    }
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
@@ -132,7 +138,12 @@ pub fn pct_decode(s: &str) -> String {
         out.push(bytes[i]);
         i += 1;
     }
-    String::from_utf8_lossy(&out).into_owned()
+    match String::from_utf8(out) {
+        Ok(text) => Cow::Owned(text),
+        // Байты после раскодирования не UTF-8 — оставляем заменяющие символы,
+        // как и раньше: адрес важнее строгости.
+        Err(err) => Cow::Owned(String::from_utf8_lossy(err.as_bytes()).into_owned()),
+    }
 }
 
 /// Убрать невидимый мусор и типографику от копипаста.
@@ -174,13 +185,13 @@ pub fn from_redirect(s: &str) -> String {
                 {
                     let cand = pct_decode(v);
                     if cand.contains("://") || cand.contains('.') {
-                        return cand;
+                        return cand.into_owned();
                     }
                 }
             }
         }
         if let Some(m) = query_rx().captures(s) {
-            return pct_decode(&m[1]);
+            return pct_decode(&m[1]).into_owned();
         }
     }
     s.to_string()

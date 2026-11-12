@@ -7,6 +7,12 @@ edition = "2024"
 rust-version = "1.88"
 description = "Восстановление сайта из веб-архива: нативный GUI + CLI"
 
+# flate2 подключён напрямую только ради выбора бэкенда (ПР-14, Д-66): ureq
+# включает его с умолчанием (miniz_oxide), а нам нужен zlib-rs. Кода, который
+# вызывает flate2, нет — это признак выключить нечем, кроме списка ниже.
+[package.metadata.cargo-machete]
+ignored = ["flate2"]
+
 [features]
 default = ["gui"]
 gui = ["dep:eframe"]
@@ -17,6 +23,11 @@ encoding_rs = "0.8.44"
 rayon = "1.12"
 regex = "1.13"
 ureq = "3.5.1"
+# ПР-14 (Д-66): распаковка сжатых ответов на чистом Rust. ureq тянет flate2 с
+# умолчанием (miniz_oxide, скалярный); включение zlib-rs переключает бэкенд
+# сразу для обоих, C-компилятор и системный zlib не нужны — статика musl и
+# воспроизводимость сборки не страдают.
+flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

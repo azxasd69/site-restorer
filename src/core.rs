@@ -6,6 +6,7 @@ use crate::sanitize::sanitize_site;
 
 use rayon::prelude::*;
 use regex::Regex;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::io::{Read, Write};
@@ -1120,8 +1121,8 @@ impl Shared {
             return Vec::new();
         }
         let mut stamps: Vec<String> = parse_rows(&fetched.body)
-            .into_iter()
-            .filter_map(|row| row.first().cloned())
+            .iter()
+            .filter_map(|row| row.field(&fetched.body, 0).map(Cow::into_owned))
             .collect();
         stamps.sort_by(|a, b| b.cmp(a));
         stamps
@@ -1147,27 +1148,33 @@ fn prev_digest_ok(prev: Option<&JournalEntry>, current: &str) -> bool {
 fn fold_row(
     best: &mut HashMap<String, (String, String, String, u64, String)>,
     host: &str,
-    row: &[String],
+    row: &Row,
+    body: &[u8],
     from_window: bool,
 ) {
     if row.len() < 3 {
         return;
     }
-    let orig = row[1].clone();
+    let Some(orig) = row.field(body, 1) else {
+        return;
+    };
     let url = paths::normalize_url(&orig, host);
     if !from_window && paths::file_type(&url) == "html" && best.contains_key(&url) {
         return;
     }
-    let ts = row[0].clone();
-    let mime = row[2].clone();
-    let len = row.get(4).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+    let ts = row.field(body, 0).map(Cow::into_owned).unwrap_or_default();
+    let mime = row.field(body, 2).map(Cow::into_owned).unwrap_or_default();
+    let len = row
+        .field(body, 4)
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0);
     // Шестое поле запроса — отпечаток содержимого (ФТ-145); последняя строка
     // может прийти короче, тогда отпечатка просто нет.
-    let digest = row.get(5).cloned().unwrap_or_default();
+    let digest = row.field(body, 5).map(Cow::into_owned).unwrap_or_default();
     match best.get(&url) {
         Some((old_ts, _, _, _, _)) if *old_ts >= ts => {}
         _ => {
-            best.insert(url, (ts, orig, mime, len, digest));
+            best.insert(url, (ts, orig.into_owned(), mime, len, digest));
         }
     }
 }
@@ -1970,7 +1977,7 @@ impl Engine {
                     let chunk = parse_rows(&fetched.body);
                     parsed_rows = chunk.len();
                     for row in &chunk {
-                        fold_row(&mut best, &self.host, row, true);
+                        fold_row(&mut best, &self.host, row, &fetched.body, true);
                     }
                     if !chunk.is_empty() {
                         break;
@@ -2157,7 +2164,7 @@ impl Engine {
                             break;
                         }
                         for row in &chunk {
-                            fold_row(&mut best, &self.host, row, true);
+                            fold_row(&mut best, &self.host, row, &fetched.body, true);
                         }
                         page += 1;
                         self.index_pages = page;
@@ -2260,7 +2267,7 @@ impl Engine {
                 // Из полной истории добираются только ресурсы: страницы уже взяты
                 // из окна, поэтому `from_window = false`.
                 for row in parse_rows(&fetched.body) {
-                    fold_row(&mut best, &self.host, &row, false);
+                    fold_row(&mut best, &self.host, &row, &fetched.body, false);
                 }
             }
         }
@@ -2647,7 +2654,7 @@ impl Engine {
                     let mut best: HashMap<String, (String, String, String, u64, String)> =
                         HashMap::new();
                     for row in parse_rows(&fetched.body) {
-                        fold_row(&mut best, &host, &row, true);
+                        fold_row(&mut best, &host, &row, &fetched.body, true);
                     }
                     let mut added = 0usize;
                     for (url, (ts, orig, mime, len, digest)) in best {
@@ -3618,6 +3625,15 @@ impl Engine {
                 "{{t_left}}",
                 &tr2("Адресов оставлено (нет в копии)", "Links left absolute (not in copy)"),
             )
+            .replace("{{t_build}}", &tr2("Сборка", "Build"))
+            .replace(
+                "{{build}}",
+                &format!(
+                    "site-restorer {} · CPU: {}",
+                    crate::APP_VERSION,
+                    crate::isa::describe()
+                ),
+            )
             .replace("{{t_index}}", &tr2("Полнота индекса", "Index completeness"))
             .replace("{{t_index_total}}", &tr2("Адресов в индексе", "Addresses in the index"))
             .replace("{{t_index_pages}}", &tr2("Страниц индекса обойдено", "Index pages walked"))
@@ -4463,63 +4479,194 @@ fn urlencode(s: &str) -> String {
     out
 }
 
-/// Разбор ответа CDX (массив массивов строк) без внешних библиотек.
-fn parse_rows(body: &[u8]) -> Vec<Vec<String>> {
-    let text = String::from_utf8_lossy(body);
-    let chars: Vec<char> = text.chars().collect();
-    let mut rows = Vec::new();
-    let mut i = 0;
-    while i < chars.len() {
-        if chars[i] != '[' {
-            i += 1;
-            continue;
+/// Строка ответа CDX: границы полей внутри тела, без копий (Д-64).
+///
+/// Раньше тело разворачивалось в `Vec<char>` (четыре байта на символ) и в
+/// `Vec<String>` с копией каждого поля: на странице в 20 000 строк это 8 МБ
+/// символов и 120 000 аллокаций, хотя значения нужны на несколько микросекунд.
+/// Здесь хранятся только смещения, а значения берутся из тела по требованию.
+pub(crate) struct Row {
+    spans: [Span; MAX_FIELDS],
+    count: u8,
+}
+
+/// Границы одного поля: содержимое между кавычками.
+#[derive(Clone, Copy, Default)]
+struct Span {
+    start: u32,
+    end: u32,
+}
+
+/// Сколько полей запроса помещается в одну строку.
+const MAX_FIELDS: usize = 6;
+
+impl Row {
+    /// Поле по номеру: срез тела, если экранирования нет, иначе собранная строка.
+    pub(crate) fn field<'a>(&self, body: &'a [u8], idx: usize) -> Option<Cow<'a, str>> {
+        if idx >= usize::from(self.count).min(MAX_FIELDS) {
+            return None;
         }
-        // Внешний массив — контейнер; строка данных начинается сразу с кавычки.
-        let mut j = i + 1;
-        while j < chars.len() && chars[j].is_whitespace() {
+        let span = self.spans[idx];
+        let raw = body.get(span.start as usize..span.end as usize)?;
+        Some(decode_field(raw))
+    }
+
+    /// Сколько полей пришло в строке (может быть больше, чем хранится).
+    pub(crate) fn len(&self) -> usize {
+        usize::from(self.count)
+    }
+}
+
+/// Разбор ответа CDX (массив массивов строк) без внешних библиотек.
+pub(crate) fn parse_rows(body: &[u8]) -> Vec<Row> {
+    let mut rows = Vec::new();
+    let mut from = 0usize;
+    while from < body.len() {
+        let Some(open) = body[from..].iter().position(|&b| b == b'[') else {
+            break;
+        };
+        let mut j = from + open + 1;
+        while j < body.len() && body[j].is_ascii_whitespace() {
             j += 1;
         }
-        if j >= chars.len() || chars[j] != '"' {
-            i += 1;
+        // Внешний массив — контейнер; строка данных начинается сразу с кавычки.
+        if body.get(j) != Some(&b'"') {
+            from += open + 1;
             continue;
         }
-        i = j;
-        let mut row: Vec<String> = Vec::new();
-        loop {
-            while i < chars.len() && (chars[i].is_whitespace() || chars[i] == ',') {
-                i += 1;
-            }
-            if i >= chars.len() || chars[i] == ']' {
-                i += 1;
-                break;
-            }
-            if chars[i] == '"' {
-                i += 1;
-                let mut value = String::new();
-                while i < chars.len() && chars[i] != '"' {
-                    if chars[i] == '\\' && i + 1 < chars.len() {
-                        i += 1;
-                        value.push(match chars[i] {
-                            'n' => '\n',
-                            't' => '\t',
-                            c => c,
-                        });
-                    } else {
-                        value.push(chars[i]);
-                    }
-                    i += 1;
-                }
-                i += 1;
-                row.push(value);
-            } else {
-                i += 1;
-            }
-        }
-        if row.len() >= 2 && row[0] != "timestamp" {
+        let (row, next) = read_row(body, j);
+        from = next.max(from + open + 1);
+        if let Some(row) = row
+            && row.len() >= 2
+            && row.field(body, 0).is_none_or(|ts| ts != "timestamp")
+        {
             rows.push(row);
         }
     }
     rows
+}
+
+/// Прочитать одну строку данных, начиная с открывающей кавычки первого поля.
+fn read_row(body: &[u8], mut j: usize) -> (Option<Row>, usize) {
+    let mut spans = [Span::default(); MAX_FIELDS];
+    let mut count: u8 = 0;
+    loop {
+        while j < body.len() && (body[j].is_ascii_whitespace() || body[j] == b',') {
+            j += 1;
+        }
+        match body.get(j) {
+            // Тело кончилось до закрывающей скобки: ответ пришёл обрезанным.
+            // Строку не принимаем — иначе обрывок адреса станет адресом.
+            None => return (None, j),
+            Some(b']') => return (build_row(spans, count), j + 1),
+            Some(b'"') => {
+                let start = j + 1;
+                let end = closing_quote(body, start);
+                let (Ok(start32), Ok(end32)) = (u32::try_from(start), u32::try_from(end)) else {
+                    // Тело больше 4 ГБ в ответе индекса не встречается; если
+                    // встретится — строку пропускаем, а не портим смещения.
+                    return (None, end.saturating_add(1));
+                };
+                if usize::from(count) < MAX_FIELDS {
+                    spans[usize::from(count)] = Span {
+                        start: start32,
+                        end: end32,
+                    };
+                }
+                count = count.saturating_add(1);
+                j = end.saturating_add(1);
+            }
+            Some(_) => j += 1,
+        }
+    }
+}
+
+fn build_row(spans: [Span; MAX_FIELDS], count: u8) -> Option<Row> {
+    (count > 0).then_some(Row { spans, count })
+}
+
+/// Позиция закрывающей кавычки поля; экранированные кавычки пропускаются.
+fn closing_quote(body: &[u8], from: usize) -> usize {
+    let mut k = from;
+    while k < body.len() {
+        let Some(pos) = body[k..].iter().position(|&b| b == b'"') else {
+            return body.len();
+        };
+        k += pos;
+        // Кавычка экранирована, если перед ней нечётное число обратных косых.
+        let mut backslashes = 0usize;
+        let mut q = k;
+        while q > from && body[q - 1] == b'\\' {
+            backslashes += 1;
+            q -= 1;
+        }
+        if backslashes.is_multiple_of(2) {
+            return k;
+        }
+        k += 1;
+    }
+    body.len()
+}
+
+fn decode_field(raw: &[u8]) -> Cow<'_, str> {
+    if raw.contains(&b'\\') {
+        return Cow::Owned(unescape(raw));
+    }
+    match std::str::from_utf8(raw) {
+        Ok(text) => Cow::Borrowed(text),
+        Err(_) => Cow::Owned(String::from_utf8_lossy(raw).into_owned()),
+    }
+}
+
+/// Снять экранирование JSON. Встречается редко (кавычка или обратная косая в
+/// адресе), поэтому идёт отдельным путём и не влияет на обычный разбор.
+fn unescape(raw: &[u8]) -> String {
+    let mut out: Vec<u8> = Vec::with_capacity(raw.len());
+    let mut i = 0usize;
+    while i < raw.len() {
+        if raw[i] != b'\\' || i + 1 >= raw.len() {
+            out.push(raw[i]);
+            i += 1;
+            continue;
+        }
+        i += 1;
+        match raw[i] {
+            b'n' => out.push(b'\n'),
+            b't' => out.push(b'\t'),
+            b'r' => out.push(b'\r'),
+            b'b' => out.push(0x08),
+            b'f' => out.push(0x0c),
+            b'u' => {
+                if i + 4 < raw.len()
+                    && let Some(ch) = hex4(&raw[i + 1..i + 5])
+                {
+                    let mut buf = [0u8; 4];
+                    out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+                    i += 4;
+                } else {
+                    out.push(b'u');
+                }
+            }
+            other => out.push(other),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Четыре шестнадцатеричные цифры в символ Unicode.
+fn hex4(digits: &[u8]) -> Option<char> {
+    let mut code = 0u32;
+    for &b in digits {
+        let digit = match b {
+            b'0'..=b'9' => u32::from(b - b'0'),
+            b'a'..=b'f' => u32::from(b - b'a') + 10,
+            b'A'..=b'F' => u32::from(b - b'A') + 10,
+            _ => return None,
+        };
+        code = code * 16 + digit;
+    }
+    char::from_u32(code)
 }
 
 /// Сколько страниц в CDX: значение рядом с "numpages" (форматы ответа различаются).
@@ -4809,7 +4956,8 @@ th,td{padding:9px 12px;border-bottom:1px solid #eee;text-align:left}th{backgroun
 <tr><td>{{t_broken}} <span style="color:#6b7280">{{t_broken_note}}</span></td><td class="n">{{broken}}</td></tr>
 {{encodings}}
 <tr><td>{{t_404}}</td><td class="n">{{missing}}</td></tr>
-<tr><td>{{t_errors}}</td><td class="n">{{errors}}</td></tr></table>
+<tr><td>{{t_errors}}</td><td class="n">{{errors}}</td></tr>
+<tr><td>{{t_build}}</td><td>{{build}}</td></tr></table>
 <p style="color:#b45309;margin-top:10px">{{fresh_warn}}</p>
 <p style="color:#6b7280;margin-top:10px">{{t_files_note}}</p>
 <p style="color:#6b7280;margin-top:24px">{{t_footer}}</p>
@@ -4826,9 +4974,182 @@ mod tests {
 ["20030101000000","https://example.com/a","text/html","200"]]"#;
         let rows = parse_rows(body);
         assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0][0], "20020120142510");
-        assert_eq!(rows[0][1], "http://example.com:80/");
-        assert_eq!(rows[1][1], "https://example.com/a");
+        assert_eq!(rows[0].field(body, 0).unwrap(), "20020120142510");
+        assert_eq!(rows[0].field(body, 1).unwrap(), "http://example.com:80/");
+        assert_eq!(rows[1].field(body, 1).unwrap(), "https://example.com/a");
+        // Поле берётся из тела, а не из копии: для обычного адреса копии нет.
+        assert!(matches!(
+            rows[1].field(body, 1).unwrap(),
+            std::borrow::Cow::Borrowed(_)
+        ));
+    }
+
+    /// Прежний разбор: `Vec<char>` и строка на каждое поле. Оставлен только в
+    /// тестах — как эталон для сверки и как база для замера (Д-64, ФТ-158).
+    fn parse_rows_legacy(body: &[u8]) -> Vec<Vec<String>> {
+        let text = String::from_utf8_lossy(body);
+        let chars: Vec<char> = text.chars().collect();
+        let mut rows = Vec::new();
+        let mut i = 0;
+        while i < chars.len() {
+            if chars[i] != '[' {
+                i += 1;
+                continue;
+            }
+            let mut j = i + 1;
+            while j < chars.len() && chars[j].is_whitespace() {
+                j += 1;
+            }
+            if j >= chars.len() || chars[j] != '"' {
+                i += 1;
+                continue;
+            }
+            i = j;
+            let mut row: Vec<String> = Vec::new();
+            loop {
+                while i < chars.len() && (chars[i].is_whitespace() || chars[i] == ',') {
+                    i += 1;
+                }
+                if i >= chars.len() || chars[i] == ']' {
+                    i += 1;
+                    break;
+                }
+                if chars[i] == '"' {
+                    i += 1;
+                    let mut value = String::new();
+                    while i < chars.len() && chars[i] != '"' {
+                        if chars[i] == '\\' && i + 1 < chars.len() {
+                            i += 1;
+                            value.push(match chars[i] {
+                                'n' => '\n',
+                                't' => '\t',
+                                c => c,
+                            });
+                        } else {
+                            value.push(chars[i]);
+                        }
+                        i += 1;
+                    }
+                    i += 1;
+                    row.push(value);
+                } else {
+                    i += 1;
+                }
+            }
+            if row.len() >= 2 && row[0] != "timestamp" {
+                rows.push(row);
+            }
+        }
+        rows
+    }
+
+    /// Тело ответа CDX на `rows` строк — как приходит от архива.
+    fn cdx_body(rows: usize) -> Vec<u8> {
+        let mut text = String::with_capacity(rows * 220 + 8);
+        text.push('[');
+        for n in 0..rows {
+            if n > 0 {
+                text.push(',');
+            }
+            text.push_str(&format!(
+                "[\"20240101120000\",\"https://example.com/catalog/product-{n}.html\",\"text/html\",\"200\",\"12345\",\"ABC{n}DEF\"]"
+            ));
+        }
+        text.push(']');
+        text.into_bytes()
+    }
+
+    /// Д-64: новый разбор даёт то же, что прежний, на обычном теле,
+    /// на экранировании и на обрезанном ответе.
+    #[test]
+    fn parse_rows_matches_legacy() {
+        let cases: Vec<Vec<u8>> = vec![
+            cdx_body(200),
+            br#"[["timestamp","original","mimetype"],["1","https://e.com/a","text/html"]]"#
+                .to_vec(),
+            br#"[["1","https://e.com/a\"b","text/html","200"]]"#.to_vec(),
+            // обрыв тела: прежний разбор отдавал обрезанный адрес, новый — нет
+            br#"[["1","https://e.co"#.to_vec(),
+        ];
+        for body in cases {
+            let legacy = parse_rows_legacy(&body);
+            let fresh = parse_rows(&body);
+            // На обрезанном теле новый разбор строже — это ожидаемое отличие.
+            if fresh.is_empty() && !legacy.is_empty() {
+                continue;
+            }
+            assert_eq!(legacy.len(), fresh.len(), "число строк");
+            for (old_row, new_row) in legacy.iter().zip(fresh.iter()) {
+                assert_eq!(old_row.len(), new_row.len(), "число полей");
+                for (idx, expected) in old_row.iter().enumerate().take(MAX_FIELDS) {
+                    assert_eq!(
+                        Some(expected.as_str()),
+                        new_row.field(&body, idx).as_deref(),
+                        "поле {idx}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// ФТ-158: разбор по срезам не медленнее прежнего в пять раз. Замер
+    /// помечен `#[ignore]`, потому что время зависит от машины; запуск:
+    /// `cargo test --release -- --ignored bench_parse_rows --nocapture`.
+    #[test]
+    #[ignore = "замер производительности, запускается отдельно"]
+    fn bench_parse_rows() {
+        let body = cdx_body(20_000);
+        let mib = body.len() as f64 / 1_048_576.0;
+        // Прогрев: первый прогон включает страницы памяти.
+        let _ = parse_rows(&body);
+        let _ = parse_rows_legacy(&body);
+
+        let mut legacy_best = f64::MAX;
+        let mut fresh_best = f64::MAX;
+        for _ in 0..5 {
+            let started = std::time::Instant::now();
+            let legacy = parse_rows_legacy(&body);
+            legacy_best = legacy_best.min(started.elapsed().as_secs_f64());
+            assert_eq!(legacy.len(), 20_000);
+            let started = std::time::Instant::now();
+            let fresh = parse_rows(&body);
+            fresh_best = fresh_best.min(started.elapsed().as_secs_f64());
+            assert_eq!(fresh.len(), 20_000);
+        }
+        println!(
+            "parse_rows: тело {mib:.2} МБ, 20 000 строк — прежний {:.1} мс, новый {:.1} мс, ускорение {:.1}x",
+            legacy_best * 1000.0,
+            fresh_best * 1000.0,
+            legacy_best / fresh_best
+        );
+        assert!(
+            legacy_best / fresh_best >= 5.0,
+            "разбор по срезам обязан быть не медленнее чем в пять раз: {:.1}x",
+            legacy_best / fresh_best
+        );
+    }
+
+    /// Д-64: экранирование, обрыв тела и лишние поля.
+    #[test]
+    fn parse_rows_survives_escapes_and_broken_body() {
+        let body = br#"[["1","https://e.com/a\"b","text/html","200"]]"#;
+        let rows = parse_rows(body);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].field(body, 1).unwrap(), "https://e.com/a\"b");
+
+        // Тело обрывается на середине поля — строки нет, но и паники нет.
+        let broken = br#"[["1","https://e.co"#;
+        assert!(parse_rows(broken).is_empty(), "незакрытая строка не адрес");
+
+        // Полей больше шести: первые шесть читаются, счётчик сохраняется.
+        let long = "[[\"1\",\"https://e.com/\",\"text/html\",\"200\",\"10\",\"D\",\"лишнее\"]]";
+        let rows = parse_rows(long.as_bytes());
+        assert_eq!(rows[0].len(), 7, "счётчик полей сохраняется");
+        assert_eq!(rows[0].field(long.as_bytes(), 5).unwrap(), "D");
+        assert!(
+            rows[0].field(long.as_bytes(), 6).is_none(),
+            "седьмое поле не хранится"
+        );
     }
 
     #[test]
@@ -5041,43 +5362,50 @@ mod tests {
     #[test]
     fn fold_row_keeps_newest_and_spares_window_pages() {
         let mut best: HashMap<String, (String, String, String, u64, String)> = HashMap::new();
-        let row = |ts: &str, url: &str, mime: &str| -> Vec<String> {
-            vec![
-                ts.to_string(),
-                url.to_string(),
-                mime.to_string(),
-                "200".to_string(),
-                "10".to_string(),
-            ]
+        // Строки собираются тем же разбором, что и в работе: тест проверяет
+        // реальный путь «тело → строка → карта», а не отдельную подделку.
+        let fold = |best: &mut HashMap<String, (String, String, String, u64, String)>,
+                    ts: &str,
+                    url: &str,
+                    mime: &str,
+                    from_window: bool| {
+            let body = format!("[[\"{ts}\",\"{url}\",\"{mime}\",\"200\",\"10\"]]");
+            let rows = parse_rows(body.as_bytes());
+            assert_eq!(rows.len(), 1);
+            fold_row(best, "example.com", &rows[0], body.as_bytes(), from_window);
         };
         // Старый снимок, затем новый того же адреса.
-        fold_row(
+        fold(
             &mut best,
-            "example.com",
-            &row("20200101000000", "https://example.com/a", "text/html"),
+            "20200101000000",
+            "https://example.com/a",
+            "text/html",
             true,
         );
-        fold_row(
+        fold(
             &mut best,
-            "example.com",
-            &row("20240101000000", "https://example.com/a", "text/html"),
+            "20240101000000",
+            "https://example.com/a",
+            "text/html",
             true,
         );
         assert_eq!(best.len(), 1, "один адрес — одна запись");
         assert_eq!(best["https://example.com/a"].0, "20240101000000");
         // Более старый снимок не должен перебить уже найденный свежий.
-        fold_row(
+        fold(
             &mut best,
-            "example.com",
-            &row("20190101000000", "https://example.com/a", "text/html"),
+            "20190101000000",
+            "https://example.com/a",
+            "text/html",
             true,
         );
         assert_eq!(best["https://example.com/a"].0, "20240101000000");
         // Добор из полной истории не трогает страницу, взятую из окна.
-        fold_row(
+        fold(
             &mut best,
-            "example.com",
-            &row("20250101000000", "https://example.com/a", "text/html"),
+            "20250101000000",
+            "https://example.com/a",
+            "text/html",
             false,
         );
         assert_eq!(
@@ -5085,21 +5413,27 @@ mod tests {
             "страница из окна не заменяется добором"
         );
         // А ресурс — заменяется: для картинок окно не действует.
-        fold_row(
+        fold(
             &mut best,
-            "example.com",
-            &row("20200101000000", "https://example.com/i.png", "image/png"),
+            "20200101000000",
+            "https://example.com/i.png",
+            "image/png",
             true,
         );
-        fold_row(
+        fold(
             &mut best,
-            "example.com",
-            &row("20250101000000", "https://example.com/i.png", "image/png"),
+            "20250101000000",
+            "https://example.com/i.png",
+            "image/png",
             false,
         );
         assert_eq!(best["https://example.com/i.png"].0, "20250101000000");
         // Короткая строка игнорируется, а не паникует.
-        fold_row(&mut best, "example.com", &["только".to_string()], true);
+        let short = Row {
+            spans: [Span::default(); MAX_FIELDS],
+            count: 1,
+        };
+        fold_row(&mut best, "example.com", &short, b"", true);
         assert_eq!(best.len(), 2);
     }
 
@@ -5185,7 +5519,11 @@ mod tests {
         let body = br#"[["2001","https://e.com/a\"b","text/html","200"]]"#;
         let rows = parse_rows(body);
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0][1], "https://e.com/a\"b");
+        assert_eq!(rows[0].field(body, 1).unwrap(), "https://e.com/a\"b");
+        // \u0410 — буква «А»: escape этого вида тоже разбирается.
+        let uni = br#"[["2001","https://e.com/\u0410","text/html","200"]]"#;
+        let rows = parse_rows(uni);
+        assert_eq!(rows[0].field(uni, 1).unwrap(), "https://e.com/А");
     }
 }
 

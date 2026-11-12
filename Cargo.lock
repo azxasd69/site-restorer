@@ -2188,6 +2188,7 @@ version = "3.6.0"
 dependencies = [
  "eframe",
  "encoding_rs",
+ "flate2",
  "libc",
  "rayon",
  "regex",

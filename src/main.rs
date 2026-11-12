@@ -17,6 +17,8 @@ mod core;
 mod encoding;
 #[cfg(feature = "gui")]
 mod i18n;
+#[cfg_attr(not(test), allow(dead_code))]
+mod isa;
 #[cfg(feature = "gui")]
 mod links;
 mod paths;
@@ -188,6 +190,11 @@ fn main() {
     }
     if args.iter().any(|a| a == "--version" || a == "-V") {
         println!("site-restorer {APP_VERSION}");
+        // ФТ-156: с --verbose печатаем возможности процессора — по этой строке
+        // разбирается обращение «у меня вылетело» на чужой машине.
+        if args.iter().any(|a| a == "--verbose" || a == "-v") {
+            println!("CPU: {}", isa::describe());
+        }
         return;
     }
     if args.iter().any(|a| a == "--cli") {

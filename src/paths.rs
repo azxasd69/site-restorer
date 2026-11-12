@@ -64,6 +64,7 @@ pub fn fnv_hex(s: &str) -> String {
 /// Один сегмент пути: без запрещённых символов, не длиннее лимита.
 pub fn safe_seg(seg: &str) -> String {
     let decoded = pct_decode(seg);
+    let decoded = decoded.as_ref();
     let mut cleaned = String::with_capacity(decoded.len());
     for ch in decoded.chars() {
         let bad = matches!(ch, '<' | '>' | ':' | '"' | '|' | '?' | '*' | '\\' | '/')
