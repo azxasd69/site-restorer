@@ -1226,6 +1226,9 @@ pub struct Engine {
     started: Instant,
     items: Vec<Item>,
     inv_failed: bool,
+    /// Сколько адресов добрано на этапе сборки (ФТ-153); в 3.6.0 — только
+    /// задел: пересборка затронутых страниц появится вместе с build(dirty).
+    added_build: usize,
     /// Сколько файлов пришлось перекодировать: кодировка -> число.
     enc_stats: std::sync::Mutex<HashMap<&'static str, usize>>,
     enc_logged: std::sync::atomic::AtomicUsize,
@@ -1361,6 +1364,7 @@ impl Engine {
             started: Instant::now(),
             items: Vec::new(),
             inv_failed: false,
+            added_build: 0,
             enc_stats: std::sync::Mutex::new(HashMap::new()),
             enc_logged: std::sync::atomic::AtomicUsize::new(0),
             mirror_cache: Mutex::new(None),
@@ -3487,6 +3491,68 @@ impl Engine {
                 "{{t_shared}}",
                 &tr2("Взято ссылкой на дубль", "Linked to a duplicate"),
             )
+            .replace(
+                "{{t_left}}",
+                &tr2("Адресов оставлено (нет в копии)", "Links left absolute (not in copy)"),
+            )
+            .replace("{{t_index}}", &tr2("Полнота индекса", "Index completeness"))
+            .replace("{{t_index_total}}", &tr2("Адресов в индексе", "Addresses in the index"))
+            .replace("{{t_index_pages}}", &tr2("Страниц индекса обойдено", "Index pages walked"))
+            .replace("{{t_index_state}}", &tr2("Состояние индекса", "Index state"))
+            .replace(
+                "{{t_index_skipped}}",
+                &tr2("Пропущено по лимиту", "Skipped by the limit"),
+            )
+            .replace("{{t_added_live}}", &tr2("Добрано при загрузке", "Added while downloading"))
+            .replace("{{t_added_build}}", &tr2("Добрано при сборке", "Added while building"))
+            .replace("{{t_sum_check}}", &tr2("Сверка категорий", "Category check"))
+            .replace(
+                "{{left}}",
+                &self
+                    .shared
+                    .counters
+                    .left
+                    .load(Ordering::Relaxed)
+                    .to_string(),
+            )
+            .replace("{{index_total}}", &self.index_total.to_string())
+            .replace("{{index_pages}}", &self.index_pages.to_string())
+            .replace(
+                "{{index_state}}",
+                &if self.inv_failed {
+                    tr2("не получен", "failed")
+                } else if self.index_truncated {
+                    tr2("обрезан", "truncated")
+                } else {
+                    tr2("полон", "complete")
+                },
+            )
+            .replace("{{limit_skipped}}", &self.limit_skipped.to_string())
+            .replace(
+                "{{added_live}}",
+                &self.shared.counters.added_live.load(Ordering::Relaxed).to_string(),
+            )
+            .replace("{{added_build}}", &self.added_build.to_string())
+            .replace(
+                "{{sum_check}}",
+                &{
+                    // Сумма категорий обязана сходиться с числом адресов (ФТ-154).
+                    let ok = self.shared.counters.ok.load(Ordering::Relaxed);
+                    let missing = self.shared.counters.missing.load(Ordering::Relaxed);
+                    let errors = self.shared.counters.errors.load(Ordering::Relaxed);
+                    let sum = ok + missing + errors;
+                    tr2(
+                        &format!(
+                            "{sum} из {} (скачано {ok}, пропущено {missing}, ошибок {errors})",
+                            self.items.len()
+                        ),
+                        &format!(
+                            "{sum} of {} (saved {ok}, missing {missing}, errors {errors})",
+                            self.items.len()
+                        ),
+                    )
+                },
+            )
             .replace("{{t_snapshot}}", &tr2("Снимки", "Snapshots"))
             .replace("{{t_fresh}}", &tr2("Свежесть копии", "Copy freshness"))
             .replace("{{snap_new}}", &newest)
@@ -4584,6 +4650,17 @@ th,td{padding:9px 12px;border-bottom:1px solid #eee;text-align:left}th{backgroun
 <tr><td>{{t_rescued}}</td><td class="n">{{rescued}}</td></tr>
 <tr><td>{{t_shared}}</td><td class="n">{{shared}}</td></tr>
 <tr><td>{{t_left}}</td><td class="n">{{left}}</td></tr></table>
+
+<h2>{{t_index}}</h2>
+<table>
+<tr><td>{{t_index_total}}</td><td class="n">{{index_total}}</td></tr>
+<tr><td>{{t_index_pages}}</td><td class="n">{{index_pages}}</td></tr>
+<tr><td>{{t_index_state}}</td><td>{{index_state}}</td></tr>
+<tr><td>{{t_index_skipped}}</td><td class="n">{{limit_skipped}}</td></tr>
+<tr><td>{{t_added_live}}</td><td class="n">{{added_live}}</td></tr>
+<tr><td>{{t_added_build}}</td><td class="n">{{added_build}}</td></tr>
+<tr><td>{{t_sum_check}}</td><td>{{sum_check}}</td></tr>
+</table>
 {{fresh_warn}}
 <h2>{{t_integrity}}</h2><table>
 <tr><td>{{t_mirror}}</td><td class="n">{{mirror_files}}</td></tr>
