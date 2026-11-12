@@ -20,7 +20,7 @@ Python (`legacy/python`) и Go (`ports/go`) переведены в архив: 
 | `SiteRestorer-linux-x64-cli` | Linux x64 | 3,3 МБ | статический ELF (`ldd` → not a dynamic executable) |
 | `SiteRestorer-linux-x64.tar.gz` | Linux x64 | 5,3 МБ | оба бинарника + `.desktop`, иконка, `install.sh` |
 
-Размеры сняты с релиза **v3.5.2**. Имя не содержит версию — ссылки
+Размеры сняты с релиза **v3.6.0** (консольная сборка 3,8 МБ; остальные — с v3.5.2). Имя не содержит версию — ссылки
 `releases/latest/download/<имя>` постоянны; версию печатает `--version`
 и первая строка журнала окна.
 
