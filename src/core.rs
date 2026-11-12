@@ -6,7 +6,7 @@ use crate::sanitize::sanitize_site;
 
 use rayon::prelude::*;
 use regex::Regex;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -318,6 +318,76 @@ impl Gate {
     }
 }
 
+// ------------------------------------------------------------------- queue
+/// Пополняемая очередь загрузки (Д-55).
+///
+/// Отличие от прежнего списка с `AtomicUsize`: адрес можно добавить во время
+/// работы, а воркеры ждут на условной переменной вместо выхода по «индекс за
+/// концом». Без ожидания адрес, пришедший в момент выхода, терялся.
+struct Queue {
+    items: Mutex<VecDeque<Item>>,
+    cv: Condvar,
+    closed: AtomicBool,
+    /// Пути, уже стоявшие в очереди: повторный адрес не добавляется.
+    seen: Mutex<HashSet<String>>,
+    /// Сколько адресов прошло через очередь: знаменатель прогресса.
+    planned: AtomicUsize,
+}
+
+impl Queue {
+    fn new(items: Vec<Item>) -> Self {
+        let mut seen = HashSet::with_capacity(items.len());
+        for item in &items {
+            seen.insert(item.path.clone());
+        }
+        let planned = AtomicUsize::new(items.len());
+        Self {
+            items: Mutex::new(items.into_iter().collect()),
+            cv: Condvar::new(),
+            closed: AtomicBool::new(false),
+            seen: Mutex::new(seen),
+            planned,
+        }
+    }
+
+    /// Добавить адрес, если его пути ещё не было. Возвращает true при добавлении.
+    fn push(&self, item: Item) -> bool {
+        {
+            let mut seen = self.seen.lock().unwrap();
+            if !seen.insert(item.path.clone()) {
+                return false;
+            }
+        }
+        self.planned.fetch_add(1, Ordering::Relaxed);
+        self.items.lock().unwrap().push_back(item);
+        self.cv.notify_one();
+        true
+    }
+
+    /// Взять адрес; ждать, пока очередь опустеет, но не после закрытия.
+    fn pop(&self) -> Option<Item> {
+        let mut items = self.items.lock().unwrap();
+        loop {
+            if let Some(item) = items.pop_front() {
+                return Some(item);
+            }
+            if self.closed.load(Ordering::Relaxed) {
+                return None;
+            }
+            items = self.cv.wait(items).unwrap();
+        }
+    }
+
+    fn close(&self) {
+        self.closed.store(true, Ordering::Relaxed);
+        self.cv.notify_all();
+    }
+
+    fn planned(&self) -> usize {
+        self.planned.load(Ordering::Relaxed)
+    }
+}
+
 // ---------------------------------------------------------------- counters
 #[derive(Default)]
 struct Counters {
@@ -334,6 +404,8 @@ struct Counters {
     fallbacks: AtomicUsize,
     /// Сколько адресов отброшено как совпавшие по пути копии (ФТ-131).
     collisions: AtomicUsize,
+    /// Сколько адресов добрано на ходу во время загрузки (ФТ-152).
+    added_live: AtomicUsize,
     /// Сколько файлов получено ссылкой на уже скачанный (ФТ-146).
     shared: AtomicUsize,
     /// Сколько абсолютных адресов своего домена оставлено как есть: цели нет
@@ -2387,8 +2459,7 @@ impl Engine {
 
         // Файлы появятся в зеркале: список, снятый при уборке, больше не годится.
         *self.mirror_cache.lock().unwrap() = None;
-        let queue = Arc::new(Self::order_interleaved(&todo));
-        let next = Arc::new(AtomicUsize::new(0));
+        let queue = Arc::new(Queue::new(Self::order_interleaved(&todo)));
         let stop = Arc::new(AtomicBool::new(false));
         let total = self.items.len();
 
@@ -2433,6 +2504,7 @@ impl Engine {
         // поток прогресса
         let progress_thread = {
             let shared = Arc::clone(&self.shared);
+            let queue = Arc::clone(&queue);
             let stop = Arc::clone(&stop);
             let cb = shared.cb.get().cloned();
             let started = self.started;
@@ -2445,10 +2517,10 @@ impl Engine {
                         let types = shared.types.lock().unwrap().as_array();
                         cb(&Progress {
                             stage: "download",
-                            overall: 10.0 + 75.0 * done as f32 / total.max(1) as f32,
+                            overall: 10.0 + 75.0 * done as f32 / queue.planned().max(1) as f32,
                             text: crate::tr::pick(
-                                format!("Скачано {done} из {total}"),
-                                format!("Downloaded {done} of {total}"),
+                                format!("Скачано {done} из {}", queue.planned()),
+                                format!("Downloaded {done} of {}", queue.planned()),
                             ),
                             done,
                             total,
@@ -2479,28 +2551,112 @@ impl Engine {
             })
         };
 
+        // Добор на ходу (ФТ-152): индекс живёт, поэтому раз в две минуты
+        // спрашиваем всё, что появилось после водяного знака, и ставим в очередь.
+        let recheck = {
+            let shared = Arc::clone(&self.shared);
+            let queue = Arc::clone(&queue);
+            let host = self.host.clone();
+            let from = stamp_from_secs(self.watermark);
+            let stop = Arc::clone(&stop);
+            std::thread::spawn(move || {
+                loop {
+                    // Сон дробится на секунды: иначе join ждал бы его конца и
+                    // добавлял до двух минут к прогону (замер: 183 с вместо ~60).
+                    for _ in 0..120 {
+                        if stop.load(Ordering::Relaxed) || shared.cancel.load(Ordering::Relaxed) {
+                            return;
+                        }
+                        std::thread::sleep(Duration::from_secs(1));
+                    }
+                    let extra = format!(
+                        "output=json&fl=timestamp,original,mimetype,statuscode,length,digest&filter=statuscode:200&collapse=urlkey&from={from}"
+                    );
+                    let query = format!(
+                        "{}/cdx/search/cdx?url={}&matchType=domain&{}",
+                        shared.archive_base(),
+                        urlencode(&host),
+                        extra
+                    );
+                    let Ok(fetched) = shared.fetch_stream(&query, &mut |_, _| {}) else {
+                        continue;
+                    };
+                    if fetched.status != 200 {
+                        continue;
+                    }
+                    let mut best: HashMap<String, (String, String, String, u64, String)> =
+                        HashMap::new();
+                    for row in parse_rows(&fetched.body) {
+                        fold_row(&mut best, &host, &row, true);
+                    }
+                    let mut added = 0usize;
+                    for (url, (ts, orig, mime, len, digest)) in best {
+                        let item = Item {
+                            path: paths::url_to_local_path_in(&url, &host),
+                            kind: paths::file_type(&url),
+                            url,
+                            ts,
+                            orig,
+                            mime,
+                            len,
+                            digest,
+                            same_as: String::new(),
+                        };
+                        if queue.push(item) {
+                            added += 1;
+                        }
+                    }
+                    if added > 0 {
+                        shared
+                            .counters
+                            .added_live
+                            .fetch_add(added, Ordering::Relaxed);
+                        shared.log(crate::tr::pick(
+                            format!("добор: в индекс добавилось {added} адресов"),
+                            format!("live: {added} new addresses from the index"),
+                        ));
+                    }
+                }
+            })
+        };
+
         let mut handles = Vec::new();
         for _ in 0..self.workers {
             let shared = Arc::clone(&self.shared);
             let queue = Arc::clone(&queue);
-            let next = Arc::clone(&next);
             handles.push(std::thread::spawn(move || {
-                loop {
-                    let idx = next.fetch_add(1, Ordering::Relaxed);
-                    if idx >= queue.len() || shared.cancel.load(Ordering::Relaxed) {
+                // Адрес берётся из очереди с ожиданием: пока идёт добор, очередь
+                // может пополниться, и воркер не должен выходить раньше времени.
+                while let Some(item) = queue.pop() {
+                    if shared.cancel.load(Ordering::Relaxed) {
                         break;
                     }
                     shared.gate.acquire();
-                    shared.fetch_one(&queue[idx]);
+                    shared.fetch_one(&item);
                     shared.gate.release();
                 }
             }));
         }
 
+        // Ждём, пока вся работа выполнена: очередь может пополняться добором,
+        // поэтому закрывать её сразу нельзя — добавленные адреса потерялись бы.
+        loop {
+            std::thread::sleep(Duration::from_millis(500));
+            if self.shared.cancel.load(Ordering::Relaxed) {
+                break;
+            }
+            if self.shared.counters.done.load(Ordering::Relaxed) >= queue.planned() {
+                break;
+            }
+        }
+        stop.store(true, Ordering::Relaxed);
+        // Добор останавливается на ближайшей секунде и закрывает очередь;
+        // воркеры выходят по закрытию, а не по «индекс за концом».
+        let _ = recheck.join();
+        queue.close();
         for handle in handles {
             let _ = handle.join();
         }
-        stop.store(true, Ordering::Relaxed);
         let _ = progress_thread.join();
         let _ = controller.join();
         self.save_content_types();
@@ -3523,7 +3679,7 @@ impl Engine {
             index_pages: self.index_pages,
             index_truncated: self.index_truncated,
             index_failed: self.inv_failed,
-            added_live: 0,
+            added_live: self.shared.counters.added_live.load(Ordering::Relaxed),
             added_build: 0,
             oldest: self.snapshot_range().0,
             newest: self.snapshot_range().1,
@@ -4442,6 +4598,39 @@ mod tests {
         assert_eq!(parse_pages("12"), Some(12));
         assert_eq!(parse_pages(""), None);
         assert_eq!(parse_pages(r#"{"pages": 0}"#), None);
+    }
+
+    /// Д-55: очередь не теряет адрес, добавленный во время работы, и не берёт
+    /// повторный путь. Закрытие освобождает ожидающего воркера.
+    #[test]
+    fn queue_takes_live_additions_and_dedupes_paths() {
+        let item = |path: &str| Item {
+            url: format!("https://example.com/{path}"),
+            ts: "20260101000000".to_string(),
+            orig: format!("https://example.com/{path}"),
+            mime: "text/html".to_string(),
+            path: path.to_string(),
+            kind: "html",
+            len: 1,
+            digest: String::new(),
+            same_as: String::new(),
+        };
+        let queue = Arc::new(Queue::new(vec![item("a.html")]));
+        assert_eq!(queue.planned(), 1);
+        assert!(queue.push(item("b.html")), "новый адрес принят");
+        assert!(
+            !queue.push(item("b.html")),
+            "повтор по тому же пути отброшен"
+        );
+        assert_eq!(queue.planned(), 2, "знаменатель прогресса вырос");
+
+        let taken = queue.pop().map(|i| i.path);
+        assert_eq!(taken.as_deref(), Some("a.html"));
+        assert_eq!(queue.pop().map(|i| i.path).as_deref(), Some("b.html"));
+
+        // Пустая очередь закрывается: pop возвращает None, а не висит.
+        queue.close();
+        assert!(queue.pop().is_none());
     }
 
     /// Д-51: файл с тем же содержимым берётся ссылкой на канонический.
