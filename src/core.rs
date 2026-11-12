@@ -1163,7 +1163,8 @@ fn fold_row(
         return;
     }
     // Значения остаются срезами до момента вставки: строка, проигравшая по дате,
-    // не должна порождать ни одной аллокации.
+    // не порождает копий ts, mime и отпечатка. Адрес нормализуется до сравнения
+    // (это нужно для поиска в карте) и там аллокация неизбежна.
     let ts = row.field(body, 0).unwrap_or_default();
     let mime = row.field(body, 2).unwrap_or_default();
     let len = row
@@ -4547,8 +4548,11 @@ pub(crate) fn parse_rows(body: &[u8]) -> Vec<Row> {
         }
         let (row, next) = read_row(body, j);
         from = next.max(from + open + 1);
+        // Одно поле — это законная строка запроса `fl=timestamp`: по ней
+        // собираются даты снимков для добора. Шапка отличается не числом полей,
+        // а первым полем "timestamp".
         if let Some(row) = row
-            && row.len() >= 2
+            && row.len() >= 1
             && row.field(body, 0).is_none_or(|ts| ts != "timestamp")
         {
             rows.push(row);
@@ -5164,6 +5168,17 @@ mod tests {
             "разбор по срезам обязан быть не медленнее чем в пять раз: {:.1}x",
             legacy_best / fresh_best
         );
+    }
+
+    /// Запрос `fl=timestamp` отдаёт по одному полю в строке: такие строки
+    /// обязаны разбираться, иначе добор дат снимков молча не работает.
+    #[test]
+    fn parse_rows_keeps_single_field_rows() {
+        let body = "[[\"timestamp\"],\n[\"20261112010903\"],\n[\"20261112021434\"]]";
+        let rows = parse_rows(body.as_bytes());
+        assert_eq!(rows.len(), 2, "шапка отброшена, две даты остались");
+        assert_eq!(rows[0].field(body.as_bytes(), 0).unwrap(), "20261112010903");
+        assert_eq!(rows[1].field(body.as_bytes(), 0).unwrap(), "20261112021434");
     }
 
     /// Д-64: экранирование, обрыв тела и лишние поля.
