@@ -19,7 +19,7 @@
 ### 1.1 Наименование и обозначение
 
 - Полное наименование: «Site Restorer» — средство восстановления сайта из веб-архива.
-- Обозначение изделия: SR. Версия: 3.5.2.
+- Обозначение изделия: SR. Версия: 3.6.0.
 - Комплект поставки: исполняемые файлы для Windows (x64, x86) и Linux (x64) —
   `SiteRestorer-windows-x64.exe`, `SiteRestorer-windows-x86.exe`,
   `SiteRestorer-windows-x64-cli.exe`, `SiteRestorer-windows-x86-cli.exe`,

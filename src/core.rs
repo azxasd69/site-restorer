@@ -2773,14 +2773,16 @@ impl Engine {
     /// Обратное отображение строится по журналу сборки: там у каждой страницы
     /// уже записан список целей `targets`, отдельная карта не нужна.
     fn pages_for(&self, keys: &HashSet<String>) -> HashSet<String> {
-        let journal = self.load_journal();
+        // Журнал уже собран в память предыдущей сборкой: читать файл заново
+        // незачем, а на большой копии это лишние мегабайты и время.
+        let journal = self.journal.lock().unwrap();
         let mut pages = HashSet::new();
-        for (rel, entry) in journal {
+        for (rel, entry) in journal.iter() {
             if !entry.page {
                 continue;
             }
             if entry.targets.iter().any(|key| keys.contains(key)) {
-                pages.insert(rel);
+                pages.insert(rel.clone());
             }
         }
         pages
