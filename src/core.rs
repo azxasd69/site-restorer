@@ -5321,7 +5321,12 @@ mod tests {
     /// Ключ ссылки не должен указывать за пределы копии: иначе добор писал бы по
     /// абсолютному пути (буква диска) вне каталога результата.
     #[test]
-    fn ref_key_rejects_paths_outside_copy() {
+    /// Ключ ссылки не должен указывать за пределы копии: иначе добор писал бы не
+    /// туда, куда собирается копия. Проверяется сам инвариант, а не форма записи:
+    /// на Windows выход через «..» даёт путь с буквой диска, на Linux — обычный
+    /// относительный, и это законно, пока путь остаётся внутри зеркала.
+    #[test]
+    fn ref_key_never_leads_outside_copy() {
         let dir = std::env::temp_dir().join(format!(
             "sr-key-{}-{:?}",
             std::process::id(),
@@ -5329,15 +5334,22 @@ mod tests {
         ));
         let _ = fs::create_dir_all(&dir);
         let engine = Engine::new("example.com", &dir, 1, 0).unwrap();
+        let mirror = dir.join("mirror");
         assert_eq!(engine.ref_key("/a.html", "").as_deref(), Some("a.html"));
-        assert!(
-            engine.ref_key("C:/Windows/Temp/x.html", "").is_none(),
-            "буква диска увели бы запись вне копии"
-        );
-        assert!(
-            engine.ref_key("../..", "").is_none(),
-            "выход через две точки недопустим"
-        );
+        for raw in [
+            "../..",
+            "../../etc/passwd",
+            "C:/Windows/Temp/x.html",
+            "//evil/x",
+        ] {
+            if let Some(key) = engine.ref_key(raw, "") {
+                let dest = mirror.join(&key);
+                assert!(
+                    dest.starts_with(&mirror),
+                    "ключ {raw} → {key} выводит запись за пределы копии"
+                );
+            }
+        }
         let _ = fs::remove_dir_all(&dir);
     }
 
