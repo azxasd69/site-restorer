@@ -26,6 +26,11 @@ const ARCHIVE_PRIMARY: &str = "https://web.archive.org";
 const ARCHIVE_FALLBACK: &str = "http://web.archive.org";
 /// Сколько попыток даётся на обращение к индексу архива.
 const ARCHIVE_TRIES: u32 = 5;
+/// Предел паузы по `Retry-After`: сервер может прислать `inf` или огромное число,
+/// и неограниченная пауза вешала прогон (а `inf` ронял его паникой).
+const MAX_RETRY_WAIT: f64 = 300.0;
+/// Сколько потоков загрузки берётся, если пользователь не задал своё число.
+pub const DEFAULT_WORKERS: usize = 16;
 /// Пределы ожидания (ПР-5, Д-18): файл, запрос индекса; третий предел — общий 180 с.
 const TIMEOUT_FILE: u64 = 60;
 const TIMEOUT_INDEX: u64 = 120;
@@ -383,6 +388,10 @@ impl Queue {
     }
 
     fn close(&self) {
+        // Флаг ставится под тем же мьютексом, на котором спят воркеры: иначе
+        // закрытие попадает в окно между проверкой `closed` и `cv.wait`, сигнал
+        // теряется и `join` в конце прогона висит навсегда.
+        let _guard = self.items.lock().unwrap_or_else(|e| e.into_inner());
         self.closed.store(true, Ordering::Relaxed);
         self.cv.notify_all();
     }
@@ -576,7 +585,11 @@ impl Shared {
                 .headers()
                 .get("retry-after")
                 .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.parse::<f64>().ok()),
+                .and_then(|v| v.parse::<f64>().ok())
+                // `Retry-After: inf` или 1e300 роняли прогон паникой в
+                // `Duration::from_secs_f64`, а большое число вешало его на годы.
+                .filter(|v| v.is_finite())
+                .map(|v| v.clamp(0.0, MAX_RETRY_WAIT)),
             content_type: resp
                 .headers()
                 .get("content-type")
@@ -731,7 +744,10 @@ impl Shared {
     }
 
     fn sleep(&self, seconds: f64) {
-        let end = Instant::now() + Duration::from_secs_f64(seconds.max(0.0));
+        if !seconds.is_finite() {
+            return;
+        }
+        let end = Instant::now() + Duration::from_secs_f64(seconds.clamp(0.0, MAX_RETRY_WAIT));
         while Instant::now() < end {
             if self.cancel.load(Ordering::Relaxed) {
                 return;
@@ -962,6 +978,10 @@ impl Shared {
             let status = head.status;
             if status == 429 {
                 self.counters.win_429.fetch_add(1, Ordering::Relaxed);
+                // Ограничение частоты — состояние транспорта. Раньше после двух
+                // 429 адрес помечался как «снимка нет» и выпадал из прогонов на
+                // неделю (TTL), хотя снимок в архиве есть.
+                transport_failed = true;
                 let wait = head.retry_after.unwrap_or(20.0 * (attempt + 1) as f64);
                 self.log(crate::tr::pick(
                     format!("429: пауза {wait:.0} с"),
@@ -2007,6 +2027,10 @@ impl Engine {
                         self.switch_match_type("HTTP 504");
                     }
                     if code == 429 || code >= 500 {
+                        // Отказ сервера, а не отсутствие страниц: иначе прогон
+                        // заканчивался словами «archive has no pages». Признак
+                        // снимается, если список всё же получен (ниже).
+                        self.inv_failed = true;
                         let wait = retry.unwrap_or(10.0 * (attempt + 1) as f64);
                         self.shared.sleep(wait);
                         continue;
@@ -2184,6 +2208,17 @@ impl Engine {
                             // Конец доказывает только непустая короткая страница:
                             // пустой ответ означает отказ, а не конец индекса.
                             finished = true;
+                            break;
+                        }
+                        if got == 0 {
+                            // Пустая страница после первой — не конец обхода: режим
+                            // отдал меньше, чем обещал заголовок. Молча выходить
+                            // нельзя — отчёт тогда пишет «индекс полон».
+                            self.index_truncated = true;
+                            self.shared.log(crate::tr::t(
+                                "CDX: пустая страница — индекс остаётся обрезанным",
+                                "CDX: empty page — the index stays truncated",
+                            ));
                             break;
                         }
                         continue;
@@ -2857,8 +2892,6 @@ impl Engine {
         let done = AtomicUsize::new(0);
         let pages = AtomicUsize::new(0);
         let skipped = AtomicUsize::new(0);
-        let fresh_journal: Mutex<HashMap<String, JournalEntry>> =
-            Mutex::new(HashMap::with_capacity(files.len()));
 
         let results: Vec<(String, JournalEntry)> = self.in_pool(|| {
             files
@@ -2914,7 +2947,24 @@ impl Engine {
                             self.foreign_built.fetch_add(1, Ordering::Relaxed);
                         }
                         self.bump_build(&done, total);
-                        return Some((rel, prev.clone()));
+                        // Отметку проверки двигаем только для файлов, которые в этом
+                        // прогоне действительно спрашивали у архива (набор `refresh`).
+                        // Обновлять её на каждом пропуске нельзя: срок «проверить
+                        // заново» (--refresh-days) тогда не наступает никогда и новый
+                        // снимок остаётся незамеченным. Не обновлять вовсе тоже
+                        // нельзя: запись навсегда остаётся просроченной, и каждый
+                        // прогон заново качает весь объём зеркала.
+                        let mut entry = prev.clone();
+                        if self
+                            .shared
+                            .refresh
+                            .lock()
+                            .map(|set| set.contains(&rel))
+                            .unwrap_or(false)
+                        {
+                            entry.checked = now_secs();
+                        }
+                        return Some((rel, entry));
                     }
 
                     if let Some(parent) = dst.parent() {
@@ -3141,7 +3191,6 @@ impl Engine {
             journal_new.insert(rel, entry);
         }
         *self.ref_targets.lock().unwrap() = targets_all;
-        *fresh_journal.lock().unwrap() = journal_new.clone();
         *self.journal.lock().unwrap() = journal_new;
         self.pages
             .store(pages.load(Ordering::Relaxed), Ordering::Relaxed);
@@ -3244,6 +3293,12 @@ impl Engine {
             .strip_prefix(&root)
             .map(|rest| rest.trim_start_matches('/').to_string())
             .unwrap_or(full);
+        // Ключ становится путём внутри копии и частью адреса для добора. Абсолютный
+        // путь, буква диска или выход через «..» увели бы запись за пределы копии:
+        // такие ссылки не проверяем и не добираем.
+        if key.is_empty() || key.contains(':') || key.split('/').any(|part| part == "..") {
+            return None;
+        }
         Some(key)
     }
 
@@ -3437,9 +3492,19 @@ impl Engine {
         let Some(url) = absolute else {
             return value.to_string();
         };
+        // Якорь — часть ссылки: без него переход ведёт на начало страницы
+        // (оглавления и сноски в копии переставали работать).
+        let anchor = raw.split_once('#').map(|(_, tail)| tail).unwrap_or("");
         let rel = paths::url_to_local_path(&url);
         match index.resolve(&rel) {
-            Some(target) => rel_from(src_dir, &target),
+            Some(target) => {
+                let mut out = rel_from(src_dir, &target);
+                if !anchor.is_empty() {
+                    out.push('#');
+                    out.push_str(anchor);
+                }
+                out
+            }
             None => {
                 // Цель не найдена в копии: адрес остаётся абсолютным, но это
                 // осознанное решение, а не пропуск — считаем его (ФТ-147).
@@ -4292,10 +4357,13 @@ fn stamp_from_http_date(text: &str) -> Option<String> {
 
 /// Дата снимка в виде `ГГГГ-ММ-ДД` для отчёта и журнала.
 fn stamp_readable(ts: &str) -> String {
-    if ts.len() < 8 {
+    // Срез по байтам паниковал, если в дате оказывались многобайтовые символы
+    // (повреждённый журнал или чужой ответ). `get` возвращает None на границе
+    // символа, и дата просто остаётся как есть.
+    let (Some(year), Some(month), Some(day)) = (ts.get(..4), ts.get(4..6), ts.get(6..8)) else {
         return ts.to_string();
-    }
-    format!("{}-{}-{}", &ts[..4], &ts[4..6], &ts[6..8])
+    };
+    format!("{year}-{month}-{day}")
 }
 
 /// Сколько дней прошло с даты снимка до сейчас.
@@ -4841,6 +4909,10 @@ fn journal_label(line: Option<&str>) -> Option<String> {
 fn long_path(path: &Path) -> PathBuf {
     let text = path.to_string_lossy();
     if cfg!(windows) && path.is_absolute() && !text.starts_with(r"\\?\") {
+        // Сетевой путь требует своей формы: \\?\UNC\server\share, иначе из сетевого пути получалось \\?\\\server и операции с файлами молча не работали.
+        if let Some(rest) = text.strip_prefix(r"\\") {
+            return PathBuf::from(format!(r"\\?\UNC\{rest}"));
+        }
         PathBuf::from(format!(r"\\?\{text}"))
     } else {
         path.to_path_buf()
@@ -4887,6 +4959,22 @@ fn norm_key(path: &str) -> String {
     parts.join("/")
 }
 
+/// Конец списка целей: `]` внутри строки (путь вида `a[1].html`) списком не считается.
+fn targets_end(text: &str) -> Option<usize> {
+    let mut in_str = false;
+    let mut escaped = false;
+    for (index, ch) in text.char_indices() {
+        match ch {
+            _ if escaped => escaped = false,
+            '\\' if in_str => escaped = true,
+            '"' => in_str = !in_str,
+            ']' if !in_str => return Some(index),
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Разбирает строку журнала сборки: путь, размер, время изменения, страница ли, цели ссылок.
 fn parse_journal_line(line: &str) -> Option<(String, JournalEntry)> {
     if line.trim().is_empty() {
@@ -4901,7 +4989,7 @@ fn parse_journal_line(line: &str) -> Option<(String, JournalEntry)> {
     let mut targets = Vec::new();
     if let Some(start) = line.find("\"targets\":[") {
         let rest = &line[start + "\"targets\":[".len()..];
-        if let Some(end) = rest.find(']') {
+        if let Some(end) = targets_end(rest) {
             let mut buf = String::new();
             let mut in_str = false;
             let mut chars = rest[..end].chars();
@@ -5005,7 +5093,6 @@ th,td{padding:9px 12px;border-bottom:1px solid #eee;text-align:left}th{backgroun
 <tr><td>{{t_added_build}}</td><td class="n">{{added_build}}</td></tr>
 <tr><td>{{t_sum_check}}</td><td>{{sum_check}}</td></tr>
 </table>
-{{fresh_warn}}
 <h2>{{t_integrity}}</h2><table>
 <tr><td>{{t_mirror}}</td><td class="n">{{mirror_files}}</td></tr>
 <tr><td>{{t_unique}}</td><td class="n">{{unique_paths}}</td></tr>
@@ -5185,6 +5272,106 @@ mod tests {
             "разбор по срезам обязан быть не медленнее чем в пять раз: {:.1}x",
             legacy_best / fresh_best
         );
+    }
+
+    /// Дата снимка с многобайтовыми символами не должна ронять прогон: раньше
+    /// срез по байтам паниковал, а при `panic = "abort"` это конец всего прогона.
+    #[test]
+    fn stamp_readable_does_not_panic_on_multibyte() {
+        assert_eq!(stamp_readable("20251115030405"), "2025-11-15");
+        // Три трёхбайтовых символа: проверка длины проходит, срез по байтам — нет.
+        let wide = "\u{4e2d}\u{4e2d}\u{4e2d}";
+        assert_eq!(
+            stamp_readable(wide),
+            wide,
+            "не-ASCII дата остаётся как есть"
+        );
+        assert_eq!(stamp_readable(""), "");
+        assert_eq!(stamp_readable("2025"), "2025");
+    }
+
+    /// Конец списка целей ищется с учётом кавычек: `]` внутри пути — часть пути,
+    /// а не конец списка (прежний поиск первого `]` оставлял пустой список).
+    #[test]
+    fn journal_targets_with_bracket_are_not_truncated() {
+        let line =
+            r#"{"path":"a.html","size":1,"mtime":2,"page":true,"targets":["a[1].html","b.html"]}"#;
+        let (path, entry) = parse_journal_line(line).expect("строка разбирается");
+        assert_eq!(path, "a.html");
+        assert_eq!(
+            entry.targets.as_slice(),
+            ["a[1].html".to_string(), "b.html".to_string()]
+        );
+
+        let list = r#"["a[1].html","b.html"]"#;
+        assert_eq!(
+            targets_end(list),
+            Some(list.len() - 1),
+            "конец списка — последняя скобка, а не скобка внутри пути"
+        );
+    }
+
+    /// Ключ ссылки не должен указывать за пределы копии: иначе добор писал бы по
+    /// абсолютному пути (буква диска) вне каталога результата.
+    #[test]
+    fn ref_key_rejects_paths_outside_copy() {
+        let dir = std::env::temp_dir().join(format!(
+            "sr-key-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::create_dir_all(&dir);
+        let engine = Engine::new("example.com", &dir, 1, 0).unwrap();
+        assert_eq!(engine.ref_key("/a.html", "").as_deref(), Some("a.html"));
+        assert!(
+            engine.ref_key("C:/Windows/Temp/x.html", "").is_none(),
+            "буква диска увели бы запись вне копии"
+        );
+        assert!(
+            engine.ref_key("../..", "").is_none(),
+            "выход через две точки недопустим"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Сетевой путь требует формы \\?\UNC\server\share: иначе из него получалось \\?\\\server и операции молча не работали.
+    #[cfg(windows)]
+    #[test]
+    fn long_path_keeps_unc_share() {
+        let unc = Path::new(r"\\srv\share\deep\file.html");
+        assert_eq!(
+            long_path(unc),
+            PathBuf::from(r"\\?\UNC\srv\share\deep\file.html")
+        );
+        let plain = Path::new(r"C:\tmp\file.html");
+        assert_eq!(long_path(plain), PathBuf::from(r"\\?\C:\tmp\file.html"));
+        // Уже с префиксом — не трогаем.
+        let ready = Path::new(r"\\?\C:\tmp\file.html");
+        assert_eq!(long_path(ready), ready.to_path_buf());
+    }
+
+    /// Закрытие очереди будит ждущего воркера: иначе `join` в конце прогона висит.
+    #[test]
+    fn queue_close_wakes_waiter() {
+        use std::sync::mpsc;
+        let queue = std::sync::Arc::new(Queue::new(Vec::new(), 0));
+        let (tx, rx) = mpsc::channel();
+        let waiter = {
+            let queue = std::sync::Arc::clone(&queue);
+            std::thread::spawn(move || {
+                let taken = queue.pop();
+                let _ = tx.send(taken.is_none());
+            })
+        };
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        queue.close();
+        let woken = rx.recv_timeout(std::time::Duration::from_secs(2));
+        assert_eq!(
+            woken,
+            Ok(true),
+            "ждущий воркер обязан проснуться по закрытию"
+        );
+        waiter.join().unwrap();
     }
 
     /// Запрос `fl=timestamp` отдаёт по одному полю в строке: такие строки
@@ -5642,6 +5829,60 @@ mod build_tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// Отметка проверки двигается только тогда, когда файл в этом прогоне
+    /// спрашивали у архива: иначе либо срок перепроверки не наступает никогда,
+    /// либо весь объём зеркала качается заново каждый прогон.
+    #[test]
+    fn checked_mark_moves_only_after_recheck() {
+        let dir = workdir("checked");
+        put(
+            &dir,
+            "index.html",
+            "<html><body>привет</body></html>".as_bytes(),
+        );
+        let engine = Engine::new("example.com", &dir, 1, 0).unwrap();
+        engine.build().unwrap();
+
+        let journal_file = dir.join("data").join("build.jsonl");
+        let zero = |text: &str| -> String {
+            text.lines()
+                .map(|line| match line.find("\"checked\":") {
+                    Some(at) => {
+                        let head = &line[..at + "\"checked\":".len()];
+                        let tail = line[at + "\"checked\":".len()..]
+                            .split_once(',')
+                            .map(|(_, rest)| format!(",{rest}"))
+                            .unwrap_or_default();
+                        format!("{head}0{tail}")
+                    }
+                    None => line.to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        // 1. Пропуск без перепроверки: отметка не двигается (срок ещё не наступил).
+        let first = fs::read_to_string(&journal_file).unwrap();
+        fs::write(&journal_file, format!("{}\n", zero(&first))).unwrap();
+        engine.build().unwrap();
+        let second = fs::read_to_string(&journal_file).unwrap();
+        assert!(
+            second.contains("\"checked\":0,"),
+            "без перепроверки отметка остаётся прежней: {second}"
+        );
+
+        // 2. Файл попал в набор перепроверки: отметка обновляется.
+        if let Ok(mut set) = engine.shared.refresh.lock() {
+            set.insert("index.html".to_string());
+        }
+        engine.build().unwrap();
+        let third = fs::read_to_string(&journal_file).unwrap();
+        assert!(
+            !third.contains("\"checked\":0,"),
+            "после перепроверки отметка обновлена: {third}"
+        );
     }
 
     fn put(root: &Path, rel: &str, data: &[u8]) {

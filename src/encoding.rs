@@ -78,14 +78,21 @@ pub fn decode_document(data: &[u8], content_type: Option<&str>) -> Decoded {
     let detected = detect_encoding(data);
 
     let mut best: Option<(Decoded, f64)> = None;
-    for (enc, source, bonus) in [
-        declared.map(|(e, s)| (e, s, 0.04)),
-        detected.map(|e| (e, "detected", 0.0)),
+    for (enc, source, bonus, declared_here) in [
+        declared.map(|(e, s)| (e, s, 0.04, true)),
+        detected.map(|e| (e, "detected", 0.0, false)),
     ]
     .into_iter()
     .flatten()
     {
         let (text, _, had_errors) = enc.decode(data);
+        // Объявленная иероглифическая кодировка с чистой разборкой: русская
+        // частотная проверка ничего не измеряет на таком тексте (кириллицы нет,
+        // иероглифы считаются мусором), а запасной windows-1251 портит страницу
+        // целиком. Принимаем объявление, если иероглифы действительно есть.
+        if declared_here && !had_errors && is_cjk_family(enc) && has_cjk(&text) {
+            return Decoded::new(text.into_owned(), enc_label(enc), source, 90);
+        }
         let mut score = quality(&text);
         if had_errors {
             score -= 0.15;
@@ -387,6 +394,29 @@ fn is_cjk_punct(c: char) -> bool {
     matches!(c, '\u{3000}'..='\u{303F}')
 }
 
+/// Иероглифические семейства: кириллическая частотная проверка к ним неприменима.
+fn is_cjk_family(enc: &'static Encoding) -> bool {
+    matches!(
+        enc.name(),
+        "Shift_JIS" | "EUC-JP" | "ISO-2022-JP" | "GBK" | "gb18030" | "Big5" | "EUC-KR"
+    )
+}
+
+/// Есть ли в тексте иероглифы: признак, что байты разобраны той кодировкой,
+/// которую объявила страница, а не случайной.
+fn has_cjk(text: &str) -> bool {
+    text.chars().any(|c| {
+        matches!(
+            c as u32,
+            0x3040..=0x30FF
+                | 0x3400..=0x4DBF
+                | 0x4E00..=0x9FFF
+                | 0xAC00..=0xD7AF
+                | 0xF900..=0xFAFF
+        )
+    })
+}
+
 /// Хи-квадрат гистограммы русских букв относительно эталонных частот (на 1000).
 pub fn chi_square_ru(text: &str) -> f64 {
     const FREQ: [(char, f64); 33] = [
@@ -498,6 +528,29 @@ fn ensure_charset_in_head(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Старая страница в shift_jis остаётся в shift_jis: русская частотная
+    /// проверка её не понимает, а запасной windows-1251 делает из текста мусор.
+    #[test]
+    fn declared_japanese_page_is_not_replaced_by_cp1251() {
+        // «こんにちは» в Shift_JIS.
+        let body = [0x82u8, 0xB1, 0x82, 0xF1, 0x82, 0xC9, 0x82, 0xBF, 0x82, 0xCD];
+        let decoded = decode_document(&body, Some("text/html; charset=shift_jis"));
+        assert_eq!(
+            decoded.label.to_lowercase(),
+            "shift_jis",
+            "объявленная кодировка сохранена"
+        );
+        assert_eq!(decoded.text, "こんにちは");
+
+        // Без объявления кодировки правило не действует: остаётся прежний путь.
+        let blind = decode_document(&body, None);
+        assert_ne!(
+            blind.label.to_lowercase(),
+            "shift_jis",
+            "на угадывание правило не распространяется"
+        );
+    }
 
     const RU: &str = "Съешь же ещё этих мягких французских булок, да выпей чаю. \
 Правительство Российской Федерации объявило о новых мерах поддержки малого бизнеса \

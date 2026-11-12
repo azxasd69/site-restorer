@@ -297,7 +297,7 @@ impl App {
             return;
         }
         let out = PathBuf::from(self.out.trim());
-        let Some(mut engine) = Engine::new(&host, &out, 16, 0) else {
+        let Some(mut engine) = Engine::new(&host, &out, crate::core::DEFAULT_WORKERS, 0) else {
             self.push_log(t.bad_address, Level::Err);
             return;
         };

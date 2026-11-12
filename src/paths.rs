@@ -192,9 +192,13 @@ pub fn normalize_url(url: &str, host: &str) -> String {
 /// Тип файла для полос прогресса и отчёта.
 pub fn file_type(url: &str) -> &'static str {
     let parts = parse(url);
+    // Расширение берётся у последнего сегмента: у «/v1.2/about» прежний разбор
+    // давал «2/about», и страница попадала в «прочие».
     let ext = parts
         .path
-        .rsplit_once('.')
+        .rsplit('/')
+        .next()
+        .and_then(|name| name.rsplit_once('.'))
         .map(|(_, e)| e.to_lowercase())
         .unwrap_or_default();
     match ext.as_str() {
@@ -208,6 +212,16 @@ pub fn file_type(url: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Точка в каталоге — не расширение: страница без расширения остаётся страницей.
+    #[test]
+    fn file_type_ignores_dots_in_directories() {
+        assert_eq!(file_type("https://e.com/v1.2/about"), "html");
+        assert_eq!(file_type("https://e.com/v1.2/about.html"), "html");
+        assert_eq!(file_type("https://e.com/img/logo.png"), "img");
+        assert_eq!(file_type("https://e.com/v1.2/app.js"), "code");
+        assert_eq!(file_type("https://e.com/v1.2/file.pdf"), "other");
+    }
 
     #[test]
     fn plain_paths() {

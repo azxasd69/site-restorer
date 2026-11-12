@@ -344,7 +344,10 @@ fn parse_args(args: &[String]) -> Args {
                 i += 2;
             }
             "--workers" => {
-                parsed.workers = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(16);
+                parsed.workers = args
+                    .get(i + 1)
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(crate::core::DEFAULT_WORKERS);
                 i += 2;
             }
             "--threads" => {
@@ -406,7 +409,20 @@ fn parse_args(args: &[String]) -> Args {
                 parsed.stub_bytes = args.get(i + 1).and_then(|v| v.parse().ok());
                 i += 2;
             }
-            _ => i += 1,
+            // Служебные флаги разбираются до запуска, в настройки они не попадают
+            // и неизвестными не считаются.
+            "--cli" | "--version" | "-V" | "--help" | "-h" => i += 1,
+            other => {
+                // Молча терять аргумент нельзя: опечатка в имени флага давала полный
+                // прогон вместо пробы и выглядела как согласие с командой.
+                if other.starts_with('-') {
+                    eprintln!(
+                        "{}: {other}",
+                        crate::tr::t("неизвестный аргумент", "unknown argument")
+                    );
+                }
+                i += 1;
+            }
         }
     }
     parsed

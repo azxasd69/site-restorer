@@ -83,9 +83,13 @@
 ## Сборка
 
 - Один бинарник: `cargo build --release` (GUI + CLI) или
-  `--no-default-features` (только CLI, без eframe/rfd).
-- Профиль релиза: `opt-level = "z"`, LTO, `panic = "abort"`, strip — отсюда
-  2–3,4 МБ для CLI и 6,5–9,1 МБ для GUI.
+  `--no-default-features` (только CLI, без eframe). Диалог выбора папки делает
+  собственный модуль `pick` (Win32 напрямую), крейта `rfd` в зависимостях нет.
+- Профиль релиза: `opt-level = 3`, `lto = "thin"`, `codegen-units = 1`,
+  `panic = "abort"`, `strip = "none"`. Размер важнее скорости не оказался: замер
+  12.11.2026 дал `opt-level = "z"` + LTO 7,2 МБ против 8,7 МБ у `opt-level = 3`
+  с `lto = "thin"`, но скорость разбора и сборки на больших копиях важнее 1,5 МБ.
+  Отсюда 2–3,4 МБ для CLI и 6,5–9,1 МБ для GUI.
 - Linux CLI собирается на musl: `x86_64-unknown-linux-musl` даёт полностью
   статический ELF (`ldd` → not a dynamic executable).
 - GUI на Linux требует системных X11/GL (это норма для нативного окна).
