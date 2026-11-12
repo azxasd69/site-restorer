@@ -232,26 +232,19 @@ jobs:
           if-no-files-found: ignore
 
   # Перечень состава сборки (SBOM, CycloneDX) — требование политики платформ.
-  # Прикладывается к релизу как отдельный файл, чтобы у потребителя был список
-  # компонентов с версиями и лицензиями.
+  # Генерируется своим скриптом из Cargo.lock: не зависит от установки
+  # cargo-cyclonedx (она падала в конвейере) и не требует сети.
   sbom:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: cargo-cyclonedx
-        run: |
-          set -e
-          cargo install cargo-cyclonedx --locked --version "^0.5" || cargo install cargo-cyclonedx --locked
-
       - name: SBOM
         run: |
           set -e
-          cargo cyclonedx --format json --output-file sbom.cdx.json
+          python3 tools/sbom.py > sbom.cdx.json
           ls -l sbom.cdx.json
-          python3 -c "import json,sys; d=json.load(open('sbom.cdx.json')); print('компонентов:', len(d.get('components', [])))"
+          python3 -c "import json; d=json.load(open('sbom.cdx.json')); print('компонентов:', len(d['components']))"
 
       - uses: actions/upload-artifact@v4
         with:
