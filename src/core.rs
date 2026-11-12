@@ -249,6 +249,8 @@ pub struct Outcome {
     pub rescued: usize,
     /// Файлов получено ссылкой на уже скачанный (ФТ-146).
     pub shared: usize,
+    /// Абсолютных адресов своего домена, оставленных как есть (ФТ-147).
+    pub left: usize,
     /// Адресов в индексе до пользовательского --limit (ФТ-155).
     pub index_total: usize,
     /// Сколько страниц индекса обойдено (ФТ-155).
@@ -334,6 +336,9 @@ struct Counters {
     collisions: AtomicUsize,
     /// Сколько файлов получено ссылкой на уже скачанный (ФТ-146).
     shared: AtomicUsize,
+    /// Сколько абсолютных адресов своего домена оставлено как есть: цели нет
+    /// в копии либо это не файл (ФТ-147).
+    left: AtomicUsize,
     bytes: AtomicU64,
     win_bytes: AtomicU64,
     win_files: AtomicUsize,
@@ -2520,12 +2525,13 @@ impl Engine {
         }
         fs::create_dir_all(&self.site_dir).map_err(|e| e.to_string())?;
 
-        let attr_rx = Regex::new(
-            r#"(?i)(href|src|data-src|data-bg|poster|action|data-original)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>`=]+))"#,
+        // Один шаблон на атрибуты ссылок и наборы источников (ФТ-148): раньше
+        // документ проходился дважды. Семантика сохранена: наборы источников
+        // разбираются только в кавычках, без кавычек значение считается адресом.
+        let link_rx = Regex::new(
+            r#"(?i)(href|src|data-src|data-bg|poster|action|data-original|srcset|data-srcset)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>`=]+))"#,
         )
         .unwrap();
-        let srcset_rx =
-            Regex::new(r#"(?i)(srcset|data-srcset)\s*=\s*(?:"([^"]*)"|'([^']*)')"#).unwrap();
         let css_rx = Regex::new(r#"url\(\s*["']?([^"')]+)["']?\s*\)"#).unwrap();
         let base_rx = Regex::new(r"(?i)<base\b[^>]*>").unwrap();
         let site_rx = Regex::new(&format!(
@@ -2675,54 +2681,65 @@ impl Engine {
                             }
                         };
                         if lower.ends_with(".js") {
+                            // Раньше здесь любой абсолютный адрес своего домена
+                            // обрезался до пути: ломались адреса API и строки
+                            // сравнения. Теперь правило то же, что у атрибутов:
+                            // переписываем только существующую в копии цель.
                             text = site_rx
-                                .replace_all(&text, |caps: &regex::Captures| caps[1].to_string())
-                                .into_owned();
-                        } else {
-                            text = attr_rx
                                 .replace_all(&text, |caps: &regex::Captures| {
-                                    let attr = &caps[1];
-                                    let (value, quote) = if let Some(v) = caps.get(2) {
-                                        (v.as_str(), "\"")
-                                    } else if let Some(v) = caps.get(3) {
-                                        (v.as_str(), "'")
-                                    } else {
-                                        (caps.get(4).map(|m| m.as_str()).unwrap_or(""), "\"")
-                                    };
-                                    let new_value =
-                                        self.rewrite_ref(value, src_dir, &index, &site_rx);
-                                    // Считаем ИТОГОВУЮ ссылку: проверка ссылается на то, что
-                                    // реально попало в копию (так же считала проверка в 3.3.1).
-                                    collect(&new_value, caps.get(4).is_none());
-                                    format!("{attr}={quote}{new_value}{quote}")
+                                    let full = caps.get(0).map(|m| m.as_str()).unwrap_or("");
+                                    self.rewrite_ref(full, src_dir, &index, &site_rx)
                                 })
                                 .into_owned();
-                            text = srcset_rx
+                        } else {
+                            text = link_rx
                                 .replace_all(&text, |caps: &regex::Captures| {
                                     let attr = &caps[1];
-                                    let quote = if caps.get(2).is_some() { "\"" } else { "'" };
+                                    // Кавычки: 2 — двойные, 3 — одинарные, 4 — без кавычек.
+                                    let quoted = caps.get(4).is_none();
+                                    let quote = if caps.get(2).is_some() {
+                                        "\""
+                                    } else if caps.get(3).is_some() {
+                                        "'"
+                                    } else {
+                                        "\""
+                                    };
                                     let value = caps
                                         .get(2)
                                         .or_else(|| caps.get(3))
+                                        .or_else(|| caps.get(4))
                                         .map(|m| m.as_str())
                                         .unwrap_or("");
-                                    let items: Vec<String> = value
-                                        .split(',')
-                                        .filter(|s| !s.trim().is_empty())
-                                        .map(|item| {
-                                            let mut bits = item.split_whitespace();
-                                            let url = bits.next().unwrap_or("");
-                                            let rest: Vec<&str> = bits.collect();
-                                            let new_url =
-                                                self.rewrite_ref(url, src_dir, &index, &site_rx);
-                                            if rest.is_empty() {
-                                                new_url
-                                            } else {
-                                                format!("{new_url} {}", rest.join(" "))
-                                            }
-                                        })
-                                        .collect();
-                                    format!("{attr}={quote}{}{quote}", items.join(", "))
+                                    let is_set = attr.eq_ignore_ascii_case("srcset")
+                                        || attr.eq_ignore_ascii_case("data-srcset");
+                                    if is_set && quoted {
+                                        let items: Vec<String> = value
+                                            .split(',')
+                                            .filter(|s| !s.trim().is_empty())
+                                            .map(|item| {
+                                                let mut bits = item.split_whitespace();
+                                                let url = bits.next().unwrap_or("");
+                                                let rest: Vec<&str> = bits.collect();
+                                                let new_url = self
+                                                    .rewrite_ref(url, src_dir, &index, &site_rx);
+                                                if rest.is_empty() {
+                                                    new_url
+                                                } else {
+                                                    format!("{new_url} {}", rest.join(" "))
+                                                }
+                                            })
+                                            .collect();
+                                        return format!(
+                                            "{attr}={quote}{}{quote}",
+                                            items.join(", ")
+                                        );
+                                    }
+                                    let new_value =
+                                        self.rewrite_ref(value, src_dir, &index, &site_rx);
+                                    // Цели считаем по ИТОГОВОЙ ссылке: проверка ссылается
+                                    // на то, что реально попало в копию.
+                                    collect(&new_value, quoted);
+                                    format!("{attr}={quote}{new_value}{quote}")
                                 })
                                 .into_owned();
                             text = css_rx
@@ -3089,7 +3106,12 @@ impl Engine {
         let rel = paths::url_to_local_path(&url);
         match index.resolve(&rel) {
             Some(target) => rel_from(src_dir, &target),
-            None => value.to_string(),
+            None => {
+                // Цель не найдена в копии: адрес остаётся абсолютным, но это
+                // осознанное решение, а не пропуск — считаем его (ФТ-147).
+                self.shared.counters.left.fetch_add(1, Ordering::Relaxed);
+                value.to_string()
+            }
         }
     }
 
@@ -3302,6 +3324,10 @@ impl Engine {
                     .to_string(),
             )
             .replace(
+                "{{left}}",
+                &self.shared.counters.left.load(Ordering::Relaxed).to_string(),
+            )
+            .replace(
                 "{{shared}}",
                 &self
                     .shared
@@ -3476,6 +3502,7 @@ impl Engine {
             collisions: self.shared.counters.collisions.load(Ordering::Relaxed),
             rescued: self.rescued.load(Ordering::Relaxed),
             shared: self.shared.counters.shared.load(Ordering::Relaxed),
+            left: self.shared.counters.left.load(Ordering::Relaxed),
             index_total: self.index_total,
             index_pages: self.index_pages,
             index_truncated: self.index_truncated,
@@ -4355,7 +4382,8 @@ th,td{padding:9px 12px;border-bottom:1px solid #eee;text-align:left}th{backgroun
 <tr><td>{{t_no_snapshot}}</td><td class="n">{{no_snapshot}}</td></tr>
 <tr><td>{{t_collisions}}</td><td class="n">{{collisions}}</td></tr>
 <tr><td>{{t_rescued}}</td><td class="n">{{rescued}}</td></tr>
-<tr><td>{{t_shared}}</td><td class="n">{{shared}}</td></tr></table>
+<tr><td>{{t_shared}}</td><td class="n">{{shared}}</td></tr>
+<tr><td>{{t_left}}</td><td class="n">{{left}}</td></tr></table>
 {{fresh_warn}}
 <h2>{{t_integrity}}</h2><table>
 <tr><td>{{t_mirror}}</td><td class="n">{{mirror_files}}</td></tr>
