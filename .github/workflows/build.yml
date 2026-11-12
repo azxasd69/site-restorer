@@ -18,13 +18,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Раннер иногда приходит с чужими shims rustup: установка компонентов
-      # падает с «detected conflict: 'bin/cargo-fmt'». Удаляем их до установки —
-      # rustup создаст свои вместе с компонентами из rust-toolchain.toml.
-      - name: Очистить чужие shims rustup
-        run: rm -f ~/.cargo/bin/cargo-fmt ~/.cargo/bin/rustfmt ~/.cargo/bin/cargo-clippy ~/.cargo/bin/clippy-driver
-
-      - uses: dtolnay/rust-toolchain@1.99.1
+      # Тулчейн ставим сами, а не действием: на раннере иногда остаётся чужой
+      # файл в каталоге тулчейна, и установка компонентов падает с
+      # «detected conflict: 'bin/cargo-fmt'». Каталог сносится целиком, поэтому
+      # состояние известно, а компоненты ставятся из rust-toolchain.toml.
+      - name: Тулчейн 1.99.1
+        shell: bash
+        run: |
+          set -e
+          rustup toolchain uninstall 1.99.1 >/dev/null 2>&1 || true
+          rm -rf "$HOME/.rustup/toolchains/1.99.1-"* 2>/dev/null || true
+          rustup toolchain install 1.99.1 --profile minimal \
+            --component clippy --component rustfmt
+          rustup default 1.99.1
         with:
           components: clippy, rustfmt
 
@@ -134,13 +140,19 @@ jobs:
           echo "::error::системные библиотеки не установились после трёх попыток"
           exit 1
 
-      # Раннер иногда приходит с чужими shims rustup: установка компонентов
-      # падает с «detected conflict: 'bin/cargo-fmt'». Удаляем их до установки —
-      # rustup создаст свои вместе с компонентами из rust-toolchain.toml.
-      - name: Очистить чужие shims rustup
-        run: rm -f ~/.cargo/bin/cargo-fmt ~/.cargo/bin/rustfmt ~/.cargo/bin/cargo-clippy ~/.cargo/bin/clippy-driver
-
-      - uses: dtolnay/rust-toolchain@1.99.1
+      # Тулчейн ставим сами, а не действием: на раннере иногда остаётся чужой
+      # файл в каталоге тулчейна, и установка компонентов падает с
+      # «detected conflict: 'bin/cargo-fmt'». Каталог сносится целиком, поэтому
+      # состояние известно, а компоненты ставятся из rust-toolchain.toml.
+      - name: Тулчейн 1.99.1
+        shell: bash
+        run: |
+          set -e
+          rustup toolchain uninstall 1.99.1 >/dev/null 2>&1 || true
+          rm -rf "$HOME/.rustup/toolchains/1.99.1-"* 2>/dev/null || true
+          rustup toolchain install 1.99.1 --profile minimal \
+            --component clippy --component rustfmt
+          rustup default 1.99.1
         with:
           targets: ${{ matrix.target }}
 
