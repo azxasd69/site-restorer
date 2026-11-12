@@ -6,13 +6,19 @@
 правка в файле в конвейере не действовала — и это ничем не обнаруживалось
 (ПР-15, Д-69). Скрипт закрывает класс дефектов:
 
-1. в репозитории и конвейере нет запрещённых значений (`target-cpu=native`,
-   `x86-64-v2/v3/v4`, глобальные `+avx/+avx2/+fma/+sse4.*`);
+1. в конфигурации сборки нет запрещённых значений (`target-cpu=native`,
+   `x86-64-v2/v3/v4`, глобальные `+avx*`, `+fma`, `+sse4.*`);
 2. все цели, которые собирает конвейер, описаны в `.cargo/config.toml`;
-3. конвейер не задаёт `RUSTFLAGS` для релизных ячеек матрицы.
+3. конвейер не задаёт `RUSTFLAGS` ни в одной задаче, кроме замеров;
+4. проверка возможностей и `#[target_feature]` встречаются только в `src/isa.rs`:
+   иначе выключатель `SR_NO_SIMD` обходится новым ускоренным путём в любом файле.
 
-Разрешено: `x86-64-v3` в задаче замеров `isa-bench` — это вариантная сборка
-для сравнения чисел, а не поставка.
+Исключение ровно одно и проверяется по строке, а не по всему файлу: вариантная
+сборка `x86-64-v3` разрешена только в задаче `isa-bench` (числа для сравнения,
+а не поставка).
+
+Скрипт падает, если файл конфигурации или конвейера не найден: пропуск проверки
+из-за отсутствующего файла — это ложноотрицательный результат, а не успех.
 
 Запуск:  python3 scripts/check-flags.py [--json]
 Выход:   0 — всё сходится, 1 — есть нарушения.
@@ -27,122 +33,168 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-CONFIG = ROOT / ".cargo" / "config.toml"
-WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
+CONFIG = ".cargo/config.toml"
+WORKFLOWS_DIR = ".github/workflows"
 
-# Значения, запрещённые политикой (docs/PLATFORMS.md §2).
+# Значения, запрещённые политикой (docs/PLATFORMS.md §2). Границы слов здесь
+# не годятся: `+avx512f` должен ловиться так же, как `+avx`.
 FORBIDDEN = [
     (re.compile(r"target-cpu\s*=\s*native"), "target-cpu=native"),
     (re.compile(r"x86-64-v2"), "x86-64-v2"),
     (re.compile(r"x86-64-v3"), "x86-64-v3"),
     (re.compile(r"x86-64-v4"), "x86-64-v4"),
-    (re.compile(r"target-feature=\+avx\b"), "глобальный +avx"),
-    (re.compile(r"target-feature=\+avx2\b"), "глобальный +avx2"),
-    (re.compile(r"target-feature=\+fma\b"), "глобальный +fma"),
+    (re.compile(r"target-feature=\+avx"), "глобальный +avx*"),
+    (re.compile(r"target-feature=\+fma"), "глобальный +fma"),
     (re.compile(r"target-feature=\+sse4"), "глобальный +sse4.*"),
 ]
 
 # Файлы, где флаги имеют силу. Документация и планы не проверяются: там эти
 # строки встречаются как запреты и как примеры.
-CHECKED = [
-    ".cargo/config.toml",
-    ".github/workflows/build.yml",
-    "Cargo.toml",
-    "build.rs",
-    "rust-toolchain.toml",
-]
+CHECKED = ["Cargo.toml", "build.rs", "rust-toolchain.toml"]
 
 # Задача, которой вариантная сборка разрешена.
 BENCH_JOB = "isa-bench"
 
 
-def read(path: str) -> str:
+def read(path: str) -> str | None:
     file = ROOT / path
     if not file.is_file():
-        return ""
+        return None
     return file.read_text(encoding="utf-8").replace("\r\n", "\n")
 
 
-def workflow_jobs(text: str) -> dict[str, str]:
-    """Грубый разбор задач: от «  имя:» до следующей задачи того же уровня."""
-    jobs: dict[str, list[str]] = {}
+def job_of_lines(text: str) -> list[str | None]:
+    """Для каждой строки — имя задачи, к которой она относится (или None).
+
+    Разбор намеренно простой: задачи верхнего уровня в GitHub Actions — это
+    отступ в два пробела внутри `jobs:`. Всё, что выше `jobs:`, помечается как
+    «вне задачи» и тоже проверяется: `env:` верхнего уровня действует на все
+    шаги сразу.
+    """
+    owners: list[str | None] = []
     current: str | None = None
     in_jobs = False
     for line in text.split("\n"):
-        if line.startswith("jobs:"):
+        if line.rstrip() == "jobs:":
             in_jobs = True
+            owners.append(None)
             continue
-        if not in_jobs:
-            continue
-        match = re.match(r"^  ([a-zA-Z0-9_-]+):\s*$", line)
-        if match:
-            current = match.group(1)
-            jobs[current] = []
-            continue
-        if current:
-            jobs[current].append(line)
-    return {name: "\n".join(lines) for name, lines in jobs.items()}
+        if in_jobs:
+            match = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
+            if match:
+                current = match.group(1)
+                owners.append(current)
+                continue
+        owners.append(current)
+    return owners
 
 
 def main() -> int:
     as_json = "--json" in sys.argv
     problems: list[str] = []
 
-    # 1. Запрещённые значения.
-    for path in CHECKED:
-        text = read(path)
-        for line_no, line in enumerate(text.split("\n"), start=1):
+    config = read(CONFIG)
+    if config is None:
+        problems.append(f"{CONFIG}: файл не найден — проверять нечего")
+        config = ""
+    if not (ROOT / WORKFLOWS_DIR).is_dir():
+        problems.append(f"{WORKFLOWS_DIR}: каталог не найден — проверять нечего")
+
+    workflows: dict[str, str] = {}
+    if (ROOT / WORKFLOWS_DIR).is_dir():
+        for file in sorted((ROOT / WORKFLOWS_DIR).glob("*.yml")):
+            workflows[f"{WORKFLOWS_DIR}/{file.name}"] = read(
+                f"{WORKFLOWS_DIR}/{file.name}"
+            ) or ""
+    if not workflows:
+        problems.append(f"{WORKFLOWS_DIR}: нет ни одного файла конвейера")
+    elif not any("cargo build" in text or "cargo zigbuild" in text for text in workflows.values()):
+        # Конвейер сборки обязан существовать: без него проверка целей и флагов
+        # ничего не значит, а «нет файла» не должно выглядеть успехом.
+        problems.append(f"{WORKFLOWS_DIR}: нет конвейера, который собирает проект")
+
+    # 1. Запрещённые значения — по строке и с привязкой к задаче.
+    for path in [CONFIG, *CHECKED, *workflows]:
+        text = read(path) if path not in workflows else workflows[path]
+        if text is None:
+            problems.append(f"{path}: файл не найден")
+            continue
+        owners = job_of_lines(text)
+        for index, line in enumerate(text.split("\n")):
             stripped = line.strip()
             if stripped.startswith("#"):
                 continue
+            owner = owners[index] if index < len(owners) else None
             for pattern, label in FORBIDDEN:
                 if not pattern.search(line):
                     continue
-                # Вариантная сборка для замеров — единственное исключение.
-                if label.startswith("x86-64-v3") and BENCH_JOB in text:
-                    block = workflow_jobs(text).get(BENCH_JOB, "")
-                    if line in block or label in block:
-                        continue
-                problems.append(f"{path}:{line_no}: запрещено {label}")
+                # Единственное исключение: замерная задача и только она.
+                if label.startswith("x86-64-v3") and owner == BENCH_JOB:
+                    continue
+                problems.append(f"{path}:{index + 1}: запрещено {label}")
 
-    # 2. Цели конвейера описаны в файле.
-    config = read(".cargo/config.toml")
-    workflow = read(".github/workflows/build.yml")
-    targets = set(re.findall(r"^\s+target:\s*(\S+)\s*$", workflow, re.M))
+    # 2. Цели конвейера описаны в файле, у каждой зафиксирована база.
+    targets: set[str] = set()
+    for text in workflows.values():
+        targets.update(re.findall(r"^\s+target:\s*(\S+)\s*$", text, re.M))
     for target in sorted(targets):
-        if f"[target.{target}]" not in config:
-            problems.append(
-                f".cargo/config.toml: нет блока [target.{target}] для цели конвейера"
-            )
-    for target in targets:
-        block = config.split(f"[target.{target}]", 1)
-        if len(block) < 2:
+        block = f"[target.{target}]"
+        if block not in config:
+            problems.append(f"{CONFIG}: нет блока {block} для цели конвейера")
             continue
-        body = block[1].split("[target.", 1)[0]
+        body = config.split(block, 1)[1].split("[target.", 1)[0]
         if "target-cpu=x86-64" not in body:
-            problems.append(f".cargo/config.toml: у {target} не зафиксирована базовая ISA")
-    if 'linker = "musl-gcc"' not in config:
-        problems.append(".cargo/config.toml: для musl не задан линковщик musl-gcc")
+            problems.append(f"{CONFIG}: у {target} не зафиксирована базовая ISA")
+    if targets and 'linker = "musl-gcc"' not in config:
+        problems.append(f"{CONFIG}: для musl не задан линковщик musl-gcc")
 
-    # 3. Конвейер не задаёт RUSTFLAGS релизным ячейкам.
-    for name, block in workflow_jobs(workflow).items():
-        # Комментарии не считаются: в них RUSTFLAGS упоминается как объяснение.
-        code = "\n".join(
-            line for line in block.split("\n") if not line.strip().startswith("#")
-        )
-        if "RUSTFLAGS" in code and name != "isa-bench":
-            problems.append(
-                f".github/workflows/build.yml: задача «{name}» задаёт RUSTFLAGS — "
-                "флаги должны браться из .cargo/config.toml"
-            )
-    if re.search(r"^\s+rustflags:", workflow, re.M):
-        problems.append(
-            ".github/workflows/build.yml: в матрице остались rustflags — "
-            "единственный источник это .cargo/config.toml"
-        )
+    # 3. Конвейер не задаёт RUSTFLAGS (кроме замеров) и не задаёт rustflags.
+    for path, text in workflows.items():
+        owners = job_of_lines(text)
+        for index, line in enumerate(text.split("\n")):
+            if line.strip().startswith("#"):
+                continue
+            owner = owners[index] if index < len(owners) else None
+            if "RUSTFLAGS" in line and owner != BENCH_JOB:
+                problems.append(
+                    f"{path}:{index + 1}: RUSTFLAGS вне задачи {BENCH_JOB} — "
+                    "флаги должны браться из .cargo/config.toml"
+                )
+            if re.match(r"^\s+rustflags:", line) and owner != BENCH_JOB:
+                problems.append(
+                    f"{path}:{index + 1}: rustflags в матрице — единственный "
+                    "источник это .cargo/config.toml"
+                )
+
+    # 4. Ускоренные пути — только через isa.rs. Иначе проверка возможностей и
+    #    выключатель SR_NO_SIMD обходятся новым `#[target_feature]` в любом файле.
+    sources_dir = ROOT / "src"
+    if sources_dir.is_dir():
+        for file in sorted(sources_dir.rglob("*.rs")):
+            if file.name == "isa.rs":
+                continue
+            text = file.read_text(encoding="utf-8").replace("\r\n", "\n")
+            for index, line in enumerate(text.split("\n"), start=1):
+                if line.strip().startswith("//"):
+                    continue
+                if "is_x86_feature_detected" in line or re.search(
+                    r"#\[target_feature", line
+                ):
+                    problems.append(
+                        f"src/{file.name}:{index}: проверка возможностей и "
+                        "#[target_feature] допустимы только в src/isa.rs"
+                    )
+    else:
+        problems.append("src: каталог с исходниками не найден")
 
     if as_json:
-        print(json.dumps({"problems": problems}, ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                {"problems": problems, "targets": sorted(targets)},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
     elif problems:
         print(f"нарушений: {len(problems)}")
         for item in problems:

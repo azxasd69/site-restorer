@@ -1162,19 +1162,30 @@ fn fold_row(
     if !from_window && paths::file_type(&url) == "html" && best.contains_key(&url) {
         return;
     }
-    let ts = row.field(body, 0).map(Cow::into_owned).unwrap_or_default();
-    let mime = row.field(body, 2).map(Cow::into_owned).unwrap_or_default();
+    // Значения остаются срезами до момента вставки: строка, проигравшая по дате,
+    // не должна порождать ни одной аллокации.
+    let ts = row.field(body, 0).unwrap_or_default();
+    let mime = row.field(body, 2).unwrap_or_default();
     let len = row
         .field(body, 4)
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(0);
     // Шестое поле запроса — отпечаток содержимого (ФТ-145); последняя строка
     // может прийти короче, тогда отпечатка просто нет.
-    let digest = row.field(body, 5).map(Cow::into_owned).unwrap_or_default();
+    let digest = row.field(body, 5).unwrap_or_default();
     match best.get(&url) {
-        Some((old_ts, _, _, _, _)) if *old_ts >= ts => {}
+        Some((old_ts, _, _, _, _)) if old_ts.as_str() >= ts.as_ref() => {}
         _ => {
-            best.insert(url, (ts, orig.into_owned(), mime, len, digest));
+            best.insert(
+                url,
+                (
+                    ts.into_owned(),
+                    orig.into_owned(),
+                    mime.into_owned(),
+                    len,
+                    digest.into_owned(),
+                ),
+            );
         }
     }
 }
@@ -4637,12 +4648,10 @@ fn unescape(raw: &[u8]) -> String {
             b'b' => out.push(0x08),
             b'f' => out.push(0x0c),
             b'u' => {
-                if i + 4 < raw.len()
-                    && let Some(ch) = hex4(&raw[i + 1..i + 5])
-                {
+                if let Some((ch, used)) = hex_escape(&raw[i + 1..]) {
                     let mut buf = [0u8; 4];
                     out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
-                    i += 4;
+                    i += used;
                 } else {
                     out.push(b'u');
                 }
@@ -4654,19 +4663,47 @@ fn unescape(raw: &[u8]) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// Четыре шестнадцатеричные цифры в символ Unicode.
-fn hex4(digits: &[u8]) -> Option<char> {
-    let mut code = 0u32;
-    for &b in digits {
+/// Экранированный символ `\uXXXX` (в том числе пара суррогатов).
+///
+/// Возвращает символ и число байтов после `u`, которые он занял: четыре для
+/// обычного символа, десять для пары вида `\uD83D\uDE00` — иначе эмодзи в
+/// адресе распадалось бы на два нечитаемых куска.
+fn hex_escape(tail: &[u8]) -> Option<(char, usize)> {
+    let code = u32::from(hex4(tail.get(..4)?)?);
+    if (0xD800..=0xDBFF).contains(&code) {
+        // Старший суррогат: сразу за ним должен идти `\u` и младший суррогат.
+        let rest = tail.get(4..)?;
+        let low = rest
+            .strip_prefix(b"\\u")
+            .and_then(|tail| hex4(tail.get(..4)?));
+        if let Some(low) = low {
+            let low = u32::from(low);
+            if (0xDC00..=0xDFFF).contains(&low) {
+                let combined = 0x1_0000 + ((code - 0xD800) << 10) + (low - 0xDC00);
+                return char::from_u32(combined).map(|ch| (ch, 10));
+            }
+        }
+        return None;
+    }
+    char::from_u32(code).map(|ch| (ch, 4))
+}
+
+/// Четыре шестнадцатеричные цифры в единицу UTF-16.
+fn hex4(digits: &[u8]) -> Option<u16> {
+    if digits.len() < 4 {
+        return None;
+    }
+    let mut code = 0u16;
+    for &b in &digits[..4] {
         let digit = match b {
-            b'0'..=b'9' => u32::from(b - b'0'),
-            b'a'..=b'f' => u32::from(b - b'a') + 10,
-            b'A'..=b'F' => u32::from(b - b'A') + 10,
+            b'0'..=b'9' => u16::from(b - b'0'),
+            b'a'..=b'f' => u16::from(b - b'a') + 10,
+            b'A'..=b'F' => u16::from(b - b'A') + 10,
             _ => return None,
         };
         code = code * 16 + digit;
     }
-    char::from_u32(code)
+    Some(code)
 }
 
 /// Сколько страниц в CDX: значение рядом с "numpages" (форматы ответа различаются).
@@ -5524,6 +5561,10 @@ mod tests {
         let uni = br#"[["2001","https://e.com/\u0410","text/html","200"]]"#;
         let rows = parse_rows(uni);
         assert_eq!(rows[0].field(uni, 1).unwrap(), "https://e.com/А");
+        // Пара суррогатов собирается в один символ: эмодзи в адресе не рвётся.
+        let pair = br#"[["2001","https://e.com/\uD83D\uDE00","text/html","200"]]"#;
+        let rows = parse_rows(pair);
+        assert_eq!(rows[0].field(pair, 1).unwrap(), "https://e.com/\u{1F600}");
     }
 }
 

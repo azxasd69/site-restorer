@@ -10,13 +10,16 @@
 use std::sync::OnceLock;
 
 /// Что умеет процессор и не выключили ли ускорения вручную.
+///
+/// Поля закрыты намеренно: решение «идти ускоренным путём» принимается не
+/// чтением флага, а получением пропуска [`Avx2`]. Так выключатель
+/// `SR_NO_SIMD=1` нельзя обойти забытой проверкой в новом месте кода.
 #[derive(Debug, Clone, Copy)]
 pub struct Isa {
-    pub avx2: bool,
-    pub sha_ni: bool,
-    pub popcnt: bool,
-    /// Ускорения выключены вручную (`SR_NO_SIMD=1`) — для поддержки и разбора.
-    pub forced_scalar: bool,
+    avx2: bool,
+    sha_ni: bool,
+    popcnt: bool,
+    forced_scalar: bool,
 }
 
 impl Isa {
@@ -27,6 +30,38 @@ impl Isa {
         popcnt: false,
         forced_scalar: false,
     };
+
+    pub fn avx2(&self) -> bool {
+        self.avx2
+    }
+
+    pub fn sha_ni(&self) -> bool {
+        self.sha_ni
+    }
+
+    pub fn popcnt(&self) -> bool {
+        self.popcnt
+    }
+
+    /// Ускорения выключены вручную (`SR_NO_SIMD=1`).
+    pub fn forced_scalar(&self) -> bool {
+        self.forced_scalar
+    }
+}
+
+/// Пропуск к ускоренным путям AVX2.
+///
+/// Создать его можно только функцией [`avx2_token`], а она возвращает `None`,
+/// если возможности нет или ускорения выключены. Правило для будущего кода:
+/// любая функция с `#[target_feature(enable = "avx2")]` принимает `&Avx2` —
+/// тогда вызов без проверки просто не соберётся.
+#[derive(Debug, Clone, Copy)]
+pub struct Avx2(());
+
+/// Пропуск к AVX2, если он доступен и не выключен вручную.
+pub fn avx2_token() -> Option<Avx2> {
+    let caps = caps();
+    (caps.avx2 && !caps.forced_scalar).then_some(Avx2(()))
 }
 
 /// Возможности текущего процесса. Считаются один раз на процесс.
@@ -66,11 +101,11 @@ pub fn describe() -> String {
     let c = caps();
     let mut text = format!(
         "avx2={} sha-ni={} popcnt={}",
-        yes_no(c.avx2),
-        yes_no(c.sha_ni),
-        yes_no(c.popcnt)
+        yes_no(c.avx2()),
+        yes_no(c.sha_ni()),
+        yes_no(c.popcnt())
     );
-    if c.forced_scalar {
+    if c.forced_scalar() {
         text.push_str(" (ускорения выключены через SR_NO_SIMD)");
     }
     text
@@ -90,6 +125,21 @@ mod tests {
         let first = caps() as *const Isa;
         let second = caps() as *const Isa;
         assert_eq!(first, second);
+    }
+
+    /// Правило контракта: без возможностей пропуска нет, а при выключенных
+    /// ускорениях он не выдаётся даже на машине с AVX2.
+    #[test]
+    fn token_respects_forced_scalar() {
+        let caps = caps();
+        if caps.forced_scalar() || !caps.avx2() {
+            assert!(
+                avx2_token().is_none(),
+                "пропуск не выдаётся без возможностей или при выключенных ускорениях"
+            );
+        } else {
+            assert!(avx2_token().is_some(), "на машине с AVX2 пропуск есть");
+        }
     }
 
     #[test]

@@ -103,7 +103,7 @@ sha256sum -c SHA256SUMS.txt                                   # сходится
 | Подсистема оконной сборки | `dumpbin /headers` → `subsystem` | `2 (Windows GUI)`; у консольной — `3` |
 | Статический CRT | `dumpbin /dependents` | нет `VCRUNTIME140`, `MSVCP140`, `api-ms-win-crt-*` (ПЛ-7) |
 | Пол glibc | `objdump -T SiteRestorer-linux-x64-gui \| grep -oE 'GLIBC_2\.[0-9]+' \| sort -Vu \| tail -1` | не выше `2.28` (ПЛ-6); до Д-58 показывает 2.39 |
-| Базовая ISA | проверить `RUSTFLAGS` матрицы и `.cargo/config.toml` | `-C target-cpu=x86-64`, нет `native`/`v2`/`avx` (ПЛ-3, ПЛ-4) |
+| Базовая ISA | `python3 scripts/check-flags.py` | флаги только в `.cargo/config.toml`, нет `native`/`v2`/`v3`/`v4`/`+avx*` (ПЛ-3, ПЛ-4, ПР-15) |
 | SBOM | файл `SBOM-site-restorer.cdx.json` в ассетах, компонент больше нуля | приложен и входит в суммы (ПЛ-11) |
 | Отладочные символы | артефакты `pdb-*` в сборке, в релизе `.pdb` нет | символы архивируются, но не поставляются (ПЛ-9) |
 

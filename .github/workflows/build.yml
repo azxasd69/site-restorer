@@ -168,10 +168,20 @@ jobs:
       - name: Build
         shell: bash
         run: |
+          set -o pipefail
           FLAGS=""
           if [ "${{ matrix.features }}" = "cli" ]; then FLAGS="--no-default-features"; fi
           if [ -n "${{ matrix.glibc }}" ]; then
-            cargo zigbuild --release --target ${{ matrix.target }}.${{ matrix.glibc }} $FLAGS
+            # Пол glibc задаётся суффиксом триплета, и надо убедиться, что флаги
+            # из .cargo/config.toml доходят до rustc: иначе базовая ISA молча не
+            # применится именно в этой ячейке. Свежий mtime гарантирует, что наш
+            # крейт пересоберётся и командная строка попадёт в журнал.
+            touch src/main.rs
+            cargo zigbuild --release --target ${{ matrix.target }}.${{ matrix.glibc }} $FLAGS -v 2>&1 | tee build.log
+            grep -q -- "-C target-cpu=x86-64" build.log || {
+              echo "::error::базовая ISA из .cargo/config.toml не дошла до сборки с полом glibc"
+              exit 1
+            }
           else
             cargo build --release --target ${{ matrix.target }} $FLAGS
           fi
