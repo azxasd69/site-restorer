@@ -3987,9 +3987,12 @@ impl Engine {
         let targets = self.ref_targets.lock().unwrap();
         let mut out: Vec<String> = Vec::new();
         let mut seen: HashSet<&str> = HashSet::new();
+        // Буфер один на весь обход: раньше `format!` стоял внутри двойного цикла
+        // и создавал строку на каждую ссылку каждой страницы.
+        let mut probe = String::with_capacity(64);
         for keys in targets.iter() {
             for key in keys.iter() {
-                if known.contains(key) || known.contains(&format!("{key}/index.html")) {
+                if Self::known_key(&known, key, &mut probe) {
                     continue;
                 }
                 // Ключи с хэшем запроса и чужие хосты не восстанавливаются по адресу.
@@ -4004,6 +4007,20 @@ impl Engine {
             }
         }
         out
+    }
+
+    /// Есть ли ключ в наборе файлов копии — как есть или как каталог с `index.html`.
+    ///
+    /// `probe` — переиспользуемый буфер: проверка идёт во внутреннем цикле по всем
+    /// ссылкам всех страниц, и строка на каждый вызов там недопустима.
+    fn known_key(known: &HashSet<String>, key: &str, probe: &mut String) -> bool {
+        if known.contains(key) {
+            return true;
+        }
+        probe.clear();
+        probe.push_str(key);
+        probe.push_str("/index.html");
+        known.contains(probe.as_str())
     }
 
     /// Добор по ссылкам (ФТ-128): отсутствующие цели догружаются снимком по их адресу.
@@ -5487,6 +5504,29 @@ mod tests {
         };
         fold_row(&mut best, "example.com", &short, b"", true);
         assert_eq!(best.len(), 2);
+    }
+
+    /// Добор по ссылкам: ключ считается известным и как файл, и как каталог.
+    /// Буфер переиспользуется — в этом и смысл правки (без `format!` в цикле).
+    #[test]
+    fn known_key_matches_file_and_directory_index() {
+        let mut known: HashSet<String> = HashSet::new();
+        known.insert("index.html".to_string());
+        known.insert("a/index.html".to_string());
+        let mut probe = String::new();
+        assert!(
+            Engine::known_key(&known, "index.html", &mut probe),
+            "файл в корне"
+        );
+        assert!(
+            Engine::known_key(&known, "a", &mut probe),
+            "каталог с index.html"
+        );
+        assert!(
+            !Engine::known_key(&known, "b", &mut probe),
+            "неизвестный ключ"
+        );
+        assert_eq!(probe, "b/index.html", "буфер содержит последний запрос");
     }
 
     /// ФТ-149: смена режима сопоставления меняет сам запрос к CDX.
