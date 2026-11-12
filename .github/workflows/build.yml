@@ -18,6 +18,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Раннер иногда приходит с чужими shims rustup: установка компонентов
+      # падает с «detected conflict: 'bin/cargo-fmt'». Удаляем их до установки —
+      # rustup создаст свои вместе с компонентами из rust-toolchain.toml.
+      - name: Очистить чужие shims rustup
+        run: rm -f ~/.cargo/bin/cargo-fmt ~/.cargo/bin/rustfmt ~/.cargo/bin/cargo-clippy ~/.cargo/bin/clippy-driver
+
       - uses: dtolnay/rust-toolchain@1.99.1
         with:
           components: clippy, rustfmt
@@ -127,6 +133,12 @@ jobs:
           done
           echo "::error::системные библиотеки не установились после трёх попыток"
           exit 1
+
+      # Раннер иногда приходит с чужими shims rustup: установка компонентов
+      # падает с «detected conflict: 'bin/cargo-fmt'». Удаляем их до установки —
+      # rustup создаст свои вместе с компонентами из rust-toolchain.toml.
+      - name: Очистить чужие shims rustup
+        run: rm -f ~/.cargo/bin/cargo-fmt ~/.cargo/bin/rustfmt ~/.cargo/bin/cargo-clippy ~/.cargo/bin/clippy-driver
 
       - uses: dtolnay/rust-toolchain@1.99.1
         with:
