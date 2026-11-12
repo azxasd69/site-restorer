@@ -99,11 +99,15 @@ C:\Python314\python.exe -m http.server 8090
 
 ```
 https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64.exe
-https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x86.exe
+https://github.com/azxasd69/site-restorer/releases/download/v3.6.0/SiteRestorer-windows-x86.exe
 ```
 
-Они всегда ведут на последний релиз, поэтому обновлять их при выходе новой версии
-не нужно — только подпись с размером файла, если он заметно изменился.
+Ссылки `latest` всегда ведут на последний релиз, поэтому обновлять их при выходе
+новой версии не нужно — только подпись с размером файла, если он заметно
+изменился. Исключение — 32-битная сборка: с 3.6.1 она не выпускается, поэтому
+ссылка ведёт на конкретный тег `v3.6.0` (последняя 32-битная версия), а проверка
+`scripts/check_downloads.py` сверяет такие ссылки с указанным тегом, а не с
+последним релизом.
 
 ## Для LLM и агентов
 
