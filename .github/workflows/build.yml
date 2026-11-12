@@ -208,7 +208,13 @@ jobs:
         shell: pwsh
         run: |
           $exe = "target/${{ matrix.target }}/release/site-restorer.exe"
-          $dumpbin = Get-ChildItem "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" |
+          # На hosted-раннере Visual Studio может стоять в обоих корнях —
+          # ищем по двум путям, иначе Get-ChildItem падает на несуществующем.
+          $patterns = @(
+            "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe",
+            "C:\Program Files (x86)\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe"
+          )
+          $dumpbin = Get-ChildItem -Path $patterns -ErrorAction SilentlyContinue |
             Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $dumpbin) { Write-Output "dumpbin не найден — проверка пропущена"; exit 0 }
           $h = & $dumpbin.FullName /nologo /headers $exe 2>&1 | Out-String
@@ -234,6 +240,7 @@ jobs:
 
       # Д-62: cfg-ветви не должны гнить — проверяем каждый таргет, а не только хост.
       - name: Check target (${{ matrix.target }})
+        shell: bash
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
         run: |
