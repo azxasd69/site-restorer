@@ -667,7 +667,7 @@ fn cli(args: &[String]) -> i32 {
             );
             // Машиночитаемый итог: одна строка, чтобы прогон разбирался скриптом.
             println!(
-                "RESULT {{\"ok\":{},\"total\":{},\"files\":{},\"mirror\":{},\"unique\":{},\"pages\":{},\"foreign\":{},\"refs\":{},\"broken\":{},\"fallbacks\":{},\"collisions\":{},\"rescued\":{},\"oldest\":\"{}\",\"newest\":\"{}\",\"site\":\"{}\",\"index_total\":{},\"index_pages\":{},\"index_truncated\":{},\"index_failed\":{},\"added_live\":{},\"added_build\":{},\"report\":\"{}\"}}",
+                "RESULT {{\"ok\":{},\"total\":{},\"files\":{},\"mirror\":{},\"unique\":{},\"pages\":{},\"foreign\":{},\"refs\":{},\"broken\":{},\"fallbacks\":{},\"collisions\":{},\"rescued\":{},\"shared\":{},\"oldest\":\"{}\",\"newest\":\"{}\",\"site\":\"{}\",\"index_total\":{},\"index_pages\":{},\"index_truncated\":{},\"index_failed\":{},\"added_live\":{},\"added_build\":{},\"report\":\"{}\"}}",
                 outcome.ok,
                 outcome.total,
                 outcome.site_files,
@@ -680,6 +680,7 @@ fn cli(args: &[String]) -> i32 {
                 outcome.fallbacks,
                 outcome.collisions,
                 outcome.rescued,
+                outcome.shared,
                 outcome.oldest,
                 outcome.newest,
                 json_escape(&outcome.site.to_string_lossy()),

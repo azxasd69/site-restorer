@@ -83,6 +83,10 @@ pub struct Item {
     pub kind: &'static str,
     /// Длина записи в архиве (сжатые байты): по ней оценивается потребность в месте.
     pub len: u64,
+    /// Отпечаток содержимого из индекса (ФТ-145). Пустая строка — архив не отдал.
+    pub digest: String,
+    /// Путь канонического файла, если этот получен ссылкой (ФТ-146).
+    pub same_as: String,
 }
 
 /// Как сопоставлять адрес с индексом (ФТ-149).
@@ -243,6 +247,8 @@ pub struct Outcome {
     pub collisions: usize,
     /// Сколько целей добрано по ссылкам (ФТ-128).
     pub rescued: usize,
+    /// Файлов получено ссылкой на уже скачанный (ФТ-146).
+    pub shared: usize,
     /// Адресов в индексе до пользовательского --limit (ФТ-155).
     pub index_total: usize,
     /// Сколько страниц индекса обойдено (ФТ-155).
@@ -326,6 +332,8 @@ struct Counters {
     fallbacks: AtomicUsize,
     /// Сколько адресов отброшено как совпавшие по пути копии (ФТ-131).
     collisions: AtomicUsize,
+    /// Сколько файлов получено ссылкой на уже скачанный (ФТ-146).
+    shared: AtomicUsize,
     bytes: AtomicU64,
     win_bytes: AtomicU64,
     win_files: AtomicUsize,
@@ -387,6 +395,12 @@ struct Shared {
     pause_until: Mutex<Instant>,
     /// Пользователь поставил прогон на паузу (Д-20): новые запросы ждут.
     paused: Arc<AtomicBool>,
+    /// Карта «отпечаток содержимого → путь канонического файла» (ФТ-145).
+    /// Живёт в пределах прогона: по ней адрес с уже скачанным содержимым
+    /// получает жёсткую ссылку вместо второго запроса.
+    dedup: Mutex<HashMap<String, String>>,
+    /// Обратная сторона: путь копии → канонический путь (поле `same_as`).
+    shared_paths: Mutex<HashMap<String, String>>,
     /// Режим выбора снимка (ФТ-126): нужен воркерам.
     snapshot: Mutex<SnapshotMode>,
     /// Порог «пустой страницы» (ФТ-127).
@@ -648,6 +662,43 @@ impl Shared {
     /// Получает снимок адреса: сначала самый свежий пригодный, затем — добор к более
     /// старым (ФТ-126, ФТ-127). Старые снимки запрашиваются только при непригодности
     /// свежего; сбой сети добором не заменяется.
+    /// Взять файл ссылкой на уже скачанный (ФТ-146).
+    ///
+    /// Возвращает размер, если ссылка поставлена. Жёсткая ссылка работает только
+    /// внутри одного тома (проверено: другой том даёт `CrossesDevices`, предел
+    /// NTFS — 1024 ссылки), поэтому при отказе файл копируется: содержимое важнее
+    /// экономии места.
+    fn link_shared(&self, item: &Item, canon: &str) -> Option<usize> {
+        if canon == item.path {
+            return None;
+        }
+        let from = self.mirror.join(canon);
+        let to = self.mirror.join(&item.path);
+        fs::metadata(&from).ok().filter(|m| m.len() > 0)?;
+        if let Some(parent) = to.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        // Занятое имя мешает и ссылке, и переименованию: убираем старый файл.
+        let _ = fs::remove_file(&to);
+        if fs::hard_link(&from, &to).is_err() && fs::copy(&from, &to).is_err() {
+            return None;
+        }
+        let size = fs::metadata(&to).ok()?.len() as usize;
+        if let Ok(mut map) = self.shared_paths.lock() {
+            map.insert(item.path.clone(), canon.to_string());
+        }
+        if let Ok(ct) = self.content_types.lock()
+            && let Some(value) = ct.get(canon).cloned()
+        {
+            drop(ct);
+            self.content_types
+                .lock()
+                .unwrap()
+                .insert(item.path.clone(), value);
+        }
+        Some(size)
+    }
+
     fn fetch_one(&self, item: &Item) {
         if self.cancel.load(Ordering::Relaxed) {
             return;
@@ -669,6 +720,33 @@ impl Shared {
             }
             // Снимок устарел: файл удаляем, иначе цепочка сочтёт его готовым.
             let _ = fs::remove_file(long_path(&full));
+        }
+
+        // Уже скачанное содержимое: второй запрос не нужен (ФТ-145, ФТ-146).
+        // Отпечаток приходит из индекса, поэтому проверка дешёвая.
+        if !item.digest.is_empty()
+            && let Some(canon) = self
+                .dedup
+                .lock()
+                .ok()
+                .and_then(|m| m.get(&item.digest).cloned())
+            && let Some(size) = self.link_shared(item, &canon)
+        {
+            self.counters.done.fetch_add(1, Ordering::Relaxed);
+            self.counters.ok.fetch_add(1, Ordering::Relaxed);
+            self.counters.shared.fetch_add(1, Ordering::Relaxed);
+            self.types.lock().unwrap().slot(item.kind)[0] += 1;
+            if let Ok(mut map) = self.snapshots.lock() {
+                map.insert(item.path.clone(), item.ts.clone());
+            }
+            if console_verbose() {
+                self.log(crate::tr::pick(
+                    format!("shared:{} — {}", canon, item.path),
+                    format!("shared:{} — {}", canon, item.path),
+                ));
+            }
+            let _ = size;
+            return;
         }
 
         let mode = self
@@ -737,6 +815,14 @@ impl Shared {
                 let stamp = memento.unwrap_or(used_stamp);
                 if let Ok(mut map) = self.snapshots.lock() {
                     map.insert(item.path.clone(), stamp);
+                }
+                // Отпечаток запоминаем только для реально скачанного файла:
+                // по нему следующие адреса возьмут ссылку.
+                if !item.digest.is_empty()
+                    && let Ok(mut map) = self.dedup.lock()
+                {
+                    map.entry(item.digest.clone())
+                        .or_insert_with(|| item.path.clone());
                 }
             }
             Attempt::Absent => {
@@ -964,7 +1050,7 @@ impl Shared {
 /// остаётся снимок с большим отпечатком. `from_window = false` означает добор из
 /// полной истории: тогда страницы не трогаются — они уже взяты из окна (ФТ-128).
 fn fold_row(
-    best: &mut HashMap<String, (String, String, String, u64)>,
+    best: &mut HashMap<String, (String, String, String, u64, String)>,
     host: &str,
     row: &[String],
     from_window: bool,
@@ -980,10 +1066,13 @@ fn fold_row(
     let ts = row[0].clone();
     let mime = row[2].clone();
     let len = row.get(4).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+    // Шестое поле запроса — отпечаток содержимого (ФТ-145); последняя строка
+    // может прийти короче, тогда отпечатка просто нет.
+    let digest = row.get(5).cloned().unwrap_or_default();
     match best.get(&url) {
-        Some((old_ts, _, _, _)) if *old_ts >= ts => {}
+        Some((old_ts, _, _, _, _)) if *old_ts >= ts => {}
         _ => {
-            best.insert(url, (ts, orig, mime, len));
+            best.insert(url, (ts, orig, mime, len, digest));
         }
     }
 }
@@ -1176,6 +1265,8 @@ impl Engine {
                 snapshots: Mutex::new(HashMap::new()),
                 types: Mutex::new(TypeCounts::default()),
                 cb: std::sync::OnceLock::new(),
+                dedup: Mutex::new(HashMap::new()),
+                shared_paths: Mutex::new(HashMap::new()),
                 pause_until: Mutex::new(Instant::now()),
                 rate_nanos: AtomicU64::new(0),
                 rate_next: Mutex::new(Instant::now()),
@@ -1575,7 +1666,7 @@ impl Engine {
     /// Запрос списка адресов: одна строка на адрес, самый ранний снимок, длина записи.
     fn quick_query(&self, from: Option<&str>) -> String {
         let mut extra = String::from(
-            "output=json&fl=timestamp,original,mimetype,statuscode,length&filter=statuscode:200&collapse=urlkey",
+            "output=json&fl=timestamp,original,mimetype,statuscode,length,digest&filter=statuscode:200&collapse=urlkey",
         );
         extra.push_str("&limit=");
         extra.push_str(&QUICK_LIMIT.to_string());
@@ -1593,7 +1684,7 @@ impl Engine {
     /// Страница индекса в резервном постраничном обходе.
     fn paged_query(&self, page: usize) -> String {
         let mut extra = format!(
-            "output=json&fl=timestamp,original,mimetype,statuscode,length&filter=statuscode:200&collapse=urlkey&limit={PAGE_LIMIT}&page={page}"
+            "output=json&fl=timestamp,original,mimetype,statuscode,length,digest&filter=statuscode:200&collapse=urlkey&limit={PAGE_LIMIT}&page={page}"
         );
         if let Some(from) = &self.since {
             extra.push_str("&from=");
@@ -1721,7 +1812,7 @@ impl Engine {
         // а запрос с limit=50000 отдаёт те же данные.
         // Строки индекса свёртываются в карту сразу, а не копятся в Vec:
         // 200 страниц по 20 000 строк давали до 4 млн строк в памяти (2.4).
-        let mut best: HashMap<String, (String, String, String, u64)> = HashMap::new();
+        let mut best: HashMap<String, (String, String, String, u64, String)> = HashMap::new();
         // Сколько строк разобрано: для проверки усечения и для отчёта.
         let mut parsed_rows = 0usize;
         self.emit(
@@ -2067,7 +2158,7 @@ impl Engine {
         // остаётся самый свежий снимок; остальные не скачиваются вовсе.
         let mut by_path: HashMap<String, Item> = HashMap::with_capacity(best.len());
         let mut collisions = 0usize;
-        for (url, (ts, orig, mime, len)) in best {
+        for (url, (ts, orig, mime, len, digest)) in best {
             let item = Item {
                 path: paths::url_to_local_path_in(&url, &self.host),
                 kind: paths::file_type(&url),
@@ -2076,6 +2167,8 @@ impl Engine {
                 orig,
                 mime,
                 len,
+                digest,
+                same_as: String::new(),
             };
             match by_path.get(&item.path) {
                 Some(prev) if keep_previous(&item, prev) => {
@@ -2143,30 +2236,7 @@ impl Engine {
             }
         }
         fs::create_dir_all(&self.data_dir).map_err(|e| e.to_string())?;
-        // Заголовок инвентаря (ФТ-151): водяной знак и состояние индекса.
-        // `read_inventory` такие строки пропускает: в них нет поля `url`.
-        let mut inv = format!(
-            "{{\"index\":{{\"watermark\":{},\"pages\":{},\"total\":{},\"truncated\":{},\"failed\":{},\"skipped\":{}}}}}\n",
-            self.watermark,
-            self.index_pages,
-            self.index_total,
-            self.index_truncated,
-            self.inv_failed,
-            self.limit_skipped
-        );
-        for item in &items {
-            inv.push_str(&format!(
-                "{{\"url\":\"{}\",\"ts\":\"{}\",\"orig\":\"{}\",\"mime\":\"{}\",\"path\":\"{}\",\"type\":\"{}\",\"len\":{}}}\n",
-                json_escape(&item.url),
-                json_escape(&item.ts),
-                json_escape(&item.orig),
-                json_escape(&item.mime),
-                json_escape(&item.path),
-                item.kind,
-                item.len
-            ));
-        }
-        fs::write(self.data_dir.join("inventory.jsonl"), inv).map_err(|e| e.to_string())?;
+        self.write_inventory(&items)?;
         self.items = items;
         if self.items.is_empty() {
             return Err(if self.inv_failed {
@@ -3203,6 +3273,10 @@ impl Engine {
             .replace("{{t_no_snapshot}}", &tr2("Без пригодного снимка", "No usable snapshot"))
             .replace("{{t_collisions}}", &tr2("Перезаписей путей", "Path collisions"))
             .replace("{{t_rescued}}", &tr2("Добрано по ссылкам", "Rescued by links"))
+            .replace(
+                "{{t_shared}}",
+                &tr2("Взято ссылкой на дубль", "Linked to a duplicate"),
+            )
             .replace("{{t_snapshot}}", &tr2("Снимки", "Snapshots"))
             .replace("{{t_fresh}}", &tr2("Свежесть копии", "Copy freshness"))
             .replace("{{snap_new}}", &newest)
@@ -3224,6 +3298,15 @@ impl Engine {
                     .shared
                     .counters
                     .no_snapshot
+                    .load(Ordering::Relaxed)
+                    .to_string(),
+            )
+            .replace(
+                "{{shared}}",
+                &self
+                    .shared
+                    .counters
+                    .shared
                     .load(Ordering::Relaxed)
                     .to_string(),
             )
@@ -3255,6 +3338,52 @@ impl Engine {
         }
     }
 
+    /// Записать инвентарь: заголовок с состоянием индекса и строки адресов.
+    ///
+    /// Вызывается дважды: после сбора списка и повторно после загрузки — вторым
+    /// проходом заполняется `same_as` у файлов, полученных ссылкой (ФТ-146).
+    fn write_inventory(&self, items: &[Item]) -> Result<(), String> {
+        fs::create_dir_all(&self.data_dir).map_err(|e| e.to_string())?;
+        // Заголовок инвентаря (ФТ-151): водяной знак и состояние индекса.
+        // `read_inventory` такие строки пропускает: в них нет поля `url`.
+        let mut inv = format!(
+            "{{\"index\":{{\"watermark\":{},\"pages\":{},\"total\":{},\"truncated\":{},\"failed\":{},\"skipped\":{}}}}}\n",
+            self.watermark,
+            self.index_pages,
+            self.index_total,
+            self.index_truncated,
+            self.inv_failed,
+            self.limit_skipped
+        );
+        let shared = self
+            .shared
+            .shared_paths
+            .lock()
+            .map(|m| m.clone())
+            .unwrap_or_default();
+        for item in items {
+            // У файла из инвентаря прежнего прогона поле может быть уже заполнено.
+            let same_as = if item.same_as.is_empty() {
+                shared.get(&item.path).cloned().unwrap_or_default()
+            } else {
+                item.same_as.clone()
+            };
+            inv.push_str(&format!(
+                "{{\"url\":\"{}\",\"ts\":\"{}\",\"orig\":\"{}\",\"mime\":\"{}\",\"path\":\"{}\",\"type\":\"{}\",\"len\":{},\"digest\":\"{}\",\"same_as\":\"{}\"}}\n",
+                json_escape(&item.url),
+                json_escape(&item.ts),
+                json_escape(&item.orig),
+                json_escape(&item.mime),
+                json_escape(&item.path),
+                item.kind,
+                item.len,
+                json_escape(&item.digest),
+                json_escape(&same_as)
+            ));
+        }
+        fs::write(self.data_dir.join("inventory.jsonl"), inv).map_err(|e| e.to_string())
+    }
+
     pub fn run(&mut self) -> Result<Outcome, String> {
         fs::create_dir_all(&self.out).map_err(|e| e.to_string())?;
         // Временные файлы прошлых прогонов: при прерывании они остаются (Д-16).
@@ -3271,6 +3400,10 @@ impl Engine {
         self.ensure_not_cancelled()?;
         self.check_space()?;
         self.download()?;
+        // Инвентарь переписывается после загрузки: только теперь известно, какие
+        // адреса получили файл ссылкой (ФТ-146).
+        let items = self.items.clone();
+        self.write_inventory(&items)?;
         self.ensure_not_cancelled()?;
         self.build()?;
         self.save_snapshots();
@@ -3342,6 +3475,7 @@ impl Engine {
             fallbacks: self.shared.counters.fallbacks.load(Ordering::Relaxed),
             collisions: self.shared.counters.collisions.load(Ordering::Relaxed),
             rescued: self.rescued.load(Ordering::Relaxed),
+            shared: self.shared.counters.shared.load(Ordering::Relaxed),
             index_total: self.index_total,
             index_pages: self.index_pages,
             index_truncated: self.index_truncated,
@@ -3452,6 +3586,8 @@ impl Engine {
                 path: key.clone(),
                 url,
                 len: 0,
+                digest: String::new(),
+                same_as: String::new(),
             };
             if self.fetch_target(&item) {
                 done += 1;
@@ -3729,6 +3865,8 @@ pub fn read_inventory(file: &Path) -> Vec<Item> {
                 len: json_number(line, "len").unwrap_or(0),
                 url,
                 path,
+                digest: json_field(line, "digest").unwrap_or_default(),
+                same_as: json_field(line, "same_as").unwrap_or_default(),
             })
         })
         .collect()
@@ -4216,7 +4354,8 @@ th,td{padding:9px 12px;border-bottom:1px solid #eee;text-align:left}th{backgroun
 <tr><td>{{t_fallbacks}}</td><td class="n">{{fallbacks}}</td></tr>
 <tr><td>{{t_no_snapshot}}</td><td class="n">{{no_snapshot}}</td></tr>
 <tr><td>{{t_collisions}}</td><td class="n">{{collisions}}</td></tr>
-<tr><td>{{t_rescued}}</td><td class="n">{{rescued}}</td></tr></table>
+<tr><td>{{t_rescued}}</td><td class="n">{{rescued}}</td></tr>
+<tr><td>{{t_shared}}</td><td class="n">{{shared}}</td></tr></table>
 {{fresh_warn}}
 <h2>{{t_integrity}}</h2><table>
 <tr><td>{{t_mirror}}</td><td class="n">{{mirror_files}}</td></tr>
@@ -4259,6 +4398,72 @@ mod tests {
         assert_eq!(parse_pages("12"), Some(12));
         assert_eq!(parse_pages(""), None);
         assert_eq!(parse_pages(r#"{"pages": 0}"#), None);
+    }
+
+    /// Д-51: файл с тем же содержимым берётся ссылкой на канонический.
+    /// Проверяем содержимое, карту `same_as` и замену уже существующего файла.
+    #[test]
+    fn link_shared_creates_second_name_with_same_bytes() {
+        let dir = std::env::temp_dir().join(format!(
+            "sr-link-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::create_dir_all(dir.join("mirror"));
+        let engine = Engine::new("example.com", &dir, 1, 0).unwrap();
+        let canon = "css/main.css";
+        let full = dir.join("mirror").join(canon);
+        fs::create_dir_all(full.parent().unwrap()).unwrap();
+        fs::write(&full, b"body{color:#000}").unwrap();
+
+        let item = |path: &str| Item {
+            url: format!("https://example.com/{path}"),
+            ts: "20260101000000".to_string(),
+            orig: format!("https://example.com/{path}"),
+            mime: "text/css".to_string(),
+            path: path.to_string(),
+            kind: "css",
+            len: 16,
+            digest: "TESTDIGEST".to_string(),
+            same_as: String::new(),
+        };
+        let copy = item("css/main_copy.css");
+        let size = engine
+            .shared
+            .link_shared(&copy, canon)
+            .expect("ссылка поставлена");
+        assert_eq!(size, 16, "размер взят у готового файла");
+        let target = dir.join("mirror").join(&copy.path);
+        assert_eq!(
+            fs::read(&target).unwrap(),
+            b"body{color:#000}",
+            "содержимое совпадает с каноническим"
+        );
+        let mapped = engine
+            .shared
+            .shared_paths
+            .lock()
+            .unwrap()
+            .get(&copy.path)
+            .cloned();
+        assert_eq!(mapped.as_deref(), Some(canon), "в инвентаре будет same_as");
+
+        // Имя уже занято посторонним файлом: ссылка заменяет его.
+        // Важно: писать в существующую жёсткую ссылку нельзя — изменится и
+        // канонический файл, поэтому сначала снимаем имя, потом кладём свой файл.
+        fs::remove_file(&target).unwrap();
+        fs::write(&target, b"stale").unwrap();
+        assert!(engine.shared.link_shared(&copy, canon).is_some());
+        assert_eq!(fs::read(&target).unwrap(), b"body{color:#000}");
+        assert_eq!(
+            fs::read(&full).unwrap(),
+            b"body{color:#000}",
+            "канонический файл не испорчен"
+        );
+
+        // Канонический путь сам себе ссылкой не становится.
+        assert!(engine.shared.link_shared(&copy, &copy.path).is_none());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// Д-50: тело пишется в файл потоком, а в памяти остаются только первые
@@ -4313,7 +4518,7 @@ mod tests {
     /// добору из полной истории перебить страницу, взятую из окна по дате.
     #[test]
     fn fold_row_keeps_newest_and_spares_window_pages() {
-        let mut best: HashMap<String, (String, String, String, u64)> = HashMap::new();
+        let mut best: HashMap<String, (String, String, String, u64, String)> = HashMap::new();
         let row = |ts: &str, url: &str, mime: &str| -> Vec<String> {
             vec![
                 ts.to_string(),
@@ -4893,6 +5098,8 @@ mod build_tests {
             path: "index.html".to_string(),
             kind: "html",
             len: 0,
+            digest: String::new(),
+            same_as: String::new(),
         };
         let fresh = item("https://example.com/index.html", "20260101000000");
         let old = item("https://example.com/", "20150101000000");
@@ -5056,6 +5263,12 @@ mod build_tests {
     /// Д-26: числа отчёта совпадают с содержимым копии.
     #[test]
     fn report_numbers_match_copy() {
+        // Язык подписей в отчёте — глобальный на процесс: тест про английский
+        // отчёт переключает его под замком, поэтому здесь тот же замок. Без него
+        // отчёт изредка собирался по-английски и проверка русской подписи падала
+        // (плавающий отказ, ловился 1 раз на 10–15 прогонов).
+        let _lang = LANG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        crate::tr::set_english(false);
         let root = workdir("reportnb");
         put(
             &root,
