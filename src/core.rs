@@ -1133,6 +1133,17 @@ impl Shared {
 /// Строка: `[отпечаток, исходный адрес, тип, код, длина]`. Если адрес уже есть,
 /// остаётся снимок с большим отпечатком. `from_window = false` означает добор из
 /// полной истории: тогда страницы не трогаются — они уже взяты из окна (ФТ-128).
+/// Совпадает ли содержимое файла с записанным в журнале (ФТ-146).
+///
+/// Если отпечатка нет ни там, ни там (архив не отдал `digest`), считаем, что
+/// содержимое то же: иначе на каждом прогоне пересобиралась бы вся копия.
+fn prev_digest_ok(prev: Option<&JournalEntry>, current: &str) -> bool {
+    match prev {
+        Some(entry) => entry.digest == current,
+        None => false,
+    }
+}
+
 fn fold_row(
     best: &mut HashMap<String, (String, String, String, u64, String)>,
     host: &str,
@@ -1231,6 +1242,11 @@ pub struct Engine {
     added_build: usize,
     /// Сколько файлов пришлось перекодировать: кодировка -> число.
     enc_stats: std::sync::Mutex<HashMap<&'static str, usize>>,
+    /// Накопленные за все сборки прогона счётчики: после добора сборка идёт
+    /// второй раз, и без накопления отчёт показывал двойной счёт.
+    enc_total: std::sync::Mutex<HashMap<&'static str, usize>>,
+    foreign_total: usize,
+    left_total: usize,
     enc_logged: std::sync::atomic::AtomicUsize,
     /// Список файлов зеркала: дерево обходится один раз за прогон (было восемь обходов).
     mirror_cache: Mutex<Option<Arc<Vec<PathBuf>>>>,
@@ -1269,6 +1285,10 @@ struct JournalEntry {
     foreign: bool,
     /// Фактическая дата снимка (ФТ-129): показывается в отчёте.
     snapshot: String,
+    /// Отпечаток содержимого из индекса (ФТ-145): по нему вместе с размером
+    /// решается, нужно ли пересобирать файл, — время изменения для этого
+    /// ненадёжно (ФТ-146).
+    digest: String,
     /// Когда файл получен или проверен (секунды Unix): по этому времени
     /// решается, перекачивать ли его при повторном прогоне (ФТ-130).
     checked: u64,
@@ -1366,6 +1386,9 @@ impl Engine {
             inv_failed: false,
             added_build: 0,
             enc_stats: std::sync::Mutex::new(HashMap::new()),
+            enc_total: std::sync::Mutex::new(HashMap::new()),
+            foreign_total: 0,
+            left_total: 0,
             enc_logged: std::sync::atomic::AtomicUsize::new(0),
             mirror_cache: Mutex::new(None),
             site_cache: Mutex::new(None),
@@ -2729,6 +2752,22 @@ impl Engine {
     /// Файлы обрабатываются параллельно; дерево зеркала обходится один раз; каталоги
     /// создаются один раз на путь; повторный прогон пропускает неизменённые файлы,
     /// беря цели ссылок из журнала сборки.
+    /// Перенести счётчики одной сборки в накопленные (Д-56).
+    ///
+    /// Сборка после добора считается второй раз: без переноса отчёт удваивал
+    /// «не страница», «перекодировано» и «адресов оставлено».
+    fn flush_build_counters(&mut self) {
+        self.foreign_total += self.foreign_built.swap(0, Ordering::Relaxed);
+        self.left_total += self.shared.counters.left.swap(0, Ordering::Relaxed);
+        if let Ok(mut current) = self.enc_stats.lock()
+            && let Ok(mut total) = self.enc_total.lock()
+        {
+            for (label, count) in current.drain() {
+                *total.entry(label).or_insert(0) += count;
+            }
+        }
+    }
+
     /// Страницы, которые ссылались на указанные ключи (ФТ-153).
     ///
     /// Обратное отображение строится по журналу сборки: там у каждой страницы
@@ -2758,6 +2797,14 @@ impl Engine {
     /// Поэтому «грязные» страницы проверку пропуска не проходят.
     fn build_dirty(&self, dirty: Option<&HashSet<String>>) -> Result<usize, String> {
         let files = self.mirror_list();
+        // Отпечатки адресов: пропуск пересборки решается размером и отпечатком,
+        // а не временем изменения файла (ФТ-146).
+        let digests: HashMap<String, String> = self
+            .items
+            .iter()
+            .filter(|item| !item.digest.is_empty())
+            .map(|item| (item.path.clone(), item.digest.clone()))
+            .collect();
         let index = Index::of(&files, &self.mirror);
         let total = files.len().max(1);
 
@@ -2819,6 +2866,7 @@ impl Engine {
                         .unwrap_or_default();
                     let meta = fs::metadata(src).ok()?;
                     let size = meta.len();
+                    let journal_digest = digests.get(&rel).cloned().unwrap_or_default();
                     let mtime = meta
                         .modified()
                         .ok()
@@ -2828,9 +2876,12 @@ impl Engine {
 
                     // Файл уже собран и в зеркале не менялся: переписывать нечего.
                     let dirty_page = dirty.is_some_and(|set| set.contains(&rel));
+                    // Пропуск по размеру и отпечатку: время изменения ненадёжно —
+                    // его меняет распаковка копии и перенос между дисками.
+                    let same_content = prev_digest_ok(journal.get(&rel), &journal_digest);
                     if let Some(prev) = journal.get(&rel)
                         && prev.size == size
-                        && prev.mtime == mtime
+                        && same_content
                         && dst.exists()
                         && !dirty_page
                     {
@@ -2882,6 +2933,7 @@ impl Engine {
                                 rel.clone(),
                                 JournalEntry {
                                     size,
+                                    digest: journal_digest.clone(),
                                     mtime,
                                     targets: Arc::new(Vec::new()),
                                     page: false,
@@ -3021,6 +3073,7 @@ impl Engine {
                             rel.clone(),
                             JournalEntry {
                                 size,
+                                digest: journal_digest.clone(),
                                 mtime,
                                 targets: Arc::new(targets),
                                 page: is_page,
@@ -3041,6 +3094,7 @@ impl Engine {
                         rel.clone(),
                         JournalEntry {
                             size,
+                            digest: journal_digest.clone(),
                             mtime,
                             targets: Arc::new(Vec::new()),
                             page: false,
@@ -3235,11 +3289,12 @@ impl Engine {
             out.push_str("{\"path\":\"");
             out.push_str(&json_escape(rel));
             out.push_str(&format!(
-                "\",\"size\":{},\"mtime\":{},\"page\":{},\"foreign\":{},\"snapshot\":\"{}\",\"checked\":{},\"targets\":[",
+                "\",\"size\":{},\"mtime\":{},\"page\":{},\"foreign\":{},\"digest\":\"{}\",\"snapshot\":\"{}\",\"checked\":{},\"targets\":[",
                 entry.size,
                 entry.mtime,
                 entry.page,
                 entry.foreign,
+                json_escape(&entry.digest),
                 json_escape(&entry.snapshot),
                 entry.checked
             ));
@@ -3285,6 +3340,17 @@ impl Engine {
     }
 
     /// Сколько файлов копии старше трёх лет и их доля в процентах (ФТ-129).
+    /// Счётчики кодировок за весь прогон: накопленное плюс текущая сборка.
+    fn enc_totals(&self) -> HashMap<&'static str, usize> {
+        let mut out = self.enc_total.lock().map(|m| m.clone()).unwrap_or_default();
+        if let Ok(current) = self.enc_stats.lock() {
+            for (label, count) in current.iter() {
+                *out.entry(label).or_insert(0) += *count;
+            }
+        }
+        out
+    }
+
     fn old_share(&self, years: u32) -> (usize, usize) {
         let journal = self.journal.lock().unwrap();
         let mut old = 0usize;
@@ -3316,7 +3382,7 @@ impl Engine {
     }
 
     fn enc_summary(&self) -> String {
-        let stats = self.enc_stats.lock().unwrap();
+        let stats = self.enc_totals();
         let mut pairs: Vec<(&&'static str, &usize)> = stats.iter().collect();
         pairs.sort_by(|a, b| b.1.cmp(a.1));
         pairs
@@ -3402,7 +3468,7 @@ impl Engine {
             pages: self.pages.load(Ordering::Relaxed),
             refs: refs.load(Ordering::Relaxed),
             broken: broken.load(Ordering::Relaxed),
-            foreign: self.foreign_built.load(Ordering::Relaxed),
+            foreign: self.foreign_total + self.foreign_built.load(Ordering::Relaxed),
         }
     }
 
@@ -3563,12 +3629,7 @@ impl Engine {
             .replace("{{t_sum_check}}", &tr2("Сверка категорий", "Category check"))
             .replace(
                 "{{left}}",
-                &self
-                    .shared
-                    .counters
-                    .left
-                    .load(Ordering::Relaxed)
-                    .to_string(),
+                &(self.left_total + self.shared.counters.left.load(Ordering::Relaxed)).to_string(),
             )
             .replace("{{index_total}}", &self.index_total.to_string())
             .replace("{{index_pages}}", &self.index_pages.to_string())
@@ -3592,18 +3653,21 @@ impl Engine {
                 "{{sum_check}}",
                 &{
                     // Сумма категорий обязана сходиться с числом адресов (ФТ-154).
+                    // Сумма категорий сверяется с числом адресов ИНДЕКСА: items уже
+                    // усечён --limit, поэтому при лимите сверка с ним всегда «N из N».
                     let ok = self.shared.counters.ok.load(Ordering::Relaxed);
                     let missing = self.shared.counters.missing.load(Ordering::Relaxed);
                     let errors = self.shared.counters.errors.load(Ordering::Relaxed);
-                    let sum = ok + missing + errors;
+                    let skipped = self.limit_skipped;
+                    let sum = ok + missing + errors + skipped;
                     tr2(
                         &format!(
-                            "{sum} из {} (скачано {ok}, пропущено {missing}, ошибок {errors})",
-                            self.items.len()
+                            "{sum} из {} (скачано {ok}, пропущено {missing}, ошибок {errors}, по лимиту {skipped})",
+                            self.index_total
                         ),
                         &format!(
-                            "{sum} of {} (saved {ok}, missing {missing}, errors {errors})",
-                            self.items.len()
+                            "{sum} of {} (saved {ok}, missing {missing}, errors {errors}, over limit {skipped})",
+                            self.index_total
                         ),
                     )
                 },
@@ -3753,6 +3817,7 @@ impl Engine {
         self.write_inventory(&self.items)?;
         self.ensure_not_cancelled()?;
         self.build()?;
+        self.flush_build_counters();
         self.save_snapshots();
         self.ensure_not_cancelled()?;
         let mut stats = self.verify();
@@ -3778,6 +3843,8 @@ impl Engine {
         };
         if rescued > 0 {
             self.rescued.store(rescued, Ordering::Relaxed);
+            // В отчёте и в итоге — адреса, добранные на этапе сборки (ФТ-155).
+            self.added_build = rescued;
             self.shared.log(crate::tr::pick(
                 format!("rescue:ok:{rescued} — добрано по ссылкам, пересобираю"),
                 format!("rescue:ok:{rescued} — rescued by links, rebuilding"),
@@ -3795,9 +3862,9 @@ impl Engine {
                     format!("пересборка затронутых страниц: {}", pages.len()),
                     format!("rebuilding affected pages: {}", pages.len()),
                 ));
-                self.added_build += pages.len();
                 self.build_dirty(Some(&pages))?;
             }
+            self.flush_build_counters();
             self.ensure_not_cancelled()?;
             stats = self.verify();
             self.ensure_not_cancelled()?;
@@ -3836,13 +3903,13 @@ impl Engine {
             collisions: self.shared.counters.collisions.load(Ordering::Relaxed),
             rescued: self.rescued.load(Ordering::Relaxed),
             shared: self.shared.counters.shared.load(Ordering::Relaxed),
-            left: self.shared.counters.left.load(Ordering::Relaxed),
+            left: self.left_total + self.shared.counters.left.load(Ordering::Relaxed),
             index_total: self.index_total,
             index_pages: self.index_pages,
             index_truncated: self.index_truncated,
             index_failed: self.inv_failed,
             added_live: self.shared.counters.added_live.load(Ordering::Relaxed),
-            added_build: 0,
+            added_build: self.added_build,
             oldest: self.snapshot_range().0,
             newest: self.snapshot_range().1,
         })
@@ -4623,6 +4690,7 @@ fn parse_journal_line(line: &str) -> Option<(String, JournalEntry)> {
     let mtime = json_number(line, "mtime")?;
     let page = line.contains("\"page\":true");
     let foreign = line.contains("\"foreign\":true");
+    let digest = json_field(line, "digest").unwrap_or_default();
     let mut targets = Vec::new();
     if let Some(start) = line.find("\"targets\":[") {
         let rest = &line[start + "\"targets\":[".len()..];
@@ -4653,6 +4721,7 @@ fn parse_journal_line(line: &str) -> Option<(String, JournalEntry)> {
         path,
         JournalEntry {
             size,
+            digest,
             mtime,
             targets: Arc::new(targets),
             page,
