@@ -335,12 +335,15 @@ struct Queue {
 }
 
 impl Queue {
-    fn new(items: Vec<Item>) -> Self {
+    /// `base` — сколько адресов уже было на диске к началу загрузки: они входят
+    /// в счётчик `done`, поэтому и в знаменатель прогресса должны входить, иначе
+    /// на докачке «done >= planned» истинно сразу и добор не успевает работать.
+    fn new(items: Vec<Item>, base: usize) -> Self {
         let mut seen = HashSet::with_capacity(items.len());
         for item in &items {
             seen.insert(item.path.clone());
         }
-        let planned = AtomicUsize::new(items.len());
+        let planned = AtomicUsize::new(base + items.len());
         Self {
             items: Mutex::new(items.into_iter().collect()),
             cv: Condvar::new(),
@@ -2459,9 +2462,10 @@ impl Engine {
 
         // Файлы появятся в зеркале: список, снятый при уборке, больше не годится.
         *self.mirror_cache.lock().unwrap() = None;
-        let queue = Arc::new(Queue::new(Self::order_interleaved(&todo)));
+        let queue = Arc::new(Queue::new(Self::order_interleaved(&todo), already));
         let stop = Arc::new(AtomicBool::new(false));
-        let total = self.items.len();
+        // Адреса, добавленные добором: после загрузки войдут в список прогона.
+        let added_log: Arc<Mutex<Vec<Item>>> = Arc::new(Mutex::new(Vec::new()));
 
         // AIMD-контроллер
         let controller = {
@@ -2523,7 +2527,7 @@ impl Engine {
                                 format!("Downloaded {done} of {}", queue.planned()),
                             ),
                             done,
-                            total,
+                            total: queue.planned(),
                             ok: shared.counters.ok.load(Ordering::Relaxed),
                             missing: shared.counters.missing.load(Ordering::Relaxed),
                             errors: shared.counters.errors.load(Ordering::Relaxed),
@@ -2536,10 +2540,12 @@ impl Engine {
                             pause: shared.pause_left(),
                             threads: shared.gate.limit(),
                             eta: if done > 0
-                                && total > done
+                                && queue.planned() > done
                                 && !shared.cancel.load(Ordering::Relaxed)
                             {
-                                ((total - done) as f64 / (done as f64 / elapsed)) as u64
+                                ((queue.planned().saturating_sub(done)) as f64
+                                    / (done as f64 / elapsed))
+                                    as u64
                             } else {
                                 0
                             },
@@ -2556,6 +2562,7 @@ impl Engine {
         let recheck = {
             let shared = Arc::clone(&self.shared);
             let queue = Arc::clone(&queue);
+            let added_log = Arc::clone(&added_log);
             let host = self.host.clone();
             let from = stamp_from_secs(self.watermark);
             let stop = Arc::clone(&stop);
@@ -2602,7 +2609,13 @@ impl Engine {
                             digest,
                             same_as: String::new(),
                         };
-                        if queue.push(item) {
+                        if queue.push(item.clone()) {
+                            // Список адресов прогона пополняется вместе с очередью:
+                            // без этого ok и файлы копии росли бы, а items, инвентарь
+                            // и unique_paths — нет, и отчёт противоречил бы себе.
+                            if let Ok(mut log) = added_log.lock() {
+                                log.push(item);
+                            }
                             added += 1;
                         }
                     }
@@ -2656,6 +2669,21 @@ impl Engine {
         queue.close();
         for handle in handles {
             let _ = handle.join();
+        }
+        // Добранные адреса становятся частью прогона: инвентарь и отчёт считаются
+        // по одному списку, поэтому числа не расходятся (ФТ-154).
+        let live: Vec<Item> = added_log.lock().map(|log| log.clone()).unwrap_or_default();
+        if !live.is_empty() {
+            let known: HashSet<String> = self.items.iter().map(|i| i.path.clone()).collect();
+            let fresh = live
+                .into_iter()
+                .filter(|i| !known.contains(&i.path))
+                .count();
+            let mut all = std::mem::take(&mut self.items);
+            all.extend(added_log.lock().map(|log| log.clone()).unwrap_or_default());
+            all.sort_by(|a, b| a.url.cmp(&b.url));
+            self.items = all;
+            self.index_total += fresh;
         }
         let _ = progress_thread.join();
         let _ = controller.join();
@@ -4615,7 +4643,7 @@ mod tests {
             digest: String::new(),
             same_as: String::new(),
         };
-        let queue = Arc::new(Queue::new(vec![item("a.html")]));
+        let queue = Arc::new(Queue::new(vec![item("a.html")], 0));
         assert_eq!(queue.planned(), 1);
         assert!(queue.push(item("b.html")), "новый адрес принят");
         assert!(
