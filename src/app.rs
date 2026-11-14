@@ -502,6 +502,8 @@ impl App {
                     keep = false;
                     self.running = false;
                     self.cancel = None;
+                    self.paused = false;
+                    self.paused_flag = None;
                     match result {
                         Ok(text) => {
                             self.push_log(text, Level::Ok);
@@ -528,6 +530,9 @@ impl App {
                 Err(TryRecvError::Disconnected) => {
                     keep = false;
                     self.running = false;
+                    self.cancel = None;
+                    self.paused = false;
+                    self.paused_flag = None;
                     break;
                 }
             }
@@ -858,13 +863,21 @@ impl eframe::App for App {
                                     )
                                     .desired_width((ui.available_width() - buttons_w).max(120.0)),
                             );
-                            if action_button(ui, t.browse, 1, !self.running, 82.0, MUTED)
-                                && let Some(dir) = crate::pick::pick_folder()
-                            {
-                                self.out = std::path::PathBuf::from(dir)
-                                    .join("site")
-                                    .to_string_lossy()
-                                    .into_owned();
+                            if action_button(ui, t.browse, 1, !self.running, 82.0, MUTED) {
+                                match crate::pick::pick_folder() {
+                                    crate::pick::PickResult::Selected(dir) => {
+                                        self.out = std::path::PathBuf::from(dir)
+                                            .join("site")
+                                            .to_string_lossy()
+                                            .into_owned();
+                                    }
+                                    crate::pick::PickResult::TooLong => {
+                                        self.note = t.browse_too_long.to_string();
+                                        self.note_state = NoteState::Warn;
+                                        self.push_log(t.browse_too_long, Level::Warn);
+                                    }
+                                    crate::pick::PickResult::Cancelled => {}
+                                }
                             }
                             if action_button(ui, t.analyse, 1, !self.running, 96.0, MUTED) {
                                 self.analyse();
@@ -1410,6 +1423,7 @@ impl eframe::App for App {
                         self.geom = None;
                         self.last_saved = crate::settings::Settings::default();
                         self.note = self.lang.t().hint.to_string();
+                        self.note_state = NoteState::Hint;
                         self.push_log(t.help_reset_done, Level::Info);
                     }
                 });

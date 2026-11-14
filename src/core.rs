@@ -60,6 +60,12 @@ const QUICK_LIMIT: usize = 50_000;
 /// целиком не читается. 4096 выбрано по замеру: самая длинная проверяемая
 /// сигнатура укладывается в 2000 байт, прежний буфер 256 давал ложные отказы.
 const HEAD_BYTES: usize = 4096;
+/// Потолок тела ответа индекса (Р3-1): защищает от неограниченного раздутия Vec/gzip.
+const MAX_INDEX_BYTES: usize = 512 * 1024 * 1024;
+/// Порог размера текстового файла для переписывания ссылок по умолчанию (ФТ-142).
+const DEFAULT_TEXT_LIMIT: usize = 4 * 1024 * 1024;
+/// Порог свободного места для аварийной остановки во время загрузки (Д-101).
+const MIN_FREE_DURING_RUN: u64 = 16 * 1024 * 1024;
 
 /// Допуск на шапку JSON и потери разбора при проверке усечения.
 const QUICK_SLACK: usize = 32;
@@ -127,8 +133,61 @@ pub enum SnapshotMode {
     At(String),
 }
 
+/// Разбор даты снимка/окна с проверкой формата и календарных границ (Р3-6).
+pub(crate) fn parse_stamp_input(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if !trimmed
+        .chars()
+        .all(|c| c.is_ascii_digit() || matches!(c, '-' | '/' | ':' | ' ' | 'T' | 't' | 'Z' | 'z'))
+    {
+        return None;
+    }
+    let digits: String = trimmed.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.len() < 4 || digits.len() > 14 || !digits.len().is_multiple_of(2) {
+        return None;
+    }
+    if digits.len() >= 6 {
+        let month: u32 = digits[4..6].parse().ok()?;
+        if !(1..=12).contains(&month) {
+            return None;
+        }
+    }
+    if digits.len() >= 8 {
+        let day: u32 = digits[6..8].parse().ok()?;
+        if !(1..=31).contains(&day) {
+            return None;
+        }
+    }
+    if digits.len() >= 10 {
+        let hour: u32 = digits[8..10].parse().ok()?;
+        if hour > 23 {
+            return None;
+        }
+    }
+    if digits.len() >= 12 {
+        let minute: u32 = digits[10..12].parse().ok()?;
+        if minute > 59 {
+            return None;
+        }
+    }
+    if digits.len() == 14 {
+        let sec: u32 = digits[12..14].parse().ok()?;
+        if sec > 60 {
+            return None;
+        }
+    }
+    let mut stamp = digits;
+    while stamp.len() < 14 {
+        stamp.push('0');
+    }
+    Some(stamp)
+}
+
 impl SnapshotMode {
-    /// Разбор значения командной строки. Дата принимается как 4, 6, 8 или 14 цифр.
+    /// Разбор значения командной строки. Дата принимается как 4, 6, 8, 10, 12 или 14 цифр.
     pub fn parse(text: &str) -> Option<Self> {
         let value = text.trim().to_ascii_lowercase();
         match value.as_str() {
@@ -136,15 +195,7 @@ impl SnapshotMode {
             "oldest" | "first" => return Some(Self::Oldest),
             _ => {}
         }
-        let digits: String = value.chars().filter(|c| c.is_ascii_digit()).collect();
-        if digits.is_empty() || digits.len() > 14 {
-            return None;
-        }
-        let mut stamp = digits;
-        while stamp.len() < 14 {
-            stamp.push('0');
-        }
-        Some(Self::At(stamp))
+        parse_stamp_input(text).map(Self::At)
     }
 
     /// Метка для журнала сборки.
@@ -377,6 +428,15 @@ impl Queue {
         }
     }
 
+    /// Пометить пути (например, уже лежащие на диске) как известные очереди (Р3-4).
+    fn mark_seen<'a>(&self, paths: impl IntoIterator<Item = &'a str>) {
+        if let Ok(mut seen) = self.seen.lock() {
+            for p in paths {
+                seen.insert(p.to_string());
+            }
+        }
+    }
+
     /// Добавить адрес, если его пути ещё не было. Возвращает true при добавлении.
     fn push(&self, item: Item) -> bool {
         {
@@ -442,6 +502,8 @@ struct Counters {
     /// Сколько абсолютных адресов своего домена оставлено как есть: цели нет
     /// в копии либо это не файл (ФТ-147).
     left: AtomicUsize,
+    /// Сколько из них оставлено внутри скриптов (.js и <script>) (ФТ-147).
+    script_left: AtomicUsize,
     /// Сколько каталогов не удалось прочитать при обходе дерева (Д-107).
     unreadable: AtomicUsize,
     bytes: AtomicU64,
@@ -538,6 +600,8 @@ struct Shared {
     foreign: AtomicUsize,
     /// Сколько примеров такого несовпадения уже попало в журнал.
     foreign_logged: AtomicUsize,
+    /// Причина остановки из-за нехватки места во время загрузки (Д-101).
+    disk_full_error: Mutex<Option<String>>,
 }
 
 impl Shared {
@@ -696,36 +760,12 @@ impl Shared {
     /// Прочитать тело целиком. Между блоками проверяется отмена (Д-23):
     /// остановка не ждёт таймаута запроса, соединение закрывается сразу.
     /// Побочно снимается потолок 10 МиБ, который был у `read_to_vec` в ureq 3.
-    fn read_all(&self, body: ureq::Body, gzip: bool) -> Result<Vec<u8>, String> {
-        let mut out: Vec<u8> = Vec::new();
-        let raw = body.into_reader();
-        let mut reader: Box<dyn std::io::Read + Send> = if gzip {
-            Box::new(flate2::read::GzDecoder::new(raw))
-        } else {
-            Box::new(raw)
-        };
-        let mut chunk = [0u8; 64 * 1024];
-        loop {
-            if self.cancel.load(Ordering::Relaxed) {
-                return Err("cancelled".to_string());
-            }
-            match reader.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(n) => out.extend_from_slice(&chunk[..n]),
-                Err(err) => return Err(err.to_string()),
-            }
-        }
-        Ok(out)
-    }
-
-    /// То же чтение, но с отчётом о прогрессе: `on_progress(получено байт, число строк)`.
-    /// Нужно для индекса — ответ в десятки мегабайт идёт долго, и без счётчиков
-    /// полоса «замирает».
-    fn read_progress(
+    fn read_body_limited(
         &self,
         body: ureq::Body,
         gzip: bool,
-        on_progress: &mut impl FnMut(u64, usize),
+        tolerant_error: bool,
+        mut on_progress: Option<&mut dyn FnMut(u64, usize)>,
     ) -> Result<Vec<u8>, String> {
         let mut out: Vec<u8> = Vec::new();
         let mut lines = 0usize;
@@ -739,32 +779,45 @@ impl Shared {
         let mut chunk = [0u8; 64 * 1024];
         loop {
             if self.cancel.load(Ordering::Relaxed) {
-                // Частичный ответ нельзя отдавать как инвентарь: получился бы
-                // неполный список адресов без признака ошибки.
                 return Err("cancelled".to_string());
             }
             let read = match reader.read(&mut chunk) {
                 Ok(0) => break,
                 Ok(n) => n,
+                // При ответе 429/503/504 с `Content-Encoding: gzip` и пустым/HTML телом
+                // декодер падает до возврата статуса; статус и Retry-After важнее тела (Р3-1).
+                Err(_) if tolerant_error => return Ok(Vec::new()),
                 Err(err) => return Err(err.to_string()),
             };
+            if out.len().saturating_add(read) > MAX_INDEX_BYTES {
+                return Err(crate::tr::t(
+                    "ответ архива слишком велик (> 512 МБ)",
+                    "archive response exceeds 512 MB limit",
+                )
+                .to_string());
+            }
             let part = &chunk[..read];
             out.extend_from_slice(part);
             lines += part.iter().filter(|b| **b == b'\n').count();
-            if last.elapsed() >= Duration::from_millis(200) {
-                on_progress(out.len() as u64, lines);
+            if let Some(cb) = on_progress.as_deref_mut()
+                && last.elapsed() >= Duration::from_millis(200)
+            {
+                cb(out.len() as u64, lines);
                 last = Instant::now();
             }
         }
-        on_progress(out.len() as u64, lines);
+        if let Some(cb) = on_progress {
+            cb(out.len() as u64, lines);
+        }
         Ok(out)
     }
 
     fn fetch(&self, url: &str) -> Result<Fetched, String> {
         let (head, body) = self.open(false, url)?;
+        let err_status = head.status != 200;
         Ok(Fetched {
             status: head.status,
-            body: self.read_all(body, head.gzip)?,
+            body: self.read_body_limited(body, head.gzip && !err_status, err_status, None)?,
             retry_after: head.retry_after,
         })
     }
@@ -776,9 +829,15 @@ impl Shared {
         mut on_progress: impl FnMut(u64, usize),
     ) -> Result<Fetched, String> {
         let (head, body) = self.open(true, url)?;
+        let err_status = head.status != 200;
         Ok(Fetched {
             status: head.status,
-            body: self.read_progress(body, head.gzip, &mut on_progress)?,
+            body: self.read_body_limited(
+                body,
+                head.gzip && !err_status,
+                err_status,
+                Some(&mut on_progress),
+            )?,
             retry_after: head.retry_after,
         })
     }
@@ -1381,6 +1440,16 @@ pub struct Engine {
     pub retry_missing_days: u32,
     /// Порог «пустой страницы» в байтах (ФТ-127).
     pub stub_bytes: usize,
+    /// Порог текстового файла для переписывания ссылок (ФТ-142, 0 — без предела).
+    pub text_limit: usize,
+    /// Сколько текстовых файлов скопировано без переписывания из-за предела (ФТ-143).
+    text_skipped: AtomicUsize,
+    /// Логировано примеров превышения --text-limit.
+    text_skipped_logged: AtomicUsize,
+    /// Сколько примеров оставленных абсолютных адресов в скриптах залогировано (ФТ-147).
+    script_left_logged: AtomicUsize,
+    /// Накопленный счётчик оставленных в скриптах абсолютных адресов (ФТ-147).
+    script_left_total: usize,
     /// Адреса, добранные по ссылкам в этом прогоне.
     pub rescued: AtomicUsize,
     shared: Arc<Shared>,
@@ -1402,6 +1471,8 @@ pub struct Engine {
     mirror_cache: Mutex<Option<Arc<Vec<PathBuf>>>>,
     /// Деревья, по которым непрочитанные каталоги уже учтены (Д-107).
     unreadable_seen: Mutex<HashSet<PathBuf>>,
+    /// Первые пути непрочитанных каталогов с причиной (П-Д4).
+    unreadable_paths: Mutex<Vec<String>>,
     /// Список файлов готовой копии — так же кешируется.
     site_cache: Mutex<Option<Arc<Vec<PathBuf>>>>,
     /// Число страниц (html, не бинарных), посчитанное при сборке.
@@ -1467,12 +1538,14 @@ impl Engine {
         // заголовки 60 с + тело TIMEOUT_INDEX (120 с) = TIMEOUT_TOTAL (180 с).
         let file_config = ureq::Agent::config_builder()
             .http_status_as_error(false)
+            .max_redirects(3)
             .timeout_connect(Some(Duration::from_secs(15)))
             .timeout_recv_response(Some(Duration::from_secs(TIMEOUT_FILE)))
             .timeout_per_read(Some(Duration::from_secs(30)))
             .build();
         let index_config = ureq::Agent::config_builder()
             .http_status_as_error(false)
+            .max_redirects(3)
             .timeout_connect(Some(Duration::from_secs(15)))
             .timeout_recv_response(Some(Duration::from_secs(TIMEOUT_FILE)))
             .timeout_recv_body(Some(Duration::from_secs(TIMEOUT_INDEX)))
@@ -1502,6 +1575,11 @@ impl Engine {
             rescue_budget: DEFAULT_RESCUE_BUDGET,
             retry_missing_days: DEFAULT_RETRY_MISSING_DAYS,
             stub_bytes: DEFAULT_STUB_BYTES,
+            text_limit: DEFAULT_TEXT_LIMIT,
+            text_skipped: AtomicUsize::new(0),
+            text_skipped_logged: AtomicUsize::new(0),
+            script_left_logged: AtomicUsize::new(0),
+            script_left_total: 0,
             rescued: AtomicUsize::new(0),
             shared: Arc::new(Shared {
                 agent: ureq::Agent::new_with_config(file_config),
@@ -1535,6 +1613,7 @@ impl Engine {
                 content_types: Mutex::new(HashMap::new()),
                 foreign: AtomicUsize::new(0),
                 foreign_logged: AtomicUsize::new(0),
+                disk_full_error: Mutex::new(None),
             }),
             started: Instant::now(),
             items: Vec::new(),
@@ -1547,6 +1626,7 @@ impl Engine {
             enc_logged: std::sync::atomic::AtomicUsize::new(0),
             mirror_cache: Mutex::new(None),
             unreadable_seen: Mutex::new(HashSet::new()),
+            unreadable_paths: Mutex::new(Vec::new()),
             site_cache: Mutex::new(None),
             pages: AtomicUsize::new(0),
             foreign_built: AtomicUsize::new(0),
@@ -1563,8 +1643,8 @@ impl Engine {
     /// Одно и то же дерево обходится несколько раз (кэш списка зеркала, кэш копии,
     /// пересчёт после сборки). Без этой проверки число в отчёте складывалось бы из
     /// повторных обходов и завышалось.
-    fn note_unreadable(&self, root: &Path, count: usize) {
-        if count == 0 {
+    fn note_unreadable(&self, root: &Path, details: &[(PathBuf, String)]) {
+        if details.is_empty() {
             return;
         }
         let Ok(mut seen) = self.unreadable_seen.lock() else {
@@ -1574,7 +1654,21 @@ impl Engine {
             self.shared
                 .counters
                 .unreadable
-                .fetch_add(count, Ordering::Relaxed);
+                .fetch_add(details.len(), Ordering::Relaxed);
+            if let Ok(mut list) = self.unreadable_paths.lock() {
+                for (path, err) in details {
+                    let line = format!("{} ({err})", show_path(path));
+                    if list.len() < 20 {
+                        list.push(line.clone());
+                    }
+                    if list.len() <= 5 {
+                        self.shared.log(crate::tr::pick(
+                            format!("каталог не прочитан: {line}"),
+                            format!("directory unreadable: {line}"),
+                        ));
+                    }
+                }
+            }
         }
     }
 
@@ -1584,8 +1678,8 @@ impl Engine {
         if let Some(list) = cache.as_ref() {
             return Arc::clone(list);
         }
-        let (list, unreadable) = walk_files(&self.mirror);
-        self.note_unreadable(&self.mirror.clone(), unreadable);
+        let (list, unreadable) = walk_files_detailed(&self.mirror);
+        self.note_unreadable(&self.mirror.clone(), &unreadable);
         let list = Arc::new(list);
         self.mirror_files.store(list.len(), Ordering::Relaxed);
         *cache = Some(Arc::clone(&list));
@@ -1598,8 +1692,8 @@ impl Engine {
         if let Some(list) = cache.as_ref() {
             return Arc::clone(list);
         }
-        let (list, unreadable) = walk_files(&self.site_dir);
-        self.note_unreadable(&self.site_dir.clone(), unreadable);
+        let (list, unreadable) = walk_files_detailed(&self.site_dir);
+        self.note_unreadable(&self.site_dir.clone(), &unreadable);
         let list = Arc::new(list);
         self.site_files.store(list.len(), Ordering::Relaxed);
         *cache = Some(Arc::clone(&list));
@@ -1671,7 +1765,7 @@ impl Engine {
 
     fn load_content_types(&self) {
         let path = self.content_types_path();
-        let Ok(text) = fs::read_to_string(&path) else {
+        let Ok(text) = fs::read_to_string(long_path(&path)) else {
             return;
         };
         let mut map = self.shared.content_types.lock().unwrap();
@@ -1766,6 +1860,11 @@ impl Engine {
         self.shared.stub_bytes.store(bytes, Ordering::Relaxed);
     }
 
+    /// Порог размера текстового файла для переписывания ссылок (ФТ-142, 0 — без предела).
+    pub fn set_text_limit(&mut self, bytes: usize) {
+        self.text_limit = bytes;
+    }
+
     /// Признак паузы: общий для ядра и интерфейса. В консольной сборке паузы нет.
     #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     pub fn pause_token(&self) -> Arc<AtomicBool> {
@@ -1834,7 +1933,7 @@ impl Engine {
     /// хранит только даты и переживает обновление: иначе в отчёте «Годы снимков»
     /// пустеет после каждого выпуска.
     fn load_snapshots(&self) {
-        let Ok(text) = fs::read_to_string(self.snapshots_path()) else {
+        let Ok(text) = fs::read_to_string(long_path(&self.snapshots_path())) else {
             return;
         };
         let Ok(mut map) = self.shared.snapshots.lock() else {
@@ -1886,7 +1985,7 @@ impl Engine {
 
     /// Прочитать список адресов без снимка: `url`, табуляция, время проверки.
     fn load_no_snapshot(&self) -> HashMap<String, u64> {
-        let Ok(text) = fs::read_to_string(self.no_snapshot_path()) else {
+        let Ok(text) = fs::read_to_string(long_path(&self.no_snapshot_path())) else {
             return HashMap::new();
         };
         text.lines()
@@ -1944,7 +2043,7 @@ impl Engine {
         journal
             .into_iter()
             .filter(|(path, entry)| {
-                if !self.mirror.join(path).exists() {
+                if !long_path(&self.mirror.join(path)).exists() {
                     return false;
                 }
                 // Срок считается от последней проверки, а не от даты снимка:
@@ -2008,9 +2107,9 @@ impl Engine {
     /// идёт в сборку, второй обход не нужен.
     fn cleanup_temp(&self) -> usize {
         let mut removed = 0usize;
-        if self.mirror.exists() {
-            let (mirror_files, unreadable) = walk_files(&self.mirror);
-            self.note_unreadable(&self.mirror.clone(), unreadable);
+        if long_path(&self.mirror).exists() {
+            let (mirror_files, unreadable) = walk_files_detailed(&self.mirror);
+            self.note_unreadable(&self.mirror.clone(), &unreadable);
             for path in &mirror_files {
                 if is_temp_file(path) && fs::remove_file(long_path(path)).is_ok() {
                     removed += 1;
@@ -2020,9 +2119,9 @@ impl Engine {
             *self.mirror_cache.lock().unwrap() = Some(Arc::new(mirror_files));
             self.mirror_files.store(count, Ordering::Relaxed);
         }
-        if self.data_dir.exists() {
-            let (data_files, unreadable) = walk_files(&self.data_dir);
-            self.note_unreadable(&self.data_dir.clone(), unreadable);
+        if long_path(&self.data_dir).exists() {
+            let (data_files, unreadable) = walk_files_detailed(&self.data_dir);
+            self.note_unreadable(&self.data_dir.clone(), &unreadable);
             for path in data_files {
                 if is_temp_file(&path) && fs::remove_file(long_path(&path)).is_ok() {
                     removed += 1;
@@ -2087,25 +2186,47 @@ impl Engine {
         // Известна ли оценка объёма: без неё пустой ответ нельзя считать
         // доказательством «страниц нет вовсе».
         let mut estimate_ok = false;
-        match self
-            .shared
-            .fetch(&self.cdx_query("showNumPages=true&output=json"))
-        {
-            Ok(fetched) if fetched.status == 200 => {
-                if let Some(n) = parse_pages(&String::from_utf8_lossy(&fetched.body)) {
-                    pages = n;
-                    estimate_ok = true;
-                }
-            }
-            Ok(fetched) => self
+        for est_try in 0..3u32 {
+            match self
                 .shared
-                .log(format!("CDX: оценка недоступна (HTTP {})", fetched.status)),
-            Err(err) => {
-                let reason = explain_net(&err);
-                self.shared.log(crate::tr::pick(
-                    format!("CDX: оценка — {reason}"),
-                    format!("CDX: estimate failed: {reason}"),
-                ))
+                .fetch(&self.cdx_query("showNumPages=true&output=json"))
+            {
+                Ok(fetched) if fetched.status == 200 => {
+                    if let Some(n) = parse_pages(&String::from_utf8_lossy(&fetched.body)) {
+                        pages = n;
+                        estimate_ok = true;
+                    }
+                    break;
+                }
+                Ok(fetched) if (fetched.status == 429 || fetched.status >= 500) && est_try < 2 => {
+                    self.shared.log(format!(
+                        "CDX: оценка недоступна (HTTP {}), повтор {}/3",
+                        fetched.status,
+                        est_try + 2
+                    ));
+                    let wait = fetched.retry_after.unwrap_or(2.0 * (est_try + 1) as f64);
+                    self.shared.sleep(wait);
+                }
+                Ok(fetched) => {
+                    self.shared
+                        .log(format!("CDX: оценка недоступна (HTTP {})", fetched.status));
+                    break;
+                }
+                Err(err) => {
+                    if self.shared.cancel.load(Ordering::Relaxed) {
+                        return Err("cancelled".to_string());
+                    }
+                    self.shared.archive_failed("оценка недоступна", &err);
+                    if est_try < 2 {
+                        self.shared.sleep(2.0 * (est_try + 1) as f64);
+                    } else {
+                        let reason = explain_net(&err);
+                        self.shared.log(crate::tr::pick(
+                            format!("CDX: оценка — {reason}"),
+                            format!("CDX: estimate failed: {reason}"),
+                        ));
+                    }
+                }
             }
         }
 
@@ -2117,17 +2238,22 @@ impl Engine {
         let mut best: HashMap<String, (String, String, String, u64, String)> = HashMap::new();
         // Сколько строк разобрано: для проверки усечения и для отчёта.
         let mut parsed_rows = 0usize;
-        self.emit(
-            "inventory",
-            4.0,
-            crate::tr::t("получение списка адресов", "fetching the address list"),
-            true,
-        );
-        // Архив регулярно отвечает 429/503 на большие выборки: несколько попыток
-        // с нарастающей паузой дешевле, чем уход в постраничный режим, который у части
-        // сайтов вообще не поддерживается. Сетевая ошибка значит, что порт схемы может
-        // быть закрыт: тогда переключаем схему и пробуем снова (ОШ-2, ОШ-3).
+        // Если showNumPages точно говорит, что страниц больше одной, быстрый запрос
+        // без &page= может отдать только первый блок (наблюдалось на prokupol.ru:
+        // 518 вместо 1639) — идём сразу на постраничный обход 0..pages (П-Д1).
+        let force_paging = estimate_ok && pages > 1;
+        if !force_paging {
+            self.emit(
+                "inventory",
+                4.0,
+                crate::tr::t("получение списка адресов", "fetching the address list"),
+                true,
+            );
+        }
         for attempt in 0..ARCHIVE_TRIES {
+            if force_paging {
+                break;
+            }
             // Запрос собирается на каждой попытке: при 504 режим сопоставления
             // переключается, и повтор должен уйти уже в новом режиме (ФТ-149).
             let quick = self.quick_query(self.since.as_deref());
@@ -2238,7 +2364,13 @@ impl Engine {
             && pages <= 1
             && self.since.is_none()
             && self.window_to().is_none();
-        if empty_for_sure {
+        let mut need_paging = force_paging;
+        if force_paging {
+            self.shared.log(crate::tr::pick(
+                format!("CDX: индекс состоит из {pages} страниц — запускаю постраничный обход"),
+                format!("CDX: index has {pages} pages — starting paged crawl"),
+            ));
+        } else if empty_for_sure {
             self.shared.log(crate::tr::t(
                 "CDX: в архиве нет страниц для этого адреса",
                 "CDX: the archive has no pages for this address",
@@ -2249,23 +2381,52 @@ impl Engine {
                 "CDX: quick query empty — switching to paging",
             ));
             pages = pages.max(2);
+            need_paging = true;
         } else if parsed_rows + QUICK_SLACK >= QUICK_LIMIT {
             // Оказаться у самой границы можно и на полном индексе: тогда обход
             // просто пройдёт целиком и снимет признак усечения (ниже).
             self.index_truncated = true;
+            need_paging = true;
             self.shared.log(crate::tr::pick(
                 format!("CDX: список обрезан на {QUICK_LIMIT} адресах"),
                 format!("CDX: address list truncated at {QUICK_LIMIT}"),
             ));
+        } else if !estimate_ok {
+            // Если оценка числа страниц не ответила, проверяем page=1, чтобы
+            // не принять 1-ю страницу за весь индекс (П-Д1).
+            match self
+                .shared
+                .fetch_stream(&self.paged_query(1), &mut |_, _| {})
+            {
+                Ok(fetched) if fetched.status == 200 => {
+                    let extra = parse_rows(&fetched.body);
+                    if extra.is_empty() {
+                        self.index_pages = 1;
+                    } else {
+                        self.shared.log(crate::tr::t(
+                            "CDX: без оценки обнаружена следующая страница — запускаю полный обход",
+                            "CDX: next page found without estimate — switching to full paging",
+                        ));
+                        best.clear();
+                        pages = pages.max(2);
+                        need_paging = true;
+                    }
+                }
+                _ => {
+                    self.index_pages = 1;
+                    self.index_truncated = true;
+                    self.shared.log(crate::tr::t(
+                        "CDX: оценка недоступна, вторая страница не ответила — полнота индекса не подтверждена",
+                        "CDX: estimate unavailable and page 2 failed — index completeness unverified",
+                    ));
+                }
+            }
         } else {
-            // Быстрый запрос вернул весь индекс: обход не нужен, покрытие полное.
-            // Иначе в отчёте стояло бы «0 страниц» при полном индексе.
-            self.index_pages = pages.max(1);
+            // Оценка показала 1 страницу и быстрый запрос уложился в порог.
+            self.index_pages = 1;
         }
-        // Оценка страниц бывает недоступна (503/504 на showNumPages): тогда pages = 1,
-        // но обход всё равно нужен — иначе обрезанный список останется обрезанным.
-        let estimate_known = pages > 1;
-        if (best.is_empty() && !empty_for_sure) || self.index_truncated {
+        let estimate_known = estimate_ok && pages > 1;
+        if need_paging {
             let max_pages = if self.index_max_pages == 0 {
                 if estimate_known { pages } else { usize::MAX }
             } else if estimate_known {
@@ -2366,26 +2527,29 @@ impl Engine {
                             ));
                             break;
                         }
+                        if got == 0 {
+                            if !estimate_known {
+                                // При неизвестном числе страниц пустая страница после непустых
+                                // означает, что блоки CDX закончились.
+                                finished = true;
+                            } else {
+                                // При известном showNumPages пустая страница раньше конца —
+                                // неполный ответ режима.
+                                self.index_truncated = true;
+                                self.shared.log(crate::tr::t(
+                                    "CDX: пустая страница — индекс остаётся обрезанным",
+                                    "CDX: empty page — the index stays truncated",
+                                ));
+                            }
+                            break;
+                        }
                         for row in &chunk {
                             fold_row(&mut best, &self.host, row, &fetched.body, true);
                         }
                         page += 1;
                         self.index_pages = page;
-                        if got > 0 && got < PAGE_LIMIT {
-                            // Конец доказывает только непустая короткая страница:
-                            // пустой ответ означает отказ, а не конец индекса.
+                        if estimate_known && page >= pages && max_pages >= pages {
                             finished = true;
-                            break;
-                        }
-                        if got == 0 {
-                            // Пустая страница после первой — не конец обхода: режим
-                            // отдал меньше, чем обещал заголовок. Молча выходить
-                            // нельзя — отчёт тогда пишет «индекс полон».
-                            self.index_truncated = true;
-                            self.shared.log(crate::tr::t(
-                                "CDX: пустая страница — индекс остаётся обрезанным",
-                                "CDX: empty page — the index stays truncated",
-                            ));
                             break;
                         }
                         continue;
@@ -2717,6 +2881,7 @@ impl Engine {
         // Файлы появятся в зеркале: список, снятый при уборке, больше не годится.
         *self.mirror_cache.lock().unwrap() = None;
         let queue = Arc::new(Queue::new(Self::order_interleaved(&todo), already));
+        queue.mark_seen(self.items.iter().map(|i| i.path.as_str()));
         let stop = Arc::new(AtomicBool::new(false));
         // Адреса, добавленные добором: после загрузки войдут в список прогона.
         let added_log: Arc<Mutex<Vec<Item>>> = Arc::new(Mutex::new(Vec::new()));
@@ -2893,6 +3058,7 @@ impl Engine {
                             same_as: String::new(),
                         };
                         if queue.push(item.clone()) {
+                            shared.types.lock().unwrap().slot(item.kind)[1] += 1;
                             // Список адресов прогона пополняется вместе с очередью:
                             // без этого ok и файлы копии росли бы, а items, инвентарь
                             // и unique_paths — нет, и отчёт противоречил бы себе.
@@ -2936,12 +3102,37 @@ impl Engine {
 
         // Ждём, пока вся работа выполнена: очередь может пополняться добором,
         // поэтому закрывать её сразу нельзя — добавленные адреса потерялись бы.
+        let mut last_space_check = already;
         loop {
             std::thread::sleep(Duration::from_millis(500));
             if self.shared.cancel.load(Ordering::Relaxed) {
                 break;
             }
-            if self.shared.counters.done.load(Ordering::Relaxed) >= queue.planned() {
+            let done_now = self.shared.counters.done.load(Ordering::Relaxed);
+            if done_now.saturating_sub(last_space_check) >= 500 {
+                last_space_check = done_now;
+                if let Some(free) = self.free_space()
+                    && free < MIN_FREE_DURING_RUN
+                {
+                    let msg = crate::tr::pick(
+                        format!(
+                            "недостаточно места на диске во время загрузки (свободно {} МБ) — останавливаю прогон",
+                            free / 1_048_576
+                        ),
+                        format!(
+                            "not enough disk space during download ({} MB free) — stopping",
+                            free / 1_048_576
+                        ),
+                    );
+                    self.shared.log(msg.clone());
+                    if let Ok(mut slot) = self.shared.disk_full_error.lock() {
+                        *slot = Some(msg);
+                    }
+                    self.shared.cancel.store(true, Ordering::Relaxed);
+                    break;
+                }
+            }
+            if done_now >= queue.planned() {
                 break;
             }
         }
@@ -2973,6 +3164,11 @@ impl Engine {
         self.save_content_types();
         self.save_no_snapshot();
         self.emit("download", 85.0, "", true);
+        if let Ok(slot) = self.shared.disk_full_error.lock()
+            && let Some(err) = slot.as_ref()
+        {
+            return Err(err.clone());
+        }
         self.ensure_not_cancelled()
     }
 
@@ -2989,6 +3185,7 @@ impl Engine {
     fn flush_build_counters(&mut self) {
         self.foreign_total += self.foreign_built.swap(0, Ordering::Relaxed);
         self.left_total += self.shared.counters.left.swap(0, Ordering::Relaxed);
+        self.script_left_total += self.shared.counters.script_left.swap(0, Ordering::Relaxed);
         if let Ok(mut current) = self.enc_stats.lock()
             && let Ok(mut total) = self.enc_total.lock()
         {
@@ -3042,24 +3239,35 @@ impl Engine {
 
         let journal = self.load_journal();
         let incremental = !journal.is_empty();
-        if !incremental && self.site_dir.exists() {
+        if !incremental && long_path(&self.site_dir).exists() {
             // remove_dir_all спотыкается о длинные пути Windows (глубокие каталоги
             // архивных сайтов): чистим своим обходом, добавляя префикс \\?\.
             remove_tree(&self.site_dir);
         }
         fs::create_dir_all(long_path(&self.site_dir)).map_err(|e| explain_io_error(&e))?;
 
-        // Один шаблон на атрибуты ссылок и наборы источников (ФТ-148): раньше
-        // документ проходился дважды. Семантика сохранена: наборы источников
-        // разбираются только в кавычках, без кавычек значение считается адресом.
+        // Ведущий пробел (группа 1) обязателен: без него шаблон ловил JS-выражения
+        // вида `location.href = x` и `k.src = r,` (П-Д2).
         let link_rx = Regex::new(
-            r#"(?i)(href|src|data-src|data-bg|poster|action|data-original|srcset|data-srcset)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>`=]+))"#,
+            r#"(?i)(\s)(href|src|data-src|data-bg|poster|action|data-original|srcset|data-srcset)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>`=]+))"#,
         )
         .unwrap();
         let css_rx = Regex::new(r#"url\(\s*["']?([^"')]+)["']?\s*\)"#).unwrap();
         let base_rx = Regex::new(r"(?i)<base\b[^>]*>").unwrap();
+        // Сегменты HTML: комментарии, <script>...</script> и <style>...</style> обрабатываются
+        // отдельно от обычной разметки, чтобы не портить inline-JS (П-Д2).
+        let html_seg_rx = Regex::new(
+            r"(?is)<!--.*?-->|<script\b([^>]*)>(.*?)</script\s*>|<style\b([^>]*)>(.*?)</style\s*>",
+        )
+        .unwrap();
         let site_rx = Regex::new(&format!(
             r#"(?i)^(?:https?:)?//(?:www\.)?{}(?::\d+)?(/[^"'\s<>()\\]*)"#,
+            regex::escape(&self.host)
+        ))
+        .unwrap();
+        // Для .js и <script> якорь ^ снимается, но сохраняется граница домена (Р3-2).
+        let js_site_rx = Regex::new(&format!(
+            r#"(?i)(^|["'`\s(,=:])((?:https?:)?//(?:www\.)?{}(?::\d+)?(/[^"'\s<>()\\`]*))"#,
             regex::escape(&self.host)
         ))
         .unwrap();
@@ -3114,7 +3322,7 @@ impl Engine {
                     if let Some(prev) = journal.get(&rel)
                         && prev.size == size
                         && same_content
-                        && dst.exists()
+                        && long_path(&dst).exists()
                         && !dirty_page
                     {
                         skipped.fetch_add(1, Ordering::Relaxed);
@@ -3157,9 +3365,52 @@ impl Engine {
                         || lower.ends_with(".css")
                         || lower.ends_with(".js")
                     {
-                        let data = match fs::read(src) {
+                        if self.text_limit > 0 && size > self.text_limit as u64 {
+                            // ФТ-142 / ФТ-143: огромный текстовый файл не читается в память
+                            // и копируется без переписывания ссылок.
+                            let copied = match fs::copy(long_path(src), long_path(&dst)) {
+                                Ok(_) => true,
+                                Err(e) => {
+                                    self.log_write_error(&rel, &e);
+                                    false
+                                }
+                            };
+                            if copied {
+                                self.text_skipped.fetch_add(1, Ordering::Relaxed);
+                                if self.text_skipped_logged.fetch_add(1, Ordering::Relaxed) < 10 {
+                                    self.shared.log(crate::tr::pick(
+                                        format!("текст больше предела: не переписан — {rel}"),
+                                        format!("text exceeds limit: copied as-is — {rel}"),
+                                    ));
+                                }
+                                if is_page {
+                                    pages.fetch_add(1, Ordering::Relaxed);
+                                }
+                            }
+                            self.bump_build(&done, total);
+                            if !copied {
+                                return None;
+                            }
+                            return Some((
+                                rel.clone(),
+                                JournalEntry {
+                                    size,
+                                    digest: journal_digest.clone(),
+                                    mtime,
+                                    targets: Arc::new(Vec::new()),
+                                    page: is_page,
+                                    foreign: false,
+                                    snapshot,
+                                    checked: now_secs(),
+                                },
+                            ));
+                        }
+                        let data = match fs::read(long_path(src)) {
                             Ok(d) => d,
-                            Err(_) => return None,
+                            Err(e) => {
+                                self.log_write_error(&rel, &e);
+                                return None;
+                            }
                         };
                         if crate::encoding::looks_binary(&data) {
                             // под расширением .html в архиве бывает картинка или PDF:
@@ -3228,34 +3479,50 @@ impl Engine {
                                 targets.push(key);
                             }
                         };
-                        if lower.ends_with(".js") {
-                            // Раньше здесь любой абсолютный адрес своего домена
-                            // обрезался до пути: ломались адреса API и строки
-                            // сравнения. Теперь правило то же, что у атрибутов:
-                            // переписываем только существующую в копии цель.
-                            text = site_rx
-                                .replace_all(&text, |caps: &regex::Captures| {
-                                    let full = caps.get(0).map(|m| m.as_str()).unwrap_or("");
-                                    self.rewrite_ref(full, src_dir, &index, &site_rx)
+                        let rewrite_js = |chunk: &str| -> String {
+                            js_site_rx
+                                .replace_all(chunk, |caps: &regex::Captures| {
+                                    let prefix = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+                                    let full = caps.get(2).map(|m| m.as_str()).unwrap_or("");
+                                    let out = self.rewrite_ref(full, src_dir, &index, &site_rx);
+                                    if out == full {
+                                        self.shared
+                                            .counters
+                                            .script_left
+                                            .fetch_add(1, Ordering::Relaxed);
+                                        if self.script_left_logged.fetch_add(1, Ordering::Relaxed)
+                                            < 3
+                                        {
+                                            self.shared.log(crate::tr::pick(
+                                                format!(
+                                                    "скрипт: оставлен абсолютный адрес — {full}"
+                                                ),
+                                                format!("script: left absolute URL — {full}"),
+                                            ));
+                                        }
+                                    }
+                                    format!("{prefix}{out}")
                                 })
-                                .into_owned();
-                        } else {
-                            text = link_rx
-                                .replace_all(&text, |caps: &regex::Captures| {
-                                    let attr = &caps[1];
-                                    // Кавычки: 2 — двойные, 3 — одинарные, 4 — без кавычек.
-                                    let quoted = caps.get(4).is_none();
-                                    let quote = if caps.get(2).is_some() {
+                                .into_owned()
+                        };
+                        let mut rewrite_html_attrs = |chunk: &str| -> String {
+                            link_rx
+                                .replace_all(chunk, |caps: &regex::Captures| {
+                                    let ws = &caps[1];
+                                    let attr = &caps[2];
+                                    // Кавычки: 3 — двойные, 4 — одинарные, 5 — без кавычек.
+                                    let quoted = caps.get(5).is_none();
+                                    let quote = if caps.get(3).is_some() {
                                         "\""
-                                    } else if caps.get(3).is_some() {
+                                    } else if caps.get(4).is_some() {
                                         "'"
                                     } else {
                                         "\""
                                     };
                                     let value = caps
-                                        .get(2)
-                                        .or_else(|| caps.get(3))
+                                        .get(3)
                                         .or_else(|| caps.get(4))
+                                        .or_else(|| caps.get(5))
                                         .map(|m| m.as_str())
                                         .unwrap_or("");
                                     let is_set = attr.eq_ignore_ascii_case("srcset")
@@ -3278,7 +3545,7 @@ impl Engine {
                                             })
                                             .collect();
                                         return format!(
-                                            "{attr}={quote}{}{quote}",
+                                            "{ws}{attr}={quote}{}{quote}",
                                             items.join(", ")
                                         );
                                     }
@@ -3287,20 +3554,81 @@ impl Engine {
                                     // Цели считаем по ИТОГОВОЙ ссылке: проверка ссылается
                                     // на то, что реально попало в копию.
                                     collect(&new_value, quoted);
-                                    format!("{attr}={quote}{new_value}{quote}")
+                                    format!("{ws}{attr}={quote}{new_value}{quote}")
                                 })
-                                .into_owned();
-                            text = css_rx
-                                .replace_all(&text, |caps: &regex::Captures| {
+                                .into_owned()
+                        };
+                        let rewrite_css = |chunk: &str| -> String {
+                            css_rx
+                                .replace_all(chunk, |caps: &regex::Captures| {
                                     let url = &caps[1];
                                     format!(
                                         "url({})",
                                         self.rewrite_ref(url, src_dir, &index, &site_rx)
                                     )
                                 })
-                                .into_owned();
-                            text = base_rx.replace_all(&text, "").into_owned();
+                                .into_owned()
+                        };
+                        if lower.ends_with(".js") {
+                            text = rewrite_js(&text);
+                        } else if lower.ends_with(".css") {
+                            text = rewrite_css(&text);
                             text = crate::encoding::normalize_utf8(&text);
+                        } else {
+                            // HTML: переписываем атрибуты и <base> только вне <!--...-->, <script> и <style>.
+                            let mut out = String::with_capacity(text.len());
+                            let mut pos = 0usize;
+                            for m in html_seg_rx.find_iter(&text) {
+                                if m.start() > pos {
+                                    let plain = &text[pos..m.start()];
+                                    let plain = rewrite_html_attrs(plain);
+                                    let plain = rewrite_css(&plain);
+                                    let plain = base_rx.replace_all(&plain, "");
+                                    out.push_str(&plain);
+                                }
+                                let seg = m.as_str();
+                                if seg.starts_with("<!--") {
+                                    out.push_str(seg);
+                                } else if let Some(caps) = html_seg_rx.captures(seg) {
+                                    if let Some(script_body) = caps.get(2) {
+                                        let open_end = seg.find('>').map(|i| i + 1).unwrap_or(0);
+                                        let close_start = seg.rfind('<').unwrap_or(seg.len());
+                                        let open_tag = rewrite_html_attrs(&seg[..open_end]);
+                                        let js_body = rewrite_js(script_body.as_str());
+                                        out.push_str(&open_tag);
+                                        out.push_str(&js_body);
+                                        out.push_str(&seg[close_start..]);
+                                    } else if let Some(style_body) = caps.get(4) {
+                                        let open_end = seg.find('>').map(|i| i + 1).unwrap_or(0);
+                                        let close_start = seg.rfind('<').unwrap_or(seg.len());
+                                        out.push_str(&seg[..open_end]);
+                                        out.push_str(&rewrite_css(style_body.as_str()));
+                                        out.push_str(&seg[close_start..]);
+                                    } else {
+                                        out.push_str(seg);
+                                    }
+                                }
+                                pos = m.end();
+                            }
+                            if pos < text.len() {
+                                let tail = &text[pos..];
+                                // Защита на случай незакрытого <script> без </script>.
+                                let lower_tail = tail.to_ascii_lowercase();
+                                if let Some(unclosed) = lower_tail.find("<script") {
+                                    let head = &tail[..unclosed];
+                                    let head = rewrite_html_attrs(head);
+                                    let head = rewrite_css(&head);
+                                    let head = base_rx.replace_all(&head, "");
+                                    out.push_str(&head);
+                                    out.push_str(&tail[unclosed..]);
+                                } else {
+                                    let tail = rewrite_html_attrs(tail);
+                                    let tail = rewrite_css(&tail);
+                                    let tail = base_rx.replace_all(&tail, "");
+                                    out.push_str(&tail);
+                                }
+                            }
+                            text = crate::encoding::normalize_utf8(&out);
                         }
                         // Страницу считаем записанной: иначе отчёт покажет файлы,
                         // которых на диске нет, а журнал запомнит их собранными.
@@ -3357,8 +3685,8 @@ impl Engine {
         });
 
         // Один обход готовой копии на все нужды: уборка сирот, проверка и отчёт.
-        let (site_files, unreadable) = walk_files(&self.site_dir);
-        self.note_unreadable(&self.site_dir.clone(), unreadable);
+        let (site_files, unreadable) = walk_files_detailed(&self.site_dir);
+        self.note_unreadable(&self.site_dir.clone(), &unreadable);
         let site_files = Arc::new(site_files);
         self.site_files.store(site_files.len(), Ordering::Relaxed);
         *self.site_cache.lock().unwrap() = Some(Arc::clone(&site_files));
@@ -3379,11 +3707,13 @@ impl Engine {
         // при ограничении числа адресов часть зеркала просто не скачана.
         if incremental && self.limit == 0 {
             self.drop_orphans(&files, &site_files);
+            let (final_files, unreadable) = walk_files_detailed(&self.site_dir);
+            self.note_unreadable(&self.site_dir.clone(), &unreadable);
+            let final_files = Arc::new(final_files);
+            self.site_files.store(final_files.len(), Ordering::Relaxed);
+            *self.site_cache.lock().unwrap() = Some(Arc::clone(&final_files));
         }
         self.save_journal();
-        let (final_files, unreadable) = walk_files(&self.site_dir);
-        self.note_unreadable(&self.site_dir.clone(), unreadable);
-        self.site_files.store(final_files.len(), Ordering::Relaxed);
 
         let summary = self.enc_summary();
         if !summary.is_empty() {
@@ -3519,7 +3849,7 @@ impl Engine {
     }
 
     fn load_journal(&self) -> HashMap<String, JournalEntry> {
-        let Ok(text) = fs::read_to_string(self.journal_path()) else {
+        let Ok(text) = fs::read_to_string(long_path(&self.journal_path())) else {
             return HashMap::new();
         };
         // Метка формата: журнал другой версии программы описывает иную логику
@@ -3885,15 +4215,20 @@ impl Engine {
                 "{{t_unreadable}}",
                 &tr2("Каталогов не прочитано", "Directories not read"),
             )
-            .replace(
-                "{{unreadable}}",
-                &self
-                    .shared
-                    .counters
-                    .unreadable
-                    .load(Ordering::Relaxed)
-                    .to_string(),
-            )
+            .replace("{{unreadable}}", &{
+                let cnt = self.shared.counters.unreadable.load(Ordering::Relaxed);
+                let details = self
+                    .unreadable_paths
+                    .lock()
+                    .map(|l| l.clone())
+                    .unwrap_or_default();
+                if cnt == 0 || details.is_empty() {
+                    cnt.to_string()
+                } else {
+                    let escaped: Vec<String> = details.iter().map(|s| html_escape(s)).collect();
+                    format!("{cnt} ({})", escaped.join("; "))
+                }
+            })
             .replace(
                 "{{archive}}",
                 &format!(
@@ -3936,10 +4271,27 @@ impl Engine {
             .replace("{{t_added_live}}", &tr2("Добрано при загрузке", "Added while downloading"))
             .replace("{{t_added_build}}", &tr2("Добрано при сборке", "Added while building"))
             .replace("{{t_sum_check}}", &tr2("Сверка категорий", "Category check"))
-            .replace(
-                "{{left}}",
-                &(self.left_total + self.shared.counters.left.load(Ordering::Relaxed)).to_string(),
-            )
+            .replace("{{left}}", &{
+                let all_left = self.left_total + self.shared.counters.left.load(Ordering::Relaxed);
+                let sc_left = self.script_left_total
+                    + self.shared.counters.script_left.load(Ordering::Relaxed);
+                let skipped_txt = self.text_skipped.load(Ordering::Relaxed);
+                let mut s = if sc_left > 0 {
+                    format!(
+                        "{all_left} ({} {sc_left})",
+                        tr2("в скриптах:", "in scripts:")
+                    )
+                } else {
+                    all_left.to_string()
+                };
+                if skipped_txt > 0 {
+                    s.push_str(&format!(
+                        " · {} {skipped_txt}",
+                        tr2("текст > предела:", "text > limit:")
+                    ));
+                }
+                s
+            })
             .replace("{{index_total}}", &self.index_total.to_string())
             .replace("{{index_pages}}", &self.index_pages.to_string())
             .replace(
@@ -4004,10 +4356,6 @@ impl Engine {
                     .no_snapshot
                     .load(Ordering::Relaxed)
                     .to_string(),
-            )
-            .replace(
-                "{{left}}",
-                &self.shared.counters.left.load(Ordering::Relaxed).to_string(),
             )
             .replace(
                 "{{shared}}",
@@ -4259,7 +4607,14 @@ impl Engine {
             return Ok(());
         };
         let need = self.estimate_bytes();
-        if need == 0 || need <= free {
+        if need == 0 {
+            self.shared.log(crate::tr::t(
+                "место на диске: оценка объёма недоступна, предварительная проверка пропущена",
+                "disk space: size estimate unavailable, pre-check skipped",
+            ));
+            return Ok(());
+        }
+        if need <= free {
             return Ok(());
         }
         let message = crate::tr::pick(
@@ -4433,7 +4788,7 @@ fn keep_previous(candidate: &Item, current: &Item) -> bool {
 /// (Д-15). Возвращает `None`, если каталога ещё нет или система не ответила.
 #[cfg(windows)]
 fn free_bytes(path: &Path) -> Option<u64> {
-    if !path.exists() {
+    if !long_path(path).exists() {
         return None;
     }
     #[link(name = "kernel32")]
@@ -4465,7 +4820,7 @@ fn free_bytes(path: &Path) -> Option<u64> {
 #[allow(clippy::unnecessary_cast)]
 fn free_bytes(path: &Path) -> Option<u64> {
     use std::ffi::CString;
-    if !path.exists() {
+    if !long_path(path).exists() {
         return None;
     }
     let c_path = CString::new(path.to_string_lossy().as_bytes()).ok()?;
@@ -4505,8 +4860,16 @@ fn label(kind: &str) -> &'static str {
     }
 }
 
-/// Экранирование для JSON-строк инвентаря.
-fn json_escape(text: &str) -> String {
+/// Экранирование для HTML-отчёта.
+fn html_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// Экранирование для JSON-строк инвентаря и CLI-итога.
+pub(crate) fn json_escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for ch in text.chars() {
         match ch {
@@ -4676,7 +5039,7 @@ fn days_from_civil(year: i64, month: u64, day: u64) -> i64 {
 /// прежней версии должен читаться новой.
 #[allow(dead_code)]
 pub fn read_inventory(file: &Path) -> Vec<Item> {
-    let Ok(text) = fs::read_to_string(file) else {
+    let Ok(text) = fs::read_to_string(long_path(file)) else {
         return Vec::new();
     };
     text.lines()
@@ -5304,8 +5667,6 @@ fn scheme_switch_worthwhile(err: &str) -> bool {
         "connect error",
         "connect:",
         "dns",
-        "tls",
-        "certificate",
         "no route",
         "unreachable",
     ]
@@ -5339,6 +5700,16 @@ fn explain_net(err: &str) -> String {
         Some(crate::tr::pick(
             "нет маршрута к архиву".to_string(),
             "no route to the archive".to_string(),
+        ))
+    } else if low.contains("certificate")
+        || low.contains("invalidpeer")
+        || low.contains("unknownissuer")
+        || low.contains("expired")
+        || low.contains("tls")
+    {
+        Some(crate::tr::pick(
+            "ошибка сертификата архива — проверьте дату системы, прокси или антивирус".to_string(),
+            "archive certificate error — check system clock, proxy or antivirus".to_string(),
         ))
     } else if low.contains("dns") || low.contains("resolve") {
         Some(crate::tr::pick(
@@ -5400,7 +5771,7 @@ fn journal_label(line: Option<&str>) -> Option<String> {
 }
 
 /// Префикс длинного пути Windows: без него файловые операции не видят пути длиннее 260 символов.
-fn long_path(path: &Path) -> PathBuf {
+pub(crate) fn long_path(path: &Path) -> PathBuf {
     let text = path.to_string_lossy();
     if cfg!(windows) && path.is_absolute() && !text.starts_with(r"\\?\") {
         // Сетевой путь требует своей формы: \\?\UNC\server\share, иначе из сетевого пути получалось \\?\\\server и операции с файлами молча не работали.
@@ -5546,16 +5917,16 @@ fn parse_journal_line(line: &str) -> Option<(String, JournalEntry)> {
 ///   выйти за пределы копии;
 /// * число непрочитанных каталогов возвращается наружу (Д-107): раньше ошибка
 ///   терялась в `continue`, и числа отчёта занижались без следа.
-fn walk_files(root: &Path) -> (Vec<PathBuf>, usize) {
+fn walk_files_detailed(root: &Path) -> (Vec<PathBuf>, Vec<(PathBuf, String)>) {
     let mut out = Vec::new();
-    let mut unreadable = 0usize;
+    let mut unreadable = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     let mut seen: HashSet<PathBuf> = HashSet::new();
     while let Some(dir) = stack.pop() {
         let entries = match fs::read_dir(long_path(&dir)) {
             Ok(entries) => entries,
-            Err(_) => {
-                unreadable += 1;
+            Err(err) => {
+                unreadable.push((dir, err.to_string()));
                 continue;
             }
         };
@@ -5578,6 +5949,12 @@ fn walk_files(root: &Path) -> (Vec<PathBuf>, usize) {
     }
     out.sort();
     (out, unreadable)
+}
+
+#[cfg(test)]
+fn walk_files(root: &Path) -> (Vec<PathBuf>, usize) {
+    let (files, bad) = walk_files_detailed(root);
+    (files, bad.len())
 }
 
 const REPORT_TMPL: &str = r#"<!DOCTYPE html><html lang="{{lang}}"><head><meta charset="utf-8">
@@ -6563,10 +6940,11 @@ mod build_tests {
             "connect: connection refused",
             "connect: network unreachable",
             "dns: no address",
-            "tls: handshake failure",
         ] {
             assert!(scheme_switch_worthwhile(dead), "адрес недоступен: {dead}");
         }
+        // Д-102: ошибка TLS/сертификата не переводит прогон на открытый http://.
+        assert!(!scheme_switch_worthwhile("tls: handshake failure"));
     }
 
     /// 14.11.2026: медленный ответ https не уводит прогон на http.
@@ -7213,6 +7591,330 @@ mod build_tests {
         assert_eq!(stats.pages, 1);
         assert_eq!(stats.refs, 2, "внешние ссылки не считаются");
         assert_eq!(stats.broken, 2);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// П-Д2: inline-<script>, <style> и HTML-комментарии не портятся шаблоном атрибутов.
+    #[test]
+    fn inline_script_is_not_corrupted_by_link_rewriter() {
+        let root = workdir("inlinejs");
+        let page = concat!(
+            "<html><head><style>body{background:url(/img/bg.png)}</style></head><body>",
+            "<!-- <a href=\"/commented.html\">c</a> -->",
+            "<a href=\"/ok.html\">ok</a>",
+            "<script src=\"https://example.com/js/app.js\">",
+            "k.async = 1, k.src = r, a.parentNode.insertBefore(k, a);",
+            "el.async = true;el.src = (document.location.protocol == 'https:' ? 'https:' : 'http:') + '//a.ru/b.js';",
+            "location.href = match[1];",
+            "var s = \"<a href=\\'/bitrix/x\\'>\";",
+            "var local = \"https://example.com/js/app.js\";",
+            "var api = \"https://example.com/api/v1\";",
+            "</script></body></html>"
+        );
+        put(&root, "index.html", page.as_bytes());
+        put(&root, "ok.html", b"<html><body>ok</body></html>");
+        put(&root, "img/bg.png", b"\x89PNG\r\n\x1a\n");
+        put(&root, "js/app.js", b"console.log(1);");
+        let engine = build(&root);
+        let stats = engine.verify();
+        let html = read(&root, "index.html");
+        assert!(html.contains("k.src = r, a"), "JS испорчен: {html}");
+        assert!(
+            html.contains("el.src = (document.location.protocol"),
+            "JS испорчен: {html}"
+        );
+        assert!(
+            html.contains("location.href = match[1]"),
+            "location.href испорчен: {html}"
+        );
+        assert!(
+            html.contains("<a href=\\'/bitrix/x\\'>"),
+            "строка JS испорчена: {html}"
+        );
+        assert!(
+            html.contains("src=\"js/app.js\""),
+            "src скрипта не переписан: {html}"
+        );
+        assert!(
+            html.contains("var local = \"js/app.js\""),
+            "локальный URL в <script> не переписан: {html}"
+        );
+        assert!(
+            html.contains("var api = \"https://example.com/api/v1\""),
+            "API URL изменён: {html}"
+        );
+        assert!(
+            html.contains("url(img/bg.png)"),
+            "style url() не переписан: {html}"
+        );
+        assert!(
+            html.contains("<!-- <a href=\"/commented.html\">c</a> -->"),
+            "комментарий тронут: {html}"
+        );
+        assert_eq!(stats.broken, 0, "комментарий не должен давать битую ссылку");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Р3-2 + ФТ-61 + ФТ-147: .js-файл переписывает цели в копии, а API оставляет абсолютным.
+    #[test]
+    fn js_file_rewrites_local_and_keeps_api() {
+        let root = workdir("jsrewrite");
+        put(
+            &root,
+            "js/app.js",
+            br#"const img = "https://example.com/img/a.png"; const api = "https://example.com/api/v1"; const ext = "https://notexample.com/img/a.png";"#,
+        );
+        put(&root, "img/a.png", b"\x89PNG\r\n\x1a\n");
+        let engine = build(&root);
+        let js = read(&root, "js/app.js");
+        assert!(
+            js.contains("const img = \"../img/a.png\""),
+            "JS не переписан: {js}"
+        );
+        assert!(
+            js.contains("const api = \"https://example.com/api/v1\""),
+            "API изменён: {js}"
+        );
+        assert!(
+            js.contains("const ext = \"https://notexample.com/img/a.png\""),
+            "чужой домен тронут: {js}"
+        );
+        assert_eq!(
+            engine.shared.counters.script_left.load(Ordering::Relaxed),
+            1
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Р3-1: ответ 429/504 с `Content-Encoding: gzip` и пустым/битым телом возвращает статус, а не Err.
+    #[test]
+    fn gzip_error_status_keeps_status_and_retry_after() {
+        let root = workdir("gziperr");
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let srv = std::thread::spawn(move || {
+            for idx in 0..2 {
+                let (mut sock, _) = listener.accept().unwrap();
+                let mut buf = [0u8; 1024];
+                let _ = std::io::Read::read(&mut sock, &mut buf);
+                let resp = if idx == 0 {
+                    b"HTTP/1.1 504 Gateway Timeout\r\nContent-Encoding: gzip\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".as_slice()
+                } else {
+                    b"HTTP/1.1 429 Too Many Requests\r\nContent-Encoding: gzip\r\nRetry-After: 3\r\nContent-Length: 9\r\nConnection: close\r\n\r\nnot-gzip!".as_slice()
+                };
+                let _ = std::io::Write::write_all(&mut sock, resp);
+            }
+        });
+        let engine = Engine::new("example.com", &root, 1, 0).unwrap();
+        let f1 = engine
+            .shared
+            .fetch_stream(&format!("http://{addr}/cdx?1"), &mut |_, _| {})
+            .expect("504 не должен падать на gzip");
+        assert_eq!(f1.status, 504);
+        let f2 = engine
+            .shared
+            .fetch_stream(&format!("http://{addr}/cdx?2"), &mut |_, _| {})
+            .expect("429 не должен падать на битом gzip");
+        assert_eq!(f2.status, 429);
+        assert_eq!(f2.retry_after, Some(3.0));
+        let _ = srv.join();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// П-Д1: если showNumPages > 1, inventory обходит все страницы CDX, не веря quick_query.
+    #[test]
+    fn inventory_walks_all_pages_when_numpages_gt_one() {
+        let root = workdir("invpages");
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let srv = std::thread::spawn(move || {
+            for _ in 0..4 {
+                let (mut sock, _) = listener.accept().unwrap();
+                let mut buf = [0u8; 2048];
+                let n = std::io::Read::read(&mut sock, &mut buf).unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]);
+                let body = if req.contains("showNumPages=true") {
+                    "[[\"numpages\"],[\"3\"]]".to_string()
+                } else if req.contains("page=0") {
+                    "[[\"timestamp\",\"original\",\"mimetype\",\"statuscode\",\"length\",\"digest\"],[\"20260101000000\",\"https://example.com/\",\"text/html\",\"200\",\"100\",\"A\"],[\"20260101000000\",\"https://example.com/p1\",\"text/html\",\"200\",\"100\",\"B\"]]".to_string()
+                } else if req.contains("page=1") {
+                    "[[\"timestamp\",\"original\",\"mimetype\",\"statuscode\",\"length\",\"digest\"],[\"20260101000000\",\"https://example.com/p2\",\"text/html\",\"200\",\"100\",\"C\"],[\"20260101000000\",\"https://example.com/p3\",\"text/html\",\"200\",\"100\",\"D\"]]".to_string()
+                } else if req.contains("page=2") {
+                    "[[\"timestamp\",\"original\",\"mimetype\",\"statuscode\",\"length\",\"digest\"],[\"20260101000000\",\"https://example.com/p4\",\"text/html\",\"200\",\"100\",\"E\"]]".to_string()
+                } else {
+                    "[]".to_string()
+                };
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = std::io::Write::write_all(&mut sock, head.as_bytes());
+                let _ = std::io::Write::write_all(&mut sock, body.as_bytes());
+            }
+        });
+        let mut engine = Engine::new("example.com", &root, 1, 0).unwrap();
+        Arc::get_mut(&mut engine.shared).unwrap().agent_archive = format!("http://{addr}");
+        engine.inventory().expect("inventory");
+        assert_eq!(
+            engine.items.len(),
+            5,
+            "должны собраться все 5 адресов с 3 страниц"
+        );
+        assert_eq!(engine.index_pages, 3);
+        assert!(!engine.index_truncated);
+        let _ = srv.join();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// П-Д1: если showNumPages недоступен (400/503), проверяется page=1 и при наличии строк запускается полный обход.
+    #[test]
+    fn inventory_checks_page_one_when_estimate_unavailable() {
+        let root = workdir("invnoest");
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let srv = std::thread::spawn(move || {
+            for _ in 0..6 {
+                let (mut sock, _) = listener.accept().unwrap();
+                let mut buf = [0u8; 2048];
+                let n = std::io::Read::read(&mut sock, &mut buf).unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]);
+                let (status, body) = if req.contains("showNumPages=true") {
+                    ("400 Bad Request", "error".to_string())
+                } else if req.contains("page=0") {
+                    ("200 OK", "[[\"timestamp\",\"original\",\"mimetype\",\"statuscode\",\"length\",\"digest\"],[\"20260101000000\",\"https://example.com/\",\"text/html\",\"200\",\"100\",\"A\"]]".to_string())
+                } else if req.contains("page=1") {
+                    ("200 OK", "[[\"timestamp\",\"original\",\"mimetype\",\"statuscode\",\"length\",\"digest\"],[\"20260101000000\",\"https://example.com/p2\",\"text/html\",\"200\",\"100\",\"B\"]]".to_string())
+                } else if req.contains("page=2") {
+                    ("200 OK", "[[\"timestamp\",\"original\",\"mimetype\",\"statuscode\",\"length\",\"digest\"]]".to_string())
+                } else {
+                    ("200 OK", "[[\"timestamp\",\"original\",\"mimetype\",\"statuscode\",\"length\",\"digest\"],[\"20260101000000\",\"https://example.com/\",\"text/html\",\"200\",\"100\",\"A\"]]".to_string())
+                };
+                let head = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = std::io::Write::write_all(&mut sock, head.as_bytes());
+                let _ = std::io::Write::write_all(&mut sock, body.as_bytes());
+            }
+        });
+        let mut engine = Engine::new("example.com", &root, 1, 0).unwrap();
+        Arc::get_mut(&mut engine.shared).unwrap().agent_archive = format!("http://{addr}");
+        engine.inventory().expect("inventory");
+        assert_eq!(
+            engine.items.len(),
+            2,
+            "должны собраться адреса и с page=0, и с page=1"
+        );
+        assert!(!engine.index_truncated);
+        let _ = srv.join();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Р3-3: после удаления сирот в инкрементальной сборке site_cache, verify() и report.html согласованы.
+    #[test]
+    fn drop_orphans_updates_site_cache_for_verify_and_report() {
+        let root = workdir("orphanscache");
+        put(
+            &root,
+            "index.html",
+            b"<html><body><a href=\"/a.html\">a</a></body></html>",
+        );
+        put(&root, "a.html", b"<html><body>a</body></html>");
+        let first = build(&root);
+        assert_eq!(first.verify().broken, 0);
+        assert_eq!(first.site_files.load(Ordering::Relaxed), 2);
+
+        fs::remove_file(root.join("mirror").join("a.html")).unwrap();
+        let second = Engine::new("example.com", &root, 1, 0).unwrap();
+        second.build().unwrap();
+        let stats = second.verify();
+        assert_eq!(
+            stats.broken, 1,
+            "удалённый сирота должен стать битой ссылкой"
+        );
+        assert_eq!(second.site_files.load(Ordering::Relaxed), 1);
+        let report_path = second.report(stats).unwrap();
+        let doc = fs::read_to_string(report_path).unwrap();
+        assert!(
+            doc.contains("<div class=\"v\">1</div>"),
+            "в отчёте должен быть 1 файл: {doc}"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Р3-4: Queue::mark_seen не пускает уже лежащие на диске пути обратно в очередь.
+    #[test]
+    fn queue_mark_seen_blocks_already_paths() {
+        let item = |p: &str| Item {
+            url: format!("https://example.com/{p}"),
+            ts: "20260101000000".to_string(),
+            orig: format!("https://example.com/{p}"),
+            mime: "text/html".to_string(),
+            path: p.to_string(),
+            kind: "html",
+            len: 0,
+            digest: String::new(),
+            same_as: String::new(),
+        };
+        let queue = Queue::new(vec![item("todo.html")], 1);
+        queue.mark_seen(["already.html"]);
+        assert!(
+            !queue.push(item("already.html")),
+            "already не должен добавляться повторно"
+        );
+        assert!(
+            queue.push(item("fresh.html")),
+            "новый путь должен добавляться"
+        );
+    }
+
+    /// Д-102: ошибка TLS-сертификата не переводит прогон на открытый http://.
+    #[test]
+    fn tls_certificate_error_does_not_switch_scheme() {
+        assert!(!scheme_switch_worthwhile(
+            "tls handshake failed: invalid certificate"
+        ));
+        assert!(!scheme_switch_worthwhile("rustls: UnknownIssuer"));
+        assert!(scheme_switch_worthwhile(
+            "tcp connect error: connection refused (os error 10061)"
+        ));
+        assert!(explain_net("invalid certificate: UnknownIssuer").contains("сертификат"));
+    }
+
+    /// ФТ-142/143: текстовый файл больше text_limit копируется как есть без переписывания.
+    #[test]
+    fn text_limit_copies_large_file_as_is() {
+        let root = workdir("textlimit");
+        let raw = b"<html><body><a href=\"/x.html\">x</a></body></html>";
+        put(&root, "index.html", raw);
+        let mut engine = Engine::new("example.com", &root, 1, 0).unwrap();
+        engine.set_text_limit(10);
+        engine.build().unwrap();
+        let built = fs::read(root.join("site").join("index.html")).unwrap();
+        assert_eq!(
+            built, raw,
+            "большой текстовый файл должен копироваться байт-в-байт"
+        );
+        assert_eq!(engine.text_skipped.load(Ordering::Relaxed), 1);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// П-Д4: пути непрочитанных каталогов сохраняются и попадают в report.html.
+    #[test]
+    fn unreadable_dir_paths_appear_in_report() {
+        let root = workdir("unreadable_report");
+        put(&root, "index.html", b"<html><body>ok</body></html>");
+        let engine = build(&root);
+        let missing_dir = root.join("missing_sub");
+        let (_files, bad) = walk_files_detailed(&missing_dir);
+        assert_eq!(bad.len(), 1);
+        engine.note_unreadable(&missing_dir, &bad);
+        let stats = engine.verify();
+        let doc = fs::read_to_string(engine.report(stats).unwrap()).unwrap();
+        assert!(
+            doc.contains("missing_sub"),
+            "путь непрочитанного каталога должен быть в отчёте: {doc}"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 }

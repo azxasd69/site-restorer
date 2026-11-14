@@ -4,10 +4,18 @@
 //! системе и не требует COM-обвязки сверх `CoInitializeEx`. На остальных
 //! платформах кнопка «Обзор…» не показывается: путь вводится в поле вручную.
 
-/// Открыть диалог выбора папки. `None` — пользователь отменил или платформа
-/// не поддерживает диалог.
+/// Результат выбора папки системным диалогом.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PickResult {
+    Selected(String),
+    Cancelled,
+    /// Пользователь выбрал папку, но `SHGetPathFromIDListW` вернул 0 (путь ≥ 260 символов).
+    TooLong,
+}
+
+/// Открыть диалог выбора папки.
 #[cfg(windows)]
-pub fn pick_folder() -> Option<String> {
+pub fn pick_folder() -> PickResult {
     use std::ffi::c_void;
 
     #[repr(C)]
@@ -56,20 +64,24 @@ pub fn pick_folder() -> Option<String> {
         };
         let pidl = SHBrowseForFolderW(&mut info);
         if pidl.is_null() {
-            return None;
+            return PickResult::Cancelled;
         }
         let ok = SHGetPathFromIDListW(pidl, buffer.as_mut_ptr());
         CoTaskMemFree(pidl);
         if ok == 0 {
-            return None;
+            return PickResult::TooLong;
         }
     }
     let len = buffer.iter().position(|c| *c == 0).unwrap_or(buffer.len());
     let path = String::from_utf16_lossy(&buffer[..len]);
-    if path.is_empty() { None } else { Some(path) }
+    if path.is_empty() {
+        PickResult::Cancelled
+    } else {
+        PickResult::Selected(path)
+    }
 }
 
 #[cfg(not(windows))]
-pub fn pick_folder() -> Option<String> {
-    None
+pub fn pick_folder() -> PickResult {
+    PickResult::Cancelled
 }

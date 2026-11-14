@@ -184,7 +184,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     // Д-95: след паники ставится до всего остального. При `panic = "abort"`
     // паника убивает процесс без разбора, и без хука от неё не остаётся ничего.
-    crash::install(crash::log_path(&args));
+    crash::install(crash::resolve_install_path(&args));
     let console_mode = args
         .iter()
         .any(|a| a == "--cli" || a == "--version" || a == "-V");
@@ -312,6 +312,8 @@ struct Args {
     retry_missing_days: Option<u32>,
     /// Порог «пустой страницы» (ФТ-127).
     stub_bytes: Option<usize>,
+    /// Предел размера текстового файла для переписывания ссылок (ФТ-142).
+    text_limit: Option<usize>,
 }
 
 /// Ошибка разбора аргументов: готовый текст для человека (Д-96).
@@ -397,6 +399,7 @@ fn parse_args(args: &[String]) -> Result<Args, ArgError> {
         rescue_budget: None,
         retry_missing_days: None,
         stub_bytes: None,
+        text_limit: None,
     };
     let mut i = 0;
     while i < args.len() {
@@ -487,17 +490,29 @@ fn parse_args(args: &[String]) -> Result<Args, ArgError> {
                 parsed.stub_bytes = Some(arg_num(args, i, "--stub-bytes", en)?);
                 i += 2;
             }
+            "--text-limit" => {
+                parsed.text_limit = Some(arg_num(args, i, "--text-limit", en)?);
+                i += 2;
+            }
             // Служебные флаги разбираются до запуска, в настройки они не попадают
             // и неизвестными не считаются.
             "--cli" | "--version" | "-V" | "--help" | "-h" | "--verbose" | "-v" => i += 1,
             other => {
-                // Молча терять аргумент нельзя: опечатка в имени флага давала полный
-                // прогон вместо пробы и выглядела как согласие с командой.
+                // Опечатка в имени флага или форма `--flag=value` не должны запускать
+                // полный прогон с параметрами по умолчанию (Р3-6).
                 if other.starts_with('-') {
-                    eprintln!(
-                        "{}: {other}",
-                        crate::tr::t("неизвестный аргумент", "unknown argument")
-                    );
+                    if let Some((flag, _)) = other.split_once('=') {
+                        return Err(if en {
+                            format!("use a space instead of `=`: {flag} <value>")
+                        } else {
+                            format!("передайте значение через пробел вместо `=`: {flag} <значение>")
+                        });
+                    }
+                    return Err(if en {
+                        format!("unknown argument: {other}")
+                    } else {
+                        format!("неизвестный аргумент: {other}")
+                    });
                 }
                 i += 1;
             }
@@ -576,12 +591,7 @@ fn cli(args: &[String]) -> i32 {
         engine.set_refresh(true);
     }
     if !parsed.since.trim().is_empty() {
-        let digits: String = parsed
-            .since
-            .chars()
-            .filter(|c| c.is_ascii_digit())
-            .collect();
-        if digits.len() < 4 {
+        let Some(bound) = crate::core::parse_stamp_input(&parsed.since) else {
             eprintln!(
                 "{}",
                 tr::pick(
@@ -590,11 +600,7 @@ fn cli(args: &[String]) -> i32 {
                 )
             );
             return 2;
-        }
-        let mut bound = digits;
-        while bound.len() < 14 {
-            bound.push('0');
-        }
+        };
         engine.set_since(Some(bound));
     }
     if let Some(pages) = parsed.index_max_pages {
@@ -611,6 +617,9 @@ fn cli(args: &[String]) -> i32 {
     }
     if let Some(bytes) = parsed.stub_bytes {
         engine.set_stub_bytes(bytes);
+    }
+    if let Some(bytes) = parsed.text_limit {
+        engine.set_text_limit(bytes);
     }
     engine.set_progress_handler(|p: &Progress| match p.stage {
         "log" => println!("{}", p.text),
@@ -793,14 +802,14 @@ fn cli(args: &[String]) -> i32 {
                 outcome.left,
                 outcome.oldest,
                 outcome.newest,
-                json_escape(&crate::core::show_path(&outcome.site)),
+                crate::core::json_escape(&crate::core::show_path(&outcome.site)),
                 outcome.index_total,
                 outcome.index_pages,
                 outcome.index_truncated,
                 outcome.index_failed,
                 outcome.added_live,
                 outcome.added_build,
-                json_escape(&crate::core::show_path(&outcome.report)),
+                crate::core::json_escape(&crate::core::show_path(&outcome.report)),
                 outcome.archive,
                 outcome.unreadable,
                 outcome.archive_requests,
@@ -854,23 +863,6 @@ fn cli_build_name() -> &'static str {
     } else {
         "SiteRestorer-windows-x64-cli.exe"
     }
-}
-
-/// Экранирование строки для JSON-итога.
-fn json_escape(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for ch in text.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push(' '),
-            c => out.push(c),
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -969,5 +961,29 @@ mod tests {
         let parsed = parse_args(&args(&["--cli", "--verbose", "--site", "e.com"]))
             .expect("служебные флаги допустимы");
         assert_eq!(parsed.site, "e.com");
+    }
+
+    /// Р3-6: опечатка в имени флага и `--flag=value` возвращают ошибку.
+    #[test]
+    fn unknown_and_equals_flags_are_rejected() {
+        let err = parse_args(&args(&["--cli", "--site", "e.com", "--unknown-flag", "10"]))
+            .expect_err("неизвестный флаг должен отвергаться");
+        assert!(err.contains("--unknown-flag"), "{err}");
+
+        let eq = parse_args(&args(&["--cli", "--site", "e.com", "--limit=10"]))
+            .expect_err("форма с = должна отвергаться");
+        assert!(eq.contains("--limit"), "{eq}");
+    }
+
+    /// Р3-6: невалидные даты в `--as-of` / `--since` отвергаются.
+    #[test]
+    fn invalid_dates_are_rejected() {
+        assert!(crate::core::parse_stamp_input("2026-99-99").is_none());
+        assert!(crate::core::parse_stamp_input("2026abc").is_none());
+        assert!(crate::core::parse_stamp_input("2026-02-32").is_none());
+        assert_eq!(
+            crate::core::parse_stamp_input("2026-11-15").as_deref(),
+            Some("20261115000000")
+        );
     }
 }

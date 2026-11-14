@@ -28,10 +28,37 @@ pub fn log_path(args: &[String]) -> PathBuf {
         {
             out = PathBuf::from(value);
             i += 1;
+        } else if let Some(value) = args[i].strip_prefix("--out=")
+            && !value.is_empty()
+        {
+            out = PathBuf::from(value);
         }
         i += 1;
     }
     out.join("data").join(LOG_NAME)
+}
+
+/// Абсолютный путь следа паники для запуска процесса:
+/// в GUI без `--out` берётся папка вывода из настроек (а не произвольный CWD).
+pub fn resolve_install_path(args: &[String]) -> PathBuf {
+    let explicit_out = args.iter().any(|a| a == "--out" || a.starts_with("--out="));
+    let raw = if !explicit_out && !args.iter().any(|a| a == "--cli") {
+        let out = crate::settings::load().out;
+        if out.trim().is_empty() {
+            log_path(args)
+        } else {
+            PathBuf::from(out).join("data").join(LOG_NAME)
+        }
+    } else {
+        log_path(args)
+    };
+    if raw.is_absolute() {
+        raw
+    } else if let Ok(cwd) = std::env::current_dir() {
+        cwd.join(raw)
+    } else {
+        raw
+    }
 }
 
 /// Метка времени `ГГГГ-ММ-ДД чч:мм:ссZ` из `ГГГГММДДччммсс`.
@@ -69,13 +96,14 @@ pub fn record(
     message: &str,
     backtrace: &str,
 ) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
+    let lp = crate::core::long_path(path);
+    if let Some(dir) = lp.parent() {
         std::fs::create_dir_all(dir)?;
     }
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(path)?;
+        .open(&lp)?;
     writeln!(
         file,
         "{} thread={} at {}\r\npanic: {}",
