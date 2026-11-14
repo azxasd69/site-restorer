@@ -13,10 +13,10 @@ Python (`legacy/python`) и Go (`ports/go`) переведены в архив: 
 | Файл | Платформа | Размер | Что внутри |
 |---|---|---|---|
 | `SiteRestorer-windows-x64.exe` | Windows 10/11 x64 | 8,8 МБ | **основной вариант**: окно egui, RU/EN, статический CRT |
-| `SiteRestorer-windows-x64-cli.exe` | Windows x64 | 3,8 МБ | только командная строка |
-| `SiteRestorer-linux-x64-gui` | Linux x64 | 27,2 МБ | окно egui (нужны системные X11/GL) |
-| `SiteRestorer-linux-x64-cli` | Linux x64 | 12,2 МБ | статический ELF (`ldd` → not a dynamic executable) |
-| `SiteRestorer-linux-x64.tar.gz` | Linux x64 | 12,3 МБ | оба бинарника + `.desktop`, иконка, `install.sh` |
+| `SiteRestorer-windows-x64-cli.exe` | Windows x64 | 3,9 МБ | только командная строка |
+| `SiteRestorer-linux-x64-gui` | Linux x64 | 27,4 МБ | окно egui (нужны системные X11/GL) |
+| `SiteRestorer-linux-x64-cli` | Linux x64 | 12,4 МБ | статический ELF (`ldd` → not a dynamic executable) |
+| `SiteRestorer-linux-x64.tar.gz` | Linux x64 | 12,4 МБ | оба бинарника + `.desktop`, иконка, `install.sh` |
 
 Размеры сняты с релиза **v3.6.4** (15.11.2026) — все пять ассетов. Имя не содержит версию — ссылки
 `releases/latest/download/<имя>` постоянны; версию печатает `--version`

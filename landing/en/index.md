@@ -103,11 +103,11 @@ What did not come back:
 
 - x64 GUI (Rust + egui, 8.8 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64.exe
 - 32-bit GUI (5.6 MB, 3.6.0, no longer built): https://github.com/azxasd69/site-restorer/releases/download/v3.6.0/SiteRestorer-windows-x86.exe
-- Windows x64 CLI (3.8 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64-cli.exe
+- Windows x64 CLI (3.9 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64-cli.exe
 - Windows 32-bit CLI (3.6.0): https://github.com/azxasd69/site-restorer/releases/download/v3.6.0/SiteRestorer-windows-x86-cli.exe
-- Linux x64 CLI, static (12.2 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64-cli
-- Linux x64 GUI (27.2 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64-gui
-- Linux package (binaries + install.sh + .desktop, 12.3 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64.tar.gz
+- Linux x64 CLI, static (12.4 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64-cli
+- Linux x64 GUI (27.4 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64-gui
+- Linux package (binaries + install.sh + .desktop, 12.4 MB): https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64.tar.gz
 - Checksums: https://github.com/azxasd69/site-restorer/releases/latest/download/SHA256SUMS.txt
 - All releases: https://github.com/azxasd69/site-restorer/releases
 
