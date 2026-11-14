@@ -53,7 +53,10 @@ Python и Go не собираются и не публикуются: `legacy/p
 - Версия тулчейна закреплена в `rust-toolchain.toml` (1.99.1) и в CI — так
   релиз не зависит от того, какой stable попал на раннер. Обновление тулчейна —
   отдельный коммит с прогоном всех гейтов.
-- Профиль релиза: `opt-level = "z"`, LTO, `panic = "abort"`, `strip = "symbols"`;
+- Профиль релиза (`Cargo.toml`, раздел `[profile.release]`): `opt-level = 3`,
+  `lto = "thin"`, `codegen-units = 1`, `debug = "line-tables-only"`,
+  `split-debuginfo = "packed"`, `panic = "abort"`, `strip = "none"` (символы
+  уходят в артефакт `.pdb` конвейера, в поставку не попадают);
   Windows — статический CRT (`+crt-static`), чтобы не требовать
   Visual C++ Redistributable.
 - Перед сборкой обязательны гейты: `fmt`, `clippy -D warnings` (CLI и GUI),
@@ -101,7 +104,7 @@ sha256sum -c SHA256SUMS.txt                                   # сходится
 
 | Что | Как | Ожидание |
 |---|---|---|
-| Манифест Windows | `mt.exe -nologo -inputresource:SiteRestorer-windows-x64.exe`;#1 -out:m.xml` и поиск `longPathAware`, `PerMonitorV2`, `asInvoker` | все три значения на месте (ПЛ-7) |
+| Манифест Windows | `mt.exe -nologo -inputresource:SiteRestorer-windows-x64.exe;#1 -out:m.xml` и поиск `longPathAware`, `PerMonitorV2`, `asInvoker` | все три значения на месте (ПЛ-7) |
 | Подсистема оконной сборки | `dumpbin /headers` → `subsystem` | `2 (Windows GUI)`; у консольной — `3` |
 | Статический CRT | `dumpbin /dependents` | нет `VCRUNTIME140`, `MSVCP140`, `api-ms-win-crt-*` (ПЛ-7) |
 | Пол glibc | `objdump -T SiteRestorer-linux-x64-gui \| grep -oE 'GLIBC_2\.[0-9]+' \| sort -Vu \| tail -1` | не выше `2.28` (ПЛ-6); до Д-58 показывает 2.39 |

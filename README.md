@@ -28,11 +28,14 @@ Python-версия (`legacy/python`) и порт на Go (`ports/go`) оста�
 
 | Файл | Платформа | Размер |
 |---|---|---|
-| `SiteRestorer-windows-x64.exe` | Windows 10/11 x64 — **основной** | 6,2 МБ |
-| `SiteRestorer-windows-x64-cli.exe` | Windows x64, только командная строка | 1,8 МБ |
+| `SiteRestorer-windows-x64.exe` | Windows 10/11 x64 — **основной** | 8,8 МБ |
+| `SiteRestorer-windows-x64-cli.exe` | Windows x64, только командная строка | 3,9 МБ |
 | `SiteRestorer-linux-x64-gui` | Linux x64, нативное окно (X11/GL) | 7,5 МБ |
 | `SiteRestorer-linux-x64-cli` | Linux x64, статический бинарник (musl) | 2,1 МБ |
 | `SiteRestorer-linux-x64.tar.gz` | Linux x64: оба бинарника + `.desktop`, иконка, `install.sh` | 4,5 МБ |
+
+Размеры Windows — замер сборки 3.6.2 (14.11.2026); размеры Linux — по последней
+сборке конвейера, в этом выпуске локально не пересобирались.
 
 Имена не содержат версию — ссылки `releases/latest/download/<имя>` постоянны.
 Версию печатает `--version` и первая строка журнала.
@@ -220,7 +223,7 @@ site-restorer/
 ## Тесты
 
 ```bash
-cargo nextest run --release --no-default-features   # 50 тестов, без сети
+cargo nextest run --release --no-default-features   # 113 тестов CLI, без сети
 cargo fmt --all --check
 cargo clippy --all-targets --release --no-default-features -- -D warnings
 cargo audit && cargo deny check && cargo machete && typos
