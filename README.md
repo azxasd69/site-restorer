@@ -30,11 +30,11 @@ Python-версия (`legacy/python`) и порт на Go (`ports/go`) оста�
 |---|---|---|
 | `SiteRestorer-windows-x64.exe` | Windows 10/11 x64 — **основной** | 8,8 МБ |
 | `SiteRestorer-windows-x64-cli.exe` | Windows x64, только командная строка | 3,9 МБ |
-| `SiteRestorer-linux-x64-gui` | Linux x64, нативное окно (X11/GL) | 27,3 МБ |
-| `SiteRestorer-linux-x64-cli` | Linux x64, статический бинарник (musl) | 12,3 МБ |
+| `SiteRestorer-linux-x64-gui` | Linux x64, нативное окно (X11/GL) | 27,4 МБ |
+| `SiteRestorer-linux-x64-cli` | Linux x64, статический бинарник (musl) | 12,4 МБ |
 | `SiteRestorer-linux-x64.tar.gz` | Linux x64: оба бинарника + `.desktop`, иконка, `install.sh` | 12,4 МБ |
 
-Размеры — по ассетам релиза 3.6.2 (14.11.2026): Windows собран локально, Linux — конвейером;
+Размеры — по ассетам релиза 3.6.3 (14.11.2026): Windows собран локально, Linux — конвейером;
 размеры Linux больше прежних, потому что в поставку идут отладочные строки (см. `docs/RELEASE.md`).
 
 Имена не содержат версию — ссылки `releases/latest/download/<имя>` постоянны.
