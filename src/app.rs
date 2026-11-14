@@ -37,10 +37,26 @@ enum Stage {
     Error,
 }
 
+/// Состояние подсказки под полем адреса.
+///
+/// Раньше цвет выводился из первого символа строки (`→` / `⚠`), но `→` нет в
+/// шрифтах egui — он рисовался пустым квадратом. Теперь состояние хранится
+/// отдельно от текста.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NoteState {
+    Hint,
+    Ok,
+    Warn,
+}
+
 pub struct App {
     site: String,
     out: String,
     note: String,
+    note_state: NoteState,
+    /// Сколько строк журнала показано в прошлом кадре: по разнице понятно,
+    /// что список надо прокрутить к свежей записи.
+    log_seen: usize,
     log: Vec<(String, Level)>,
     lang: Lang,
     show_help: bool,
@@ -142,6 +158,8 @@ impl App {
             site: std::env::var("SR_AUTOSTART").unwrap_or_else(|_| settings.site.clone()),
             out: std::env::var("SR_OUT").unwrap_or_else(|_| settings.out.clone()),
             note: lang.t().hint.to_string(),
+            note_state: NoteState::Hint,
+            log_seen: 0,
             log: vec![(format!("Site Restorer {}", crate::APP_VERSION), Level::Info)],
             lang,
             show_help: false,
@@ -185,6 +203,7 @@ impl App {
             Stage::Build => t.stage_build,
             Stage::Verify => t.stage_verify,
             Stage::Report => t.stage_report,
+            Stage::Done if self.errors > 0 => t.stage_done_warn,
             Stage::Done => t.stage_done,
             Stage::Stopped => t.stopped,
             Stage::Error => t.error,
@@ -194,6 +213,7 @@ impl App {
     fn refresh_note(&mut self) {
         if self.site.trim().is_empty() {
             self.note = self.lang.t().hint.to_string();
+            self.note_state = NoteState::Hint;
         } else {
             self.analyse();
         }
@@ -227,16 +247,21 @@ impl App {
         let raw = self.site.trim();
         if raw.is_empty() {
             self.note = t.hint.to_string();
+            self.note_state = NoteState::Hint;
             return;
         }
         match sanitize_site(raw) {
             Some((host, note)) => {
                 self.note = self.note_line(&host, note);
+                self.note_state = NoteState::Ok;
                 if rewrite && raw != host {
                     self.site = host;
                 }
             }
-            None => self.note = t.bad_address.to_string(),
+            None => {
+                self.note = t.bad_address.to_string();
+                self.note_state = NoteState::Warn;
+            }
         }
     }
 
@@ -247,7 +272,9 @@ impl App {
             Note::Idn => "IDN -> punycode",
         };
         let entry = paths::url_to_local_path(&format!("https://{host}/"));
-        format!("→ {host}  ({why})   {entry}")
+        // Символ «→» отсутствует в шрифтах egui и рисовался пустым квадратом;
+        // состояние строки теперь хранится в `note_state`, а не в префиксе.
+        format!("{host} · {why} · {entry}")
     }
 
     /// Вставка из буфера: чистим полезную нагрузку, разбираем сразу и
@@ -273,12 +300,16 @@ impl App {
                 }
                 let noisy = raw.trim() != trimmed || trimmed != host;
                 self.note = self.note_line(&host, note);
+                self.note_state = NoteState::Ok;
                 if noisy {
                     self.push_log(format!("адрес: {} → {host}", shorten(raw)), Level::Info);
                 }
                 self.site = host;
             }
-            None => self.note = t.bad_address.to_string(),
+            None => {
+                self.note = t.bad_address.to_string();
+                self.note_state = NoteState::Warn;
+            }
         }
         self.site_dirty_at = None;
     }
@@ -315,7 +346,10 @@ impl App {
         self.overall = 0.0;
         self.stage = Stage::Inventory;
         self.status = t.preparing.to_string();
-        self.push_log(format!("{} → {}", host, out.display()), Level::Ok);
+        self.push_log(
+            format!("{} → {}", host, crate::core::show_path(&out)),
+            Level::Ok,
+        );
 
         // сообщения ядра должны идти на том же языке, что и окно
         crate::tr::set_english(self.lang == Lang::En);
@@ -330,7 +364,7 @@ impl App {
                     o.stats.broken,
                     o.oldest,
                     o.newest,
-                    o.report.display()
+                    crate::core::show_path(&o.report)
                 )
             });
             let _ = tx.send(Msg::Done(result));
@@ -509,7 +543,9 @@ const TILE: egui::Color32 = egui::Color32::from_rgb(247, 249, 252);
 const BORDER: egui::Color32 = egui::Color32::from_rgb(226, 232, 240);
 const TRACK: egui::Color32 = egui::Color32::from_rgb(226, 232, 240);
 const TEXT: egui::Color32 = egui::Color32::from_rgb(15, 23, 42);
-const MUTED: egui::Color32 = egui::Color32::from_rgb(100, 116, 139);
+// Второстепенный текст: было 100/116/139 — мелкие подписи 11,5 px давали
+// около 4,1:1 на серой подложке, ниже нормы 4,5:1. Проверено замером снимка.
+const MUTED: egui::Color32 = egui::Color32::from_rgb(85, 98, 117);
 const ACCENT: egui::Color32 = egui::Color32::from_rgb(37, 99, 235);
 const ACCENT_SOFT: egui::Color32 = egui::Color32::from_rgb(219, 234, 254);
 const OK: egui::Color32 = egui::Color32::from_rgb(22, 163, 74);
@@ -795,12 +831,10 @@ impl eframe::App for App {
                     });
 
                 ui.add_space(4.0);
-                let note_color = if self.note.starts_with('→') {
-                    OK
-                } else if self.note.starts_with('⚠') {
-                    WARN
-                } else {
-                    MUTED
+                let note_color = match self.note_state {
+                    NoteState::Ok => OK,
+                    NoteState::Warn => WARN,
+                    NoteState::Hint => MUTED,
                 };
                 ui.label(egui::RichText::new(&self.note).size(11.5).color(note_color));
                 ui.add_space(10.0);
@@ -892,6 +926,9 @@ impl eframe::App for App {
                     .show(ui, |ui| {
                         ui.set_max_width((box_w - 20.0).max(80.0));
                         ui.set_min_height(58.0);
+                        // Прокрутка к последней записи: раньше при 248 строках
+                        // окно оставалось на первых, и итог прогона не был виден.
+                        let follow = self.log.len() != self.log_seen;
                         egui::ScrollArea::vertical()
                             .stick_to_bottom(true)
                             .auto_shrink([false, false])
@@ -910,11 +947,17 @@ impl eframe::App for App {
                                                 .size(11.5)
                                                 .color(color),
                                         )
-                                        .truncate(),
+                                        // Перенос вместо многоточия: в строке итога
+                                        // стоит путь к отчёту, и он обрезался.
+                                        .wrap(),
                                     );
                                     line.on_hover_text(text);
                                 }
+                                if follow {
+                                    ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
+                                }
                             });
+                        self.log_seen = self.log.len();
                     });
             });
         // ---------- прогресс ----------
@@ -937,7 +980,10 @@ impl eframe::App for App {
                             .show(ui, |ui| {
                                 ui.style_mut().spacing.item_spacing.y = 6.0;
                                 ui.horizontal(|ui| {
+                                    // «Готово» с ошибками — янтарная точка: зелёная рядом
+                                    // с красным счётчиком читалась как «всё в порядке».
                                     let tone = match self.stage {
+                                        Stage::Done if self.errors > 0 => WARN,
                                         Stage::Done => OK,
                                         Stage::Error => ERR,
                                         Stage::Stopped => WARN,

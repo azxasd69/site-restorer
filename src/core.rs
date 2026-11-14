@@ -32,6 +32,9 @@ const ARCHIVE_PRIMARY: &str = "https://web.archive.org";
 const ARCHIVE_FALLBACK: &str = "http://web.archive.org";
 /// Сколько попыток даётся на обращение к индексу архива.
 const ARCHIVE_TRIES: u32 = 5;
+/// Сколько неудач на запасной схеме архива терпим, прежде чем вернуться на https
+/// (уточнено 14.11.2026: две неудачи подряд не должны закрывать прогон).
+const ARCHIVE_ALT_TRIES: usize = 3;
 /// Предел паузы по `Retry-After`: сервер может прислать `inf` или огромное число,
 /// и неограниченная пауза вешала прогон (а `inf` ронял его паникой).
 const MAX_RETRY_WAIT: f64 = 300.0;
@@ -278,6 +281,8 @@ pub struct Outcome {
     /// Самый старый и самый новый снимок в копии: `ГГГГ-ММ-ДД` (ФТ-129).
     pub oldest: String,
     pub newest: String,
+    /// Сколько каталогов копии и зеркала не удалось прочитать (Д-107).
+    pub unreadable: usize,
     /// Схема доступа к архиву, с которой прогон закончил: `https` или `http` (Д-97).
     pub archive: String,
     /// Сколько запросов к архиву сделано за прогон (Д-97).
@@ -434,6 +439,8 @@ struct Counters {
     /// Сколько абсолютных адресов своего домена оставлено как есть: цели нет
     /// в копии либо это не файл (ФТ-147).
     left: AtomicUsize,
+    /// Сколько каталогов не удалось прочитать при обходе дерева (Д-107).
+    unreadable: AtomicUsize,
     bytes: AtomicU64,
     win_bytes: AtomicU64,
     win_files: AtomicUsize,
@@ -481,6 +488,10 @@ struct Shared {
     archive_alt: String,
     archive_switched: AtomicBool,
     archive_switch_logged: AtomicBool,
+    /// Неудачи на запасной схеме подряд: после `ARCHIVE_ALT_TRIES` возвращаемся на https.
+    alt_failures: AtomicUsize,
+    /// Возврат на https уже был (второй раз не возвращаемся, чтобы не ходить по кругу).
+    archive_back: AtomicBool,
     /// Сколько запросов к архиву сделано за прогон (Д-97): видно в RESULT и отчёте.
     archive_requests: AtomicUsize,
     mirror: PathBuf,
@@ -557,6 +568,35 @@ impl Shared {
         }
     }
 
+    /// Ошибка архива: менять ли схему (уточнено 14.11.2026 на живом прогоне).
+    ///
+    /// Переключение на запасную схему оправдано только тогда, когда адрес
+    /// недоступен целиком: соединение не устанавливается, DNS не отвечает, TLS не
+    /// согласуется. Медленный ответ живого сервера — не повод: https работал, просто
+    /// долго, а порт 80 архива часто закрыт, и после «сдачи» схема до конца прогона
+    /// оставалась нерабочей (прогон падал на инвентаризации).
+    ///
+    /// Если запасная схема тоже не отвечает несколько раз, программа возвращается
+    /// на https: две неудачи подряд не должны закрывать прогон.
+    fn archive_failed(&self, reason: &str, err: &str) {
+        if !scheme_switch_worthwhile(err) {
+            return;
+        }
+        if self.archive_switched.load(Ordering::Relaxed) {
+            let failures = self.alt_failures.fetch_add(1, Ordering::Relaxed) + 1;
+            if failures >= ARCHIVE_ALT_TRIES && !self.archive_back.swap(true, Ordering::Relaxed) {
+                self.archive_switched.store(false, Ordering::Relaxed);
+                let to = self.archive_base().to_string();
+                self.log(crate::tr::pick(
+                    format!("архив: {reason} и на запасной схеме — возвращаюсь на {to}"),
+                    format!("archive: {reason} on the fallback too — back to {to}"),
+                ));
+            }
+            return;
+        }
+        self.switch_archive(reason);
+    }
+
     /// Действующая схема доступа к архиву: `https` или `http` (Д-97).
     fn archive_scheme(&self) -> &'static str {
         if self.archive_switched.load(Ordering::Relaxed) {
@@ -611,10 +651,16 @@ impl Shared {
         } else {
             &self.agent
         };
+        // Файл копии принимается без сжатия (Д-108): архив иногда помечает тело
+        // `Content-Encoding: gzip`, хотя внутри не gzip, и файл терялся с ошибкой
+        // «invalid gzip header». В зеркало должны попадать байты, которые отдал
+        // архив, а не результат распаковки. Индекс — наоборот: JSON жмётся полезно.
+        let encoding = if index { "gzip" } else { "identity" };
         let resp = agent
             .get(url)
             .header("User-Agent", UA)
             .header("Accept", "*/*")
+            .header("Accept-Encoding", encoding)
             .call()
             .map_err(|e| e.to_string())?;
         let head = Head {
@@ -805,16 +851,20 @@ impl Shared {
         }
         let from = self.mirror.join(canon);
         let to = self.mirror.join(&item.path);
-        fs::metadata(&from).ok().filter(|m| m.len() > 0)?;
+        fs::metadata(long_path(&from))
+            .ok()
+            .filter(|m| m.len() > 0)?;
         if let Some(parent) = to.parent() {
-            let _ = fs::create_dir_all(parent);
+            let _ = fs::create_dir_all(long_path(parent));
         }
         // Занятое имя мешает и ссылке, и переименованию: убираем старый файл.
-        let _ = fs::remove_file(&to);
-        if fs::hard_link(&from, &to).is_err() && fs::copy(&from, &to).is_err() {
+        let _ = fs::remove_file(long_path(&to));
+        if fs::hard_link(long_path(&from), long_path(&to)).is_err()
+            && fs::copy(long_path(&from), long_path(&to)).is_err()
+        {
             return None;
         }
-        let size = fs::metadata(&to).ok()?.len() as usize;
+        let size = fs::metadata(long_path(&to)).ok()?.len() as usize;
         if let Ok(mut map) = self.shared_paths.lock() {
             map.insert(item.path.clone(), canon.to_string());
         }
@@ -835,7 +885,7 @@ impl Shared {
             return;
         }
         let full = self.mirror.join(&item.path);
-        if let Ok(meta) = fs::metadata(&full)
+        if let Ok(meta) = fs::metadata(long_path(&full))
             && meta.len() > 0
         {
             let stale = self
@@ -1003,8 +1053,8 @@ impl Shared {
                         format!("сеть: {err}"),
                         format!("network: {err}"),
                     ));
-                    // Закрытый порт схемы: пробуем другую схему (ОШ-2).
-                    self.switch_archive("сеть недоступна");
+                    // Другая схема — только при отказе соединения, не при медленном ответе.
+                    self.archive_failed("сеть недоступна", &err.to_string());
                     self.sleep(0.6 * (attempt + 1) as f64);
                     continue;
                 }
@@ -1067,16 +1117,16 @@ impl Shared {
     /// Записать уже открытое тело в файл (тот же `save_to`, но без второго запроса).
     fn save_body(&self, head: Head, body: ureq::Body, dest: &Path) -> Result<Saved, String> {
         if let Some(parent) = dest.parent() {
-            let _ = fs::create_dir_all(parent);
+            let _ = fs::create_dir_all(long_path(parent));
         }
         let tmp = tmp_path(dest);
-        let mut file = fs::File::create(&tmp).map_err(|e| e.to_string())?;
+        let mut file = fs::File::create(long_path(&tmp)).map_err(|e| explain_io_error(&e))?;
         let mut reader = body.into_reader();
         let mut chunk = [0u8; 64 * 1024];
         let mut len: u64 = 0;
         let mut head_bytes: Vec<u8> = Vec::new();
         let cleanup = |tmp: &Path| {
-            let _ = fs::remove_file(tmp);
+            let _ = fs::remove_file(long_path(tmp));
         };
         loop {
             if self.cancel.load(Ordering::Relaxed) {
@@ -1123,22 +1173,28 @@ impl Shared {
         let small_page = html && (saved.len < stub.max(20) as u64 || !looks_like_markup(head));
         let usable = saved.len > 0 && !is_error_page(head) && !small_page;
         if !usable {
-            let _ = fs::remove_file(&saved.tmp);
+            let _ = fs::remove_file(long_path(&saved.tmp));
             return None;
         }
         let full = self.mirror.join(&item.path);
-        if fs::rename(&saved.tmp, &full).is_err() {
-            // Windows: rename НЕ перезаписывает существующий файл, поэтому сначала
-            // убираем старый (docs/PLATFORMS.md, «атомарная запись»). Копирование
-            // оставлено последней страховкой для чужих файловых систем.
-            let _ = fs::remove_file(&full);
-            if fs::rename(&saved.tmp, &full).is_err() {
-                let _ = fs::copy(&saved.tmp, &full);
-                let _ = fs::remove_file(&saved.tmp);
+        if fs::rename(long_path(&saved.tmp), long_path(&full)).is_err() {
+            // Windows заменяет файл при переименовании (`MoveFileEx` с
+            // `MOVEFILE_REPLACE_EXISTING`), и отказ означает не «файл уже есть», а
+            // занятый файл: его держит антивирус, индексатор или сама программа
+            // (Д-103 — прежний комментарий объяснял это неверно). Поэтому пробуем
+            // ещё раз после удаления, а копирование оставлено страховкой для чужих
+            // файловых систем.
+            let _ = fs::remove_file(long_path(&full));
+            if fs::rename(long_path(&saved.tmp), long_path(&full)).is_err() {
+                let _ = fs::copy(long_path(&saved.tmp), long_path(&full));
+                let _ = fs::remove_file(long_path(&saved.tmp));
             }
         }
         // Файл мог не пережить переименование: успех считаем только по факту.
-        let size = fs::metadata(&full).ok().filter(|m| m.len() > 0)?.len() as usize;
+        let size = fs::metadata(long_path(&full))
+            .ok()
+            .filter(|m| m.len() > 0)?
+            .len() as usize;
         if html && crate::encoding::looks_binary(head) {
             self.note_foreign();
             if console_verbose() && self.foreign_logged.fetch_add(1, Ordering::Relaxed) < 3 {
@@ -1323,6 +1379,8 @@ pub struct Engine {
     enc_logged: std::sync::atomic::AtomicUsize,
     /// Список файлов зеркала: дерево обходится один раз за прогон (было восемь обходов).
     mirror_cache: Mutex<Option<Arc<Vec<PathBuf>>>>,
+    /// Деревья, по которым непрочитанные каталоги уже учтены (Д-107).
+    unreadable_seen: Mutex<HashSet<PathBuf>>,
     /// Список файлов готовой копии — так же кешируется.
     site_cache: Mutex<Option<Arc<Vec<PathBuf>>>>,
     /// Число страниц (html, не бинарных), посчитанное при сборке.
@@ -1432,6 +1490,8 @@ impl Engine {
                 archive_alt: ARCHIVE_FALLBACK.to_string(),
                 archive_switched: AtomicBool::new(false),
                 archive_switch_logged: AtomicBool::new(false),
+                alt_failures: AtomicUsize::new(0),
+                archive_back: AtomicBool::new(false),
                 archive_requests: AtomicUsize::new(0),
                 mirror: out.join("mirror"),
                 gate: Gate::new(MIN_THREADS),
@@ -1465,6 +1525,7 @@ impl Engine {
             left_total: 0,
             enc_logged: std::sync::atomic::AtomicUsize::new(0),
             mirror_cache: Mutex::new(None),
+            unreadable_seen: Mutex::new(HashSet::new()),
             site_cache: Mutex::new(None),
             pages: AtomicUsize::new(0),
             foreign_built: AtomicUsize::new(0),
@@ -1476,13 +1537,35 @@ impl Engine {
         })
     }
 
+    /// Учесть непрочитанные каталоги дерева ровно один раз за прогон (Д-107).
+    ///
+    /// Одно и то же дерево обходится несколько раз (кэш списка зеркала, кэш копии,
+    /// пересчёт после сборки). Без этой проверки число в отчёте складывалось бы из
+    /// повторных обходов и завышалось.
+    fn note_unreadable(&self, root: &Path, count: usize) {
+        if count == 0 {
+            return;
+        }
+        let Ok(mut seen) = self.unreadable_seen.lock() else {
+            return;
+        };
+        if seen.insert(root.to_path_buf()) {
+            self.shared
+                .counters
+                .unreadable
+                .fetch_add(count, Ordering::Relaxed);
+        }
+    }
+
     /// Список файлов зеркала: один обход на прогон (раньше дерево обходилось восемь раз).
     fn mirror_list(&self) -> Arc<Vec<PathBuf>> {
         let mut cache = self.mirror_cache.lock().unwrap();
         if let Some(list) = cache.as_ref() {
             return Arc::clone(list);
         }
-        let list = Arc::new(walk_files(&self.mirror));
+        let (list, unreadable) = walk_files(&self.mirror);
+        self.note_unreadable(&self.mirror.clone(), unreadable);
+        let list = Arc::new(list);
         self.mirror_files.store(list.len(), Ordering::Relaxed);
         *cache = Some(Arc::clone(&list));
         list
@@ -1494,7 +1577,9 @@ impl Engine {
         if let Some(list) = cache.as_ref() {
             return Arc::clone(list);
         }
-        let list = Arc::new(walk_files(&self.site_dir));
+        let (list, unreadable) = walk_files(&self.site_dir);
+        self.note_unreadable(&self.site_dir.clone(), unreadable);
+        let list = Arc::new(list);
         self.site_files.store(list.len(), Ordering::Relaxed);
         *cache = Some(Arc::clone(&list));
         list
@@ -1528,7 +1613,7 @@ impl Engine {
             return;
         }
         // Захват один: между проверкой и вставкой другой поток уже мог создать каталог.
-        if fs::create_dir_all(dir).is_ok() {
+        if fs::create_dir_all(long_path(dir)).is_ok() {
             cache.lock().unwrap().insert(dir.to_path_buf());
         }
     }
@@ -1537,9 +1622,10 @@ impl Engine {
     /// показывал несуществующие файлы как собранные.
     fn log_write_error(&self, rel: &str, err: &std::io::Error) {
         if self.write_errors.fetch_add(1, Ordering::Relaxed) < 10 {
+            let reason = explain_io_error(err);
             self.shared.log(crate::tr::pick(
-                format!("не удалось записать {rel}: {err}"),
-                format!("cannot write {rel}: {err}"),
+                format!("не удалось записать {rel}: {reason}"),
+                format!("cannot write {rel}: {reason}"),
             ));
         }
     }
@@ -1587,8 +1673,8 @@ impl Engine {
             out.push_str(&ct.replace(['\t', '\n', '\r'], " "));
             out.push('\n');
         }
-        let _ = fs::create_dir_all(&self.data_dir);
-        let _ = fs::write(self.content_types_path(), out);
+        let _ = fs::create_dir_all(long_path(&self.data_dir));
+        let _ = fs::write(long_path(&self.content_types_path()), out);
     }
 
     /// Ограничение скорости: запросов в секунду (0 — без ограничения).
@@ -1769,11 +1855,11 @@ impl Engine {
             out.push_str(&all[key]);
             out.push('\n');
         }
-        let _ = fs::create_dir_all(&self.data_dir);
+        let _ = fs::create_dir_all(long_path(&self.data_dir));
         let path = self.snapshots_path();
         let tmp = path.with_extension("tsv.part");
-        if fs::write(&tmp, out).is_ok() {
-            let _ = fs::rename(&tmp, &path);
+        if fs::write(long_path(&tmp), out).is_ok() {
+            let _ = fs::rename(long_path(&tmp), long_path(&path));
         }
     }
 
@@ -1814,8 +1900,8 @@ impl Engine {
             out.push_str(&stamp.to_string());
             out.push('\n');
         }
-        let _ = fs::create_dir_all(&self.data_dir);
-        let _ = fs::write(self.no_snapshot_path(), out);
+        let _ = fs::create_dir_all(long_path(&self.data_dir));
+        let _ = fs::write(long_path(&self.no_snapshot_path()), out);
     }
 
     /// Файлы, чей снимок старше `--refresh-days` или которые нужно проверить заново (ФТ-130).
@@ -1902,7 +1988,8 @@ impl Engine {
     fn cleanup_temp(&self) -> usize {
         let mut removed = 0usize;
         if self.mirror.exists() {
-            let mirror_files = walk_files(&self.mirror);
+            let (mirror_files, unreadable) = walk_files(&self.mirror);
+            self.note_unreadable(&self.mirror.clone(), unreadable);
             for path in &mirror_files {
                 if is_temp_file(path) && fs::remove_file(long_path(path)).is_ok() {
                     removed += 1;
@@ -1913,7 +2000,9 @@ impl Engine {
             self.mirror_files.store(count, Ordering::Relaxed);
         }
         if self.data_dir.exists() {
-            for path in walk_files(&self.data_dir) {
+            let (data_files, unreadable) = walk_files(&self.data_dir);
+            self.note_unreadable(&self.data_dir.clone(), unreadable);
+            for path in data_files {
                 if is_temp_file(&path) && fs::remove_file(long_path(&path)).is_ok() {
                     removed += 1;
                 }
@@ -1974,6 +2063,9 @@ impl Engine {
             true,
         );
         let mut pages = 1usize;
+        // Известна ли оценка объёма: без неё пустой ответ нельзя считать
+        // доказательством «страниц нет вовсе».
+        let mut estimate_ok = false;
         match self
             .shared
             .fetch(&self.cdx_query("showNumPages=true&output=json"))
@@ -1981,6 +2073,7 @@ impl Engine {
             Ok(fetched) if fetched.status == 200 => {
                 if let Some(n) = parse_pages(&String::from_utf8_lossy(&fetched.body)) {
                     pages = n;
+                    estimate_ok = true;
                 }
             }
             Ok(fetched) => self
@@ -2086,7 +2179,8 @@ impl Engine {
                         format!("CDX: список — ошибка {err}"),
                         format!("CDX: list failed: {err}"),
                     ));
-                    self.shared.switch_archive("список недоступен");
+                    self.shared
+                        .archive_failed("список недоступен", &err.to_string());
                     self.inv_failed = true;
                     let wait = 5.0 * (1u32 << attempt.min(4)) as f64;
                     self.shared.log(crate::tr::pick(
@@ -2111,7 +2205,20 @@ impl Engine {
             // поэтому отчёт показывал «адресов 1638, индекс не получен».
             self.inv_failed = false;
         }
-        if best.is_empty() {
+        // Пустой ответ при известной оценке (одна страница) и без фильтров по
+        // времени означает «в архиве нет страниц»: постраничный обход ничего не
+        // найдёт, а стоит минуты ожидания на 4 % (визуальный тест 14.11.2026).
+        let empty_for_sure = best.is_empty()
+            && estimate_ok
+            && pages <= 1
+            && self.since.is_none()
+            && self.window_to().is_none();
+        if empty_for_sure {
+            self.shared.log(crate::tr::t(
+                "CDX: в архиве нет страниц для этого адреса",
+                "CDX: the archive has no pages for this address",
+            ));
+        } else if best.is_empty() {
             self.shared.log(crate::tr::t(
                 "CDX: быстрый запрос пуст — постраничный обход",
                 "CDX: quick query empty — switching to paging",
@@ -2133,7 +2240,7 @@ impl Engine {
         // Оценка страниц бывает недоступна (503/504 на showNumPages): тогда pages = 1,
         // но обход всё равно нужен — иначе обрезанный список останется обрезанным.
         let estimate_known = pages > 1;
-        if best.is_empty() || self.index_truncated {
+        if (best.is_empty() && !empty_for_sure) || self.index_truncated {
             let max_pages = if self.index_max_pages == 0 {
                 if estimate_known { pages } else { usize::MAX }
             } else if estimate_known {
@@ -2302,7 +2409,8 @@ impl Engine {
                     }
                     Err(err) => {
                         attempts += 1;
-                        self.shared.switch_archive("страница недоступна");
+                        self.shared
+                            .archive_failed("страница недоступна", &err.to_string());
                         if attempts >= 3 {
                             self.shared.log(crate::tr::pick(
                                 format!("CDX: страница {} — ошибка {err}", page + 1),
@@ -2427,6 +2535,10 @@ impl Engine {
         self.index_total = items.len();
         if self.limit > 0 {
             self.limit_skipped = items.len().saturating_sub(self.limit);
+            // Д-103: по `urlkey` первыми идут мусорные адреса (`/%22`, `/%22Cern`),
+            // поэтому проба на 20 адресах показывала не сайт, а его обломки. Порядок:
+            // главная, затем корневые разделы по числу страниц, затем остальное.
+            items = limit_order(items);
             items.truncate(self.limit);
         }
         {
@@ -2435,7 +2547,7 @@ impl Engine {
                 types.slot(item.kind)[1] += 1;
             }
         }
-        fs::create_dir_all(&self.data_dir).map_err(|e| e.to_string())?;
+        fs::create_dir_all(long_path(&self.data_dir)).map_err(|e| explain_io_error(&e))?;
         self.write_inventory(&items)?;
         self.items = items;
         if self.items.is_empty() {
@@ -2518,7 +2630,7 @@ impl Engine {
     }
 
     fn download(&mut self) -> Result<(), String> {
-        fs::create_dir_all(&self.mirror).map_err(|e| e.to_string())?;
+        fs::create_dir_all(long_path(&self.mirror)).map_err(|e| explain_io_error(&e))?;
         // Что перекачать заново: снимок старше срока свежести (ФТ-130).
         let refresh = self.stale_paths();
         if !refresh.is_empty() {
@@ -2542,7 +2654,7 @@ impl Engine {
         let mut already = 0usize;
         for item in &self.items {
             let full = self.mirror.join(&item.path);
-            match fs::metadata(&full) {
+            match fs::metadata(long_path(&full)) {
                 Ok(meta) if meta.len() > 0 => {
                     let stale = self
                         .shared
@@ -2906,7 +3018,7 @@ impl Engine {
             // архивных сайтов): чистим своим обходом, добавляя префикс \\?\.
             remove_tree(&self.site_dir);
         }
-        fs::create_dir_all(&self.site_dir).map_err(|e| e.to_string())?;
+        fs::create_dir_all(long_path(&self.site_dir)).map_err(|e| explain_io_error(&e))?;
 
         // Один шаблон на атрибуты ссылок и наборы источников (ФТ-148): раньше
         // документ проходился дважды. Семантика сохранена: наборы источников
@@ -2935,11 +3047,13 @@ impl Engine {
                     if self.shared.cancel.load(Ordering::Relaxed) {
                         return None;
                     }
-                    let rel = src
-                        .strip_prefix(&self.mirror)
-                        .unwrap_or(src)
-                        .to_string_lossy()
-                        .replace('\\', "/");
+                    // Файл вне зеркала в этом списке — ошибка сборки, а не повод
+                    // собрать его по абсолютному пути: `site_dir.join(abs)` подменил
+                    // бы базу и перезаписал файл зеркала (найдено на код-ревью).
+                    let Ok(rel) = src.strip_prefix(&self.mirror) else {
+                        return None;
+                    };
+                    let rel = rel.to_string_lossy().replace('\\', "/");
                     let dst = self
                         .site_dir
                         .join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
@@ -2953,7 +3067,7 @@ impl Engine {
                         .and_then(|map| map.get(&rel).cloned())
                         .or_else(|| journal.get(&rel).map(|prev| prev.snapshot.clone()))
                         .unwrap_or_default();
-                    let meta = fs::metadata(src).ok()?;
+                    let meta = fs::metadata(long_path(src)).ok()?;
                     let size = meta.len();
                     let journal_digest = digests.get(&rel).cloned().unwrap_or_default();
                     let mtime = meta
@@ -3021,7 +3135,7 @@ impl Engine {
                         if crate::encoding::looks_binary(&data) {
                             // под расширением .html в архиве бывает картинка или PDF:
                             // копируем байты как есть, иначе файл будет испорчен
-                            let copied = match fs::copy(src, &dst) {
+                            let copied = match fs::copy(long_path(src), long_path(&dst)) {
                                 Ok(_) => true,
                                 Err(e) => {
                                     self.log_write_error(&rel, &e);
@@ -3161,7 +3275,7 @@ impl Engine {
                         }
                         // Страницу считаем записанной: иначе отчёт покажет файлы,
                         // которых на диске нет, а журнал запомнит их собранными.
-                        let written = match fs::write(&dst, text.as_bytes()) {
+                        let written = match fs::write(long_path(&dst), text.as_bytes()) {
                             Ok(()) => true,
                             Err(e) => {
                                 self.log_write_error(&rel, &e);
@@ -3190,7 +3304,7 @@ impl Engine {
                         ));
                     }
 
-                    if let Err(e) = fs::copy(src, &dst) {
+                    if let Err(e) = fs::copy(long_path(src), long_path(&dst)) {
                         self.log_write_error(&rel, &e);
                         self.bump_build(&done, total);
                         return None;
@@ -3214,7 +3328,9 @@ impl Engine {
         });
 
         // Один обход готовой копии на все нужды: уборка сирот, проверка и отчёт.
-        let site_files = Arc::new(walk_files(&self.site_dir));
+        let (site_files, unreadable) = walk_files(&self.site_dir);
+        self.note_unreadable(&self.site_dir.clone(), unreadable);
+        let site_files = Arc::new(site_files);
         self.site_files.store(site_files.len(), Ordering::Relaxed);
         *self.site_cache.lock().unwrap() = Some(Arc::clone(&site_files));
         let mut journal_new = HashMap::with_capacity(results.len());
@@ -3236,8 +3352,9 @@ impl Engine {
             self.drop_orphans(&files, &site_files);
         }
         self.save_journal();
-        self.site_files
-            .store(walk_files(&self.site_dir).len(), Ordering::Relaxed);
+        let (final_files, unreadable) = walk_files(&self.site_dir);
+        self.note_unreadable(&self.site_dir.clone(), unreadable);
+        self.site_files.store(final_files.len(), Ordering::Relaxed);
 
         let summary = self.enc_summary();
         if !summary.is_empty() {
@@ -3430,11 +3547,11 @@ impl Engine {
         // Каталог данных может отсутствовать (сборка без загрузки) — создаём сами,
         // иначе журнал молча не сохранялся и повторный прогон собирал всё заново.
         if let Some(parent) = path.parent() {
-            let _ = fs::create_dir_all(parent);
+            let _ = fs::create_dir_all(long_path(parent));
         }
         let tmp = path.with_extension("jsonl.part");
-        if fs::write(&tmp, out).is_ok() {
-            let _ = fs::rename(&tmp, &path);
+        if fs::write(long_path(&tmp), out).is_ok() {
+            let _ = fs::rename(long_path(&tmp), long_path(&path));
         }
     }
 
@@ -3625,7 +3742,7 @@ impl Engine {
         let site_list = self.site_list();
         let bytes: u64 = site_list
             .iter()
-            .filter_map(|f| fs::metadata(f).ok())
+            .filter_map(|f| fs::metadata(long_path(f)).ok())
             .map(|m| m.len())
             .sum();
         // Адресов в инвентаре может быть больше, чем файлов: разные адреса
@@ -3734,6 +3851,19 @@ impl Engine {
             .replace(
                 "{{t_archive}}",
                 &tr2("Схема доступа к архиву", "Archive access scheme"),
+            )
+            .replace(
+                "{{t_unreadable}}",
+                &tr2("Каталогов не прочитано", "Directories not read"),
+            )
+            .replace(
+                "{{unreadable}}",
+                &self
+                    .shared
+                    .counters
+                    .unreadable
+                    .load(Ordering::Relaxed)
+                    .to_string(),
             )
             .replace(
                 "{{archive}}",
@@ -3872,7 +4002,7 @@ impl Engine {
             .replace("{{fresh_warn}}", &fresh_warn)
             .replace("{{encodings}}", &self.report_encodings());
         let path = self.out.join("report.html");
-        fs::write(&path, doc).map_err(|e| e.to_string())?;
+        fs::write(long_path(&path), doc).map_err(|e| explain_io_error(&e))?;
         Ok(path)
     }
 
@@ -3892,7 +4022,7 @@ impl Engine {
     /// Вызывается дважды: после сбора списка и повторно после загрузки — вторым
     /// проходом заполняется `same_as` у файлов, полученных ссылкой (ФТ-146).
     fn write_inventory(&self, items: &[Item]) -> Result<(), String> {
-        fs::create_dir_all(&self.data_dir).map_err(|e| e.to_string())?;
+        fs::create_dir_all(long_path(&self.data_dir)).map_err(|e| explain_io_error(&e))?;
         // Заголовок инвентаря (ФТ-151): водяной знак и состояние индекса.
         // `read_inventory` такие строки пропускает: в них нет поля `url`.
         let mut inv = format!(
@@ -3934,20 +4064,45 @@ impl Engine {
         // (тот же приём, что для файлов копии: .part + переименование).
         let path = self.data_dir.join("inventory.jsonl");
         let tmp = self.data_dir.join("inventory.jsonl.part");
-        fs::write(&tmp, inv).map_err(|e| e.to_string())?;
-        if fs::rename(&tmp, &path).is_err() {
-            // Windows: rename не перезаписывает существующий файл.
-            let _ = fs::remove_file(&path);
-            if fs::rename(&tmp, &path).is_err() {
-                let _ = fs::copy(&tmp, &path);
-                let _ = fs::remove_file(&tmp);
+        fs::write(long_path(&tmp), inv).map_err(|e| explain_io_error(&e))?;
+        if fs::rename(long_path(&tmp), long_path(&path)).is_err() {
+            // Windows заменяет файл при переименовании; отказ означает занятый
+            // файл, поэтому повторяем после удаления (Д-103).
+            let _ = fs::remove_file(long_path(&path));
+            if fs::rename(long_path(&tmp), long_path(&path)).is_err() {
+                let _ = fs::copy(long_path(&tmp), long_path(&path));
+                let _ = fs::remove_file(long_path(&tmp));
             }
         }
         Ok(())
     }
 
     pub fn run(&mut self) -> Result<Outcome, String> {
-        fs::create_dir_all(&self.out).map_err(|e| e.to_string())?;
+        // Д-106: длина проверяется до обращения к сети, иначе пользователь узнает
+        // о ней системным текстом в середине работы. Считается полный путь файла:
+        // имя внутри копии добавляет до 160 символов.
+        let probe = self
+            .mirror
+            .join("index.html")
+            .to_string_lossy()
+            .into_owned();
+        let length = if cfg!(windows) {
+            probe.chars().count()
+        } else {
+            probe.len()
+        };
+        let budget = path_budget();
+        if length > budget {
+            return Err(crate::tr::pick(
+                format!(
+                    "путь вывода слишком длинный: {length} при пределе {budget}; сократите --out"
+                ),
+                format!(
+                    "output path is too long: {length} with a limit of {budget}; shorten --out"
+                ),
+            ));
+        }
+        fs::create_dir_all(long_path(&self.out)).map_err(|e| explain_io_error(&e))?;
         // Временные файлы прошлых прогонов: при прерывании они остаются (Д-16).
         let removed = self.cleanup_temp();
         if removed > 0 {
@@ -4062,6 +4217,7 @@ impl Engine {
             added_build: self.added_build,
             oldest: self.snapshot_range().0,
             newest: self.snapshot_range().1,
+            unreadable: self.shared.counters.unreadable.load(Ordering::Relaxed),
             archive: self.shared.archive_scheme().to_string(),
             archive_requests: self.shared.archive_requests(),
         })
@@ -4986,14 +5142,173 @@ const JOURNAL_FORMAT: u32 = 2;
 
 /// Каталог вывода в абсолютном виде: относительный путь нельзя склеивать
 /// с префиксом длинного пути, иначе файловые операции Windows его не находят.
+///
+/// Здесь же убираются `.` и `..`: префикс `\\?\` отключает их разбор на стороне
+/// системы (Д-105), поэтому `--out ..\site` иначе превратился бы в нерабочий путь.
 fn absolute_dir(path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        return path.to_path_buf();
+    let joined = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        match std::env::current_dir() {
+            Ok(cwd) => cwd.join(path),
+            Err(_) => path.to_path_buf(),
+        }
+    };
+    let mut parts: Vec<std::ffi::OsString> = Vec::new();
+    for part in joined.components() {
+        match part {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                // Выше корня не поднимаемся, и сам корень не снимаем: без него
+                // `C:\..\x` стал бы `C:x` — путём относительно текущего каталога
+                // диска, и копия уехала бы в чужое место (найдено на код-ревью).
+                let at_root = matches!(
+                    parts.last(),
+                    Some(last) if last.to_string_lossy().ends_with(':')
+                        || last.to_string_lossy() == "\\"
+                );
+                if parts.len() > 2 && !at_root {
+                    parts.pop();
+                }
+            }
+            other => parts.push(other.as_os_str().to_os_string()),
+        }
     }
-    match std::env::current_dir() {
-        Ok(cwd) => cwd.join(path),
-        Err(_) => path.to_path_buf(),
+    let mut out = PathBuf::new();
+    for part in parts {
+        out.push(part);
     }
+    let out = if out.as_os_str().is_empty() {
+        joined
+    } else {
+        out
+    };
+    canonical_dir(&out)
+}
+
+/// Полная форма каталога: раскрытые короткие имена 8.3 и уже добавленный префикс
+/// длинного пути (`canonicalize` на Windows возвращает `\\?\C:\...`).
+///
+/// Зачем: префикс `\\?\` отключает на стороне системы и разбор `.`/`..`, и
+/// подстановку коротких имён, поэтому `C:\Users\7636~1\Temp` с префиксом
+/// становится недоступным путём. Если каталога ещё нет, приводится ближайший
+/// существующий предок, а остаток имени дописывается как есть.
+fn canonical_dir(path: &Path) -> PathBuf {
+    if let Ok(full) = fs::canonicalize(path) {
+        return full;
+    }
+    let mut missing: Vec<std::ffi::OsString> = Vec::new();
+    let mut cur = path.to_path_buf();
+    loop {
+        let Some(parent) = cur.parent().map(Path::to_path_buf) else {
+            return path.to_path_buf();
+        };
+        if let Some(name) = cur.file_name() {
+            missing.push(name.to_os_string());
+        }
+        cur = parent;
+        if let Ok(base) = fs::canonicalize(&cur) {
+            let mut out = base;
+            for name in missing.iter().rev() {
+                out.push(name);
+            }
+            return out;
+        }
+        if cur.parent().is_none() {
+            return path.to_path_buf();
+        }
+    }
+}
+
+/// Порядок адресов для `--limit` (Д-103).
+///
+/// Сначала главная страница, затем корневые разделы по убыванию числа страниц,
+/// затем всё остальное в алфавитном порядке. Без этого проба брала первые адреса
+/// по `urlkey` — на старых доменах это мусор (`/%22`, `/%22Cern`, `/%22target=%22`).
+fn limit_order(mut items: Vec<Item>) -> Vec<Item> {
+    let mut weight: HashMap<String, usize> = HashMap::new();
+    for item in &items {
+        let segment = item.url.splitn(4, '/').nth(3).unwrap_or("");
+        let key = segment.split('/').next().unwrap_or("").to_string();
+        *weight.entry(key).or_insert(0) += 1;
+    }
+    items.sort_by(|a, b| {
+        let rank = |item: &Item| -> (u8, std::cmp::Reverse<usize>, String) {
+            let rest = item.url.splitn(4, '/').nth(3).unwrap_or("");
+            if rest.is_empty() || rest == "index.html" {
+                (0, std::cmp::Reverse(usize::MAX), String::new())
+            } else if !rest.contains('/') {
+                let key = rest.to_string();
+                (1, std::cmp::Reverse(*weight.get(&key).unwrap_or(&0)), key)
+            } else {
+                (2, std::cmp::Reverse(0), item.url.clone())
+            }
+        };
+        rank(a).cmp(&rank(b))
+    });
+    items
+}
+
+/// Стоит ли менять схему архива из-за этой ошибки (Д-97, уточнено 14.11.2026).
+///
+/// Таймаут чтения означает «сервер отвечает медленно», а не «адрес недоступен»,
+/// поэтому схему из-за него не меняем. Соединение, DNS, TLS — меняем.
+fn scheme_switch_worthwhile(err: &str) -> bool {
+    let low = err.to_lowercase();
+    // Любой таймаут — признак перегрузки или медленного канала, а не закрытого
+    // порта: 14.11.2026 на живом прогоне `timeout: connect` уводил программу на
+    // http, где порт 80 недоступен вовсе, и ошибок только прибавлялось.
+    if low.contains("timeout") || low.contains("timed out") {
+        return false;
+    }
+    // Обрыв посреди тела («connection closed while reading») сюда не входит: сервер
+    // принял запрос и начал отвечать, значит адрес живой — помогает повтор, а не
+    // смена схемы.
+    // Ключи намеренно узкие: «connection closed while reading» — обрыв посреди тела,
+    // адрес при этом живой, помогает повтор, а не смена схемы. Поэтому здесь
+    // «connection refused», а не «connect».
+    [
+        "connection refused",
+        "connect error",
+        "connect:",
+        "dns",
+        "tls",
+        "certificate",
+        "no route",
+        "unreachable",
+    ]
+    .iter()
+    .any(|key| low.contains(key))
+}
+
+/// Предел длины полного пути для текущей платформы (Д-106).
+///
+/// Windows: манифест объявляет `longPathAware`, поэтому предел — 32 767 знаков,
+/// берём с запасом 32 000. Linux: `PATH_MAX` = 4096 байт, оставляем 4000 на служебные
+/// имена внутри копии.
+fn path_budget() -> usize {
+    if cfg!(windows) { 32_000 } else { 4_000 }
+}
+
+/// Текст ошибки записи с понятной причиной (ФТ-45, Д-106).
+///
+/// Коды «имя или расширение слишком длинны» (Windows 206, Linux 36) раньше
+/// доходили до пользователя системной строкой без подсказки.
+fn explain_io_error(err: &std::io::Error) -> String {
+    // 206 — `ERROR_FILENAME_EXCED_RANGE` (Windows), 36 — `ENAMETOOLONG` в Linux.
+    // На macOS код 36 означает совсем другое, поэтому Linux проверяется явно.
+    let too_long = match err.raw_os_error() {
+        Some(206) => cfg!(windows),
+        Some(36) => cfg!(target_os = "linux"),
+        _ => false,
+    };
+    if too_long {
+        return crate::tr::pick(
+            format!("путь слишком длинный для этой системы ({err}); сократите папку вывода"),
+            format!("the path is too long for this system ({err}); shorten the output folder"),
+        );
+    }
+    err.to_string()
 }
 
 /// Первая строка журнала: `#journal <формат> <версия> <хост>`.
@@ -5014,6 +5329,18 @@ fn long_path(path: &Path) -> PathBuf {
     } else {
         path.to_path_buf()
     }
+}
+
+/// Путь для показа человеку: без служебного префикса длинных путей.
+///
+/// `long_path` добавляет `\\?\`, и без этой очистки префикс попадал бы в
+/// консоль, отчёт и журнал.
+pub fn show_path(path: &Path) -> String {
+    let text = path.display().to_string();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{rest}");
+    }
+    text.strip_prefix(r"\\?\").unwrap_or(&text).to_string()
 }
 
 /// Удаляет дерево каталогов, обходя его сам: `remove_dir_all` останавливается
@@ -5124,22 +5451,40 @@ fn parse_journal_line(line: &str) -> Option<(String, JournalEntry)> {
     ))
 }
 
-/// Обход дерева: список файлов. Тип записи берётся из самого каталога
-/// (`DirEntry::file_type`), без отдельного `stat` на каждый файл — на Windows это
-/// снимает два системных вызова с каждой записи и ускоряет обход на порядок.
-fn walk_files(root: &Path) -> Vec<PathBuf> {
+/// Обход дерева: список файлов и число каталогов, которые прочитать не удалось.
+///
+/// Тип записи берётся из самого каталога (`DirEntry::file_type`), без отдельного
+/// `stat` на каждый файл — на Windows это снимает два системных вызова с каждой
+/// записи и ускоряет обход на порядок.
+///
+/// Три правила, каждое из доработок 3.6.3:
+/// * каталог читается через префикс длинного пути (Д-105) — иначе на системе без
+///   опции длинных путей поддеревья молча выпадали;
+/// * каталог-ссылка (junction) не обходится (Д-103) — иначе можно зациклиться и
+///   выйти за пределы копии;
+/// * число непрочитанных каталогов возвращается наружу (Д-107): раньше ошибка
+///   терялась в `continue`, и числа отчёта занижались без следа.
+fn walk_files(root: &Path) -> (Vec<PathBuf>, usize) {
     let mut out = Vec::new();
+    let mut unreadable = 0usize;
     let mut stack = vec![root.to_path_buf()];
     let mut seen: HashSet<PathBuf> = HashSet::new();
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&dir) else {
-            continue;
+        let entries = match fs::read_dir(long_path(&dir)) {
+            Ok(entries) => entries,
+            Err(_) => {
+                unreadable += 1;
+                continue;
+            }
         };
         for entry in entries.flatten() {
             let Ok(kind) = entry.file_type() else {
                 continue;
             };
             let path = entry.path();
+            if kind.is_symlink() {
+                continue;
+            }
             if kind.is_dir() {
                 if seen.insert(path.clone()) {
                     stack.push(path);
@@ -5150,7 +5495,7 @@ fn walk_files(root: &Path) -> Vec<PathBuf> {
         }
     }
     out.sort();
-    out
+    (out, unreadable)
 }
 
 const REPORT_TMPL: &str = r#"<!DOCTYPE html><html lang="{{lang}}"><head><meta charset="utf-8">
@@ -5179,7 +5524,8 @@ th,td{padding:9px 12px;border-bottom:1px solid #eee;text-align:left}th{backgroun
 <tr><td>{{t_rescued}}</td><td class="n">{{rescued}}</td></tr>
 <tr><td>{{t_shared}}</td><td class="n">{{shared}}</td></tr>
 <tr><td>{{t_left}}</td><td class="n">{{left}}</td></tr>
-<tr><td>{{t_archive}}</td><td class="n">{{archive}}</td></tr></table>
+<tr><td>{{t_archive}}</td><td class="n">{{archive}}</td></tr>
+<tr><td>{{t_unreadable}}</td><td class="n">{{unreadable}}</td></tr></table>
 
 <h2>{{t_index}}</h2>
 <table>
@@ -5314,25 +5660,35 @@ mod tests {
             // обрыв тела: прежний разбор отдавал обрезанный адрес, новый — нет
             br#"[["1","https://e.co"#.to_vec(),
         ];
-        for body in cases {
-            let legacy = parse_rows_legacy(&body);
-            let fresh = parse_rows(&body);
-            // На обрезанном теле новый разбор строже — это ожидаемое отличие.
-            if fresh.is_empty() && !legacy.is_empty() {
-                continue;
-            }
+        // Тела, на которых оба разбора обязаны дать непустой результат (Д-92:
+        // раньше пустой разбор сходился с прежним, и тест проходил на сломанном коде).
+        for body in cases.iter().take(3) {
+            let legacy = parse_rows_legacy(body);
+            let fresh = parse_rows(body);
+            assert!(
+                !fresh.is_empty(),
+                "разбор вернул пусто на теле {}",
+                body.len()
+            );
             assert_eq!(legacy.len(), fresh.len(), "число строк");
             for (old_row, new_row) in legacy.iter().zip(fresh.iter()) {
                 assert_eq!(old_row.len(), new_row.len(), "число полей");
                 for (idx, expected) in old_row.iter().enumerate().take(MAX_FIELDS) {
                     assert_eq!(
                         Some(expected.as_str()),
-                        new_row.field(&body, idx).as_deref(),
+                        new_row.field(body, idx).as_deref(),
                         "поле {idx}"
                     );
                 }
             }
         }
+        // Обрыв тела — единственное ожидаемое расхождение: новый разбор-strict
+        // отбрасывает недописанную строку, прежний отдавал обрезанный адрес.
+        let broken = cases.last().expect("тело с обрывом");
+        assert!(
+            parse_rows(broken).is_empty(),
+            "обрезанный адрес не должен сохраняться"
+        );
     }
 
     /// ФТ-158: разбор по срезам не медленнее прежнего в пять раз. Замер
@@ -5365,6 +5721,9 @@ mod tests {
             fresh_best * 1000.0,
             legacy_best / fresh_best
         );
+        // Д-92: при нулевом знаменателе отношение давало бесконечность и тест
+        // проходил на любом результате — считаем только по положительным замерам.
+        assert!(legacy_best > 0.0 && fresh_best > 0.0, "замер не состоялся");
         assert!(
             legacy_best / fresh_best >= 5.0,
             "разбор по срезам обязан быть не медленнее чем в пять раз: {:.1}x",
@@ -5455,6 +5814,34 @@ mod tests {
         // Уже с префиксом — не трогаем.
         let ready = Path::new(r"\\?\C:\tmp\file.html");
         assert_eq!(long_path(ready), ready.to_path_buf());
+    }
+
+    /// `..` выше корня не снимает сам корень (найдено на код-ревью).
+    #[test]
+    fn parent_dir_does_not_remove_root() {
+        let root_case = absolute_dir(Path::new(r"C:\..\x"));
+        let text = root_case.to_string_lossy().to_lowercase();
+        assert!(
+            text.ends_with(r"c:\x"),
+            "ожидался путь на диске C, получено {text}"
+        );
+        assert!(!text.contains("c:x"), "путь стал относительным: {text}");
+        // Обычный `..` внутри дерева по-прежнему работает.
+        let inner = absolute_dir(Path::new(r"C:\dev\a\..\b"))
+            .to_string_lossy()
+            .to_lowercase();
+        assert!(inner.ends_with(r"dev\b"), "получено {inner}");
+    }
+
+    /// Путь для показа не содержит служебного префикса (Д-105).
+    #[test]
+    fn show_path_strips_long_prefix() {
+        assert_eq!(show_path(Path::new(r"\\?\C:\tmp\a.html")), r"C:\tmp\a.html");
+        assert_eq!(
+            show_path(Path::new(r"\\?\UNC\srv\share\x")),
+            r"\\srv\share\x"
+        );
+        assert_eq!(show_path(Path::new(r"C:\tmp")), r"C:\tmp");
     }
 
     /// Закрытие очереди будит ждущего воркера: иначе `join` в конце прогона висит.
@@ -6055,6 +6442,53 @@ mod build_tests {
         let _ = fs::remove_dir_all(&root);
     }
 
+    /// 14.11.2026: схему меняем только при отказе соединения, а не при медленном ответе.
+    #[test]
+    fn scheme_switch_only_when_unreachable() {
+        for slow in [
+            "timeout: per read",
+            "timeout: connect",
+            "timed out waiting for body",
+            "body: connection closed while reading",
+        ] {
+            assert!(!scheme_switch_worthwhile(slow), "медленный ответ: {slow}");
+        }
+        for dead in [
+            "connect: connection refused",
+            "connect: network unreachable",
+            "dns: no address",
+            "tls: handshake failure",
+        ] {
+            assert!(scheme_switch_worthwhile(dead), "адрес недоступен: {dead}");
+        }
+    }
+
+    /// 14.11.2026: медленный ответ https не уводит прогон на http.
+    #[test]
+    fn slow_answer_keeps_https() {
+        let root = workdir("scheme-slow");
+        let engine = Engine::new("example.com", &root, 1, 0).unwrap();
+        engine
+            .shared
+            .archive_failed("список недоступен", "timeout: per read");
+        assert_eq!(engine.shared.archive_scheme(), "https");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 14.11.2026: если и запасная схема не отвечает, программа возвращается на https.
+    #[test]
+    fn fallback_scheme_gives_up_after_three_failures() {
+        let root = workdir("scheme-back");
+        let engine = Engine::new("example.com", &root, 1, 0).unwrap();
+        engine.shared.archive_failed("сеть", "connect: refused");
+        assert_eq!(engine.shared.archive_scheme(), "http");
+        for _ in 0..ARCHIVE_ALT_TRIES {
+            engine.shared.archive_failed("сеть", "connect: refused");
+        }
+        assert_eq!(engine.shared.archive_scheme(), "https", "возврат на https");
+        let _ = fs::remove_dir_all(&root);
+    }
+
     /// ОШ-2 + Д-97: схема переключается один раз и держится до конца прогона.
     #[test]
     fn archive_scheme_sticks_after_first_switch() {
@@ -6434,13 +6868,9 @@ mod build_tests {
             let days = days_from_civil(year, month, day);
             assert_eq!(civil_from_days(days), (year, month, day));
         }
-        // 2026-11-10T17:07:55Z
+        // 2026-11-10T17:07:55Z — точное значение, а не только год (Д-92).
         let stamp = stamp_from_secs(1_794_330_475);
-        assert!(
-            stamp.starts_with("2026"),
-            "метка времени в 2026 году: {stamp}"
-        );
-        assert_eq!(stamp.len(), 14);
+        assert_eq!(stamp, "20261110170755", "метка времени целиком");
     }
 
     /// ФТ-131: при совпадении пути остаётся свежий снимок, при равенстве — адрес каталога.
@@ -6646,7 +7076,8 @@ mod build_tests {
         engine.report(stats).unwrap();
 
         // Пересчёт по диску: файлов в копии столько же, сколько лежит в папке site.
-        let files = walk_files(&root.join("site"));
+        let site_root = fs::canonicalize(root.join("site")).expect("каталог копии");
+        let (files, _unreadable) = walk_files(&site_root);
         let doc = fs::read_to_string(root.join("report.html")).unwrap();
         assert_eq!(stats.pages, 2, "две страницы");
         assert_eq!(stats.broken, 1, "одна цель отсутствует");

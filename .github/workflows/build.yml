@@ -92,6 +92,7 @@ jobs:
             apt: musl-tools
             out: SiteRestorer-linux-x64-cli
             max_mb: 15
+            min_mb: 1
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             features: "gui"
@@ -102,18 +103,21 @@ jobs:
             glibc: "2.28"
             out: SiteRestorer-linux-x64-gui
             max_mb: 45
+            min_mb: 3
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             features: "gui"
             apt: ""
             out: SiteRestorer-windows-x64.exe
             max_mb: 45
+            min_mb: 3
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             features: "cli"
             apt: ""
             out: SiteRestorer-windows-x64-cli.exe
             max_mb: 15
+            min_mb: 1
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -291,6 +295,9 @@ jobs:
           mb=$(awk "BEGIN{printf \"%.2f\", $bytes/1048576}")
           echo "${{ matrix.out }}: ${mb} MB (лимит ${{ matrix.max_mb }} MB)"
           awk "BEGIN{exit !($mb <= ${{ matrix.max_mb }})}" || { echo "::error::ассет больше лимита"; exit 1; }
+          # Д-92: одна верхняя граница пропускала почти пустую сборку. Нижняя берётся
+          # из matrix.min_mb: 3 МБ для оконной сборки и 1 МБ для консольной.
+          awk "BEGIN{exit !($mb >= ${{ matrix.min_mb }})}" || { echo "::error::ассет подозрительно мал ($mb MB)"; exit 1; }
 
       - uses: actions/upload-artifact@v4
         with:

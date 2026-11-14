@@ -7,6 +7,9 @@ aimd = "aimd"
 flate = "flate"
 # аргумент компилятора ресурсов Windows (/fo) — не опечатка
 fo = "fo"
+# ERROR_FILENAME_EXCED_RANGE — так называется константа Windows (EXCED, а не EXCEED),
+# переименовывать её нельзя: имя приходит из системы
+EXCED = "EXCED"
 # Tilda — конструктор сайтов, название продукта (не «tilde»)
 Tilda = "Tilda"
 tilda = "tilda"

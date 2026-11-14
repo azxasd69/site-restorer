@@ -763,20 +763,20 @@ fn cli(args: &[String]) -> i32 {
             println!(
                 "{}",
                 tr::pick(
-                    format!("копия:  {}", outcome.site.display()),
-                    format!("copy:   {}", outcome.site.display())
+                    format!("копия:  {}", crate::core::show_path(&outcome.site)),
+                    format!("copy:   {}", crate::core::show_path(&outcome.site))
                 )
             );
             println!(
                 "{}",
                 tr::pick(
-                    format!("отчёт:  {}", outcome.report.display()),
-                    format!("report: {}", outcome.report.display())
+                    format!("отчёт:  {}", crate::core::show_path(&outcome.report)),
+                    format!("report: {}", crate::core::show_path(&outcome.report))
                 )
             );
             // Машиночитаемый итог: одна строка, чтобы прогон разбирался скриптом.
             println!(
-                "RESULT {{\"ok\":{},\"total\":{},\"files\":{},\"mirror\":{},\"unique\":{},\"pages\":{},\"foreign\":{},\"refs\":{},\"broken\":{},\"fallbacks\":{},\"collisions\":{},\"rescued\":{},\"shared\":{},\"left\":{},\"oldest\":\"{}\",\"newest\":\"{}\",\"site\":\"{}\",\"index_total\":{},\"index_pages\":{},\"index_truncated\":{},\"index_failed\":{},\"added_live\":{},\"added_build\":{},\"report\":\"{}\",\"archive\":\"{}\",\"archive_requests\":{}}}",
+                "RESULT {{\"ok\":{},\"total\":{},\"files\":{},\"mirror\":{},\"unique\":{},\"pages\":{},\"foreign\":{},\"refs\":{},\"broken\":{},\"fallbacks\":{},\"collisions\":{},\"rescued\":{},\"shared\":{},\"left\":{},\"oldest\":\"{}\",\"newest\":\"{}\",\"site\":\"{}\",\"index_total\":{},\"index_pages\":{},\"index_truncated\":{},\"index_failed\":{},\"added_live\":{},\"added_build\":{},\"report\":\"{}\",\"archive\":\"{}\",\"unreadable\":{},\"archive_requests\":{}}}",
                 outcome.ok,
                 outcome.total,
                 outcome.site_files,
@@ -793,15 +793,16 @@ fn cli(args: &[String]) -> i32 {
                 outcome.left,
                 outcome.oldest,
                 outcome.newest,
-                json_escape(&outcome.site.to_string_lossy()),
+                json_escape(&crate::core::show_path(&outcome.site)),
                 outcome.index_total,
                 outcome.index_pages,
                 outcome.index_truncated,
                 outcome.index_failed,
                 outcome.added_live,
                 outcome.added_build,
-                json_escape(&outcome.report.to_string_lossy()),
+                json_escape(&crate::core::show_path(&outcome.report)),
                 outcome.archive,
+                outcome.unreadable,
                 outcome.archive_requests,
             );
             0

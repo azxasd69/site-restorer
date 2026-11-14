@@ -124,12 +124,9 @@ pub fn domain_to_ascii(domain: &str) -> Option<String> {
             out.push(label.to_string());
             continue;
         }
-        // уже в punycode — оставляем, проверив форму
-        let encoded = if let Some(rest) = label.strip_prefix("xn--") {
-            format!("xn--{rest}")
-        } else {
-            format!("xn--{}", encode_label(label)?)
-        };
+        // Метка не ASCII (ветка выше уже отсеяла ASCII, включая готовые `xn--`),
+        // поэтому остаётся только кодирование (Д-93: прежняя ветка была недостижима).
+        let encoded = format!("xn--{}", encode_label(label)?);
         if !valid_ascii_label(&encoded) {
             return None;
         }

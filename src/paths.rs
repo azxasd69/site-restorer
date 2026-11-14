@@ -4,8 +4,12 @@ use crate::sanitize::pct_decode;
 
 /// Предел длины относительного пути: длиннее — сворачиваем в короткое имя.
 pub const MAX_REL_LEN: usize = 160;
-/// Предел длины одного сегмента до хэширования.
+/// Предел длины одного сегмента до хэширования, в символах.
 const MAX_SEG_LEN: usize = 80;
+/// Предел длины сегмента в байтах UTF-8 (Д-104): имя файла на Linux ограничено
+/// `NAME_MAX` = 255 байтами, а 80 четырёхбайтных символов — это 320 байт.
+/// Свёртка даёт 60 символов + `_` + 8 знаков хеша, то есть не больше 249 байт.
+const MAX_SEG_BYTES: usize = 200;
 const RESERVED: &[&str] = &[
     "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
     "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
@@ -74,7 +78,10 @@ pub fn safe_seg(seg: &str) -> String {
     let mut seg = cleaned
         .trim_matches(|c: char| c == ' ' || c == '.')
         .to_string();
-    if seg.chars().count() > MAX_SEG_LEN {
+    // Ограничение считается и в символах, и в байтах: на ext4 имя файла — это
+    // 255 байт, поэтому сегмент из 64–80 четырёхбайтных символов (256–320 байт)
+    // раньше проходил проверку и падал с `File name too long` (Д-104).
+    if seg.chars().count() > MAX_SEG_LEN || seg.len() > MAX_SEG_BYTES {
         let cut: String = seg.chars().take(60).collect();
         seg = format!("{cut}_{}", fnv_hex(&seg));
     }
@@ -251,6 +258,25 @@ mod tests {
                 .join("/")
         );
         assert!(url_to_local_path(&deep).chars().count() <= MAX_REL_LEN);
+    }
+
+    /// Д-104: сегмент из четырёхбайтных символов ограничен и в байтах.
+    #[test]
+    fn wide_segment_is_capped_in_bytes() {
+        // 70 эмодзи — это 280 байт при 70 символах: по символам проходит, по байтам нет.
+        let url = format!("https://example.com/{}", "\u{1F600}".repeat(70));
+        let rel = url_to_local_path(&url);
+        let seg = rel.split('/').next().unwrap_or("");
+        assert!(
+            seg.len() <= 255,
+            "сегмент {} байт — больше NAME_MAX: {seg}",
+            seg.len()
+        );
+        // Свёртка детерминированная: тот же адрес даёт тот же путь.
+        assert_eq!(rel, url_to_local_path(&url));
+        // Кириллица (3 байта на символ) по-прежнему укладывается в предел.
+        let wide = format!("https://example.com/{}", "я".repeat(120));
+        assert!(url_to_local_path(&wide).len() <= 400);
     }
 
     #[test]
