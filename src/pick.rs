@@ -6,6 +6,7 @@
 
 /// Результат выбора папки системным диалогом.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(not(windows), allow(dead_code))]
 pub enum PickResult {
     Selected(String),
     Cancelled,
