@@ -2184,7 +2184,7 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "site-restorer"
-version = "3.6.3"
+version = "3.6.4"
 dependencies = [
  "eframe",
  "encoding_rs",
@@ -2466,7 +2466,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7be76686bdf7198002062423ca0d8cf9b75a27c8e1de804513b97e97b555d9d"
 dependencies = [
  "base64",
- "flate2",
  "log",
  "percent-encoding",
  "rustls",
