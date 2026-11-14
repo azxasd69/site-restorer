@@ -1049,9 +1049,10 @@ impl Shared {
                 Ok(pair) => pair,
                 Err(err) => {
                     transport_failed = true;
+                    let reason = explain_net(&err);
                     self.log(crate::tr::pick(
-                        format!("сеть: {err}"),
-                        format!("network: {err}"),
+                        format!("сеть: {reason}"),
+                        format!("network: {reason}"),
                     ));
                     // Другая схема — только при отказе соединения, не при медленном ответе.
                     self.archive_failed("сеть недоступна", &err.to_string());
@@ -2079,10 +2080,13 @@ impl Engine {
             Ok(fetched) => self
                 .shared
                 .log(format!("CDX: оценка недоступна (HTTP {})", fetched.status)),
-            Err(err) => self.shared.log(crate::tr::pick(
-                format!("CDX: оценка — ошибка {err}"),
-                format!("CDX: estimate failed: {err}"),
-            )),
+            Err(err) => {
+                let reason = explain_net(&err);
+                self.shared.log(crate::tr::pick(
+                    format!("CDX: оценка — {reason}"),
+                    format!("CDX: estimate failed: {reason}"),
+                ))
+            }
         }
 
         // Быстрый запрос выполняется ВСЕГДА: постраничный режим (`page=N`) у
@@ -2175,9 +2179,10 @@ impl Engine {
                     if self.shared.cancel.load(Ordering::Relaxed) {
                         return Err("cancelled".to_string());
                     }
+                    let reason = explain_net(&err);
                     self.shared.log(crate::tr::pick(
-                        format!("CDX: список — ошибка {err}"),
-                        format!("CDX: list failed: {err}"),
+                        format!("CDX: список — {reason}"),
+                        format!("CDX: list failed: {reason}"),
                     ));
                     self.shared
                         .archive_failed("список недоступен", &err.to_string());
@@ -2412,9 +2417,10 @@ impl Engine {
                         self.shared
                             .archive_failed("страница недоступна", &err.to_string());
                         if attempts >= 3 {
+                            let reason = explain_net(&err);
                             self.shared.log(crate::tr::pick(
-                                format!("CDX: страница {} — ошибка {err}", page + 1),
-                                format!("CDX: page {} failed: {err}", page + 1),
+                                format!("CDX: страница {} — {reason}", page + 1),
+                                format!("CDX: page {} failed: {reason}", page + 1),
                             ));
                             self.inv_failed = true;
                             break;
@@ -2831,9 +2837,12 @@ impl Engine {
                     let fetched = match shared.fetch_stream(&query, &mut |_, _| {}) {
                         Ok(fetched) => fetched,
                         Err(err) => {
+                            // Та же человеческая причина, что и в остальных местах:
+                            // сырой текст с кодом оставался только здесь.
+                            let reason = explain_net(&err);
                             shared.log(crate::tr::pick(
-                                format!("добор: запрос не удался ({err})"),
-                                format!("live: request failed ({err})"),
+                                format!("добор: запрос не удался — {reason}"),
+                                format!("live: request failed — {reason}"),
                             ));
                             continue;
                         }
@@ -4318,7 +4327,7 @@ impl Engine {
             if self.rescue_budget > 0 && started.elapsed().as_secs() >= self.rescue_budget {
                 self.shared.log(crate::tr::pick(
                     format!(
-                        "rescue: бюджет {} с исчерпан, добрано {done} из {}",
+                        "добор по ссылкам остановлен по времени: {} с, добрано {done} из {}",
                         self.rescue_budget,
                         missing.len().min(self.rescue_limit)
                     ),
@@ -4347,9 +4356,12 @@ impl Engine {
             }
         }
         if !missing.is_empty() && done == 0 && console_verbose() {
+            // Ни один адрес из добора не получен: это не машинная метка, а факт,
+            // который надо объяснить словами (визуальный тест 15.11.2026).
+            let tried = missing.len().min(self.rescue_limit);
             self.shared.log(crate::tr::pick(
-                format!("rescue:fail:{}", missing.len().min(self.rescue_limit)),
-                format!("rescue:fail:{}", missing.len().min(self.rescue_limit)),
+                format!("добор по ссылкам: из {tried} адресов не получен ни один"),
+                format!("link rescue: none of {tried} addresses could be fetched"),
             ));
         }
         done
@@ -5281,6 +5293,56 @@ fn scheme_switch_worthwhile(err: &str) -> bool {
     .any(|key| low.contains(key))
 }
 
+/// Понятная причина сетевой ошибки.
+///
+/// Текст берётся из системной библиотеки, поэтому на Windows и Linux он разный и
+/// с кодом. Рядом ставим человеческую формулировку, код оставляем в скобках:
+/// журнал читают, а не диагностируют по нему сетевой стек.
+fn explain_net(err: &str) -> String {
+    let low = err.to_lowercase();
+    let phrase = if low.contains("10061") || low.contains("connection refused") {
+        Some(crate::tr::pick(
+            "архив отклонил подключение".to_string(),
+            "the archive refused the connection".to_string(),
+        ))
+    } else if low.contains("10054") || low.contains("reset by peer") {
+        Some(crate::tr::pick(
+            "соединение сброшено архивом".to_string(),
+            "the archive reset the connection".to_string(),
+        ))
+    } else if low.contains("10060") || low.contains("timeout") || low.contains("timed out") {
+        Some(crate::tr::pick(
+            "архив не ответил за отведённое время".to_string(),
+            "the archive did not answer in time".to_string(),
+        ))
+    } else if low.contains("10051") || low.contains("unreachable") || low.contains("no route") {
+        Some(crate::tr::pick(
+            "нет маршрута к архиву".to_string(),
+            "no route to the archive".to_string(),
+        ))
+    } else if low.contains("dns") || low.contains("resolve") {
+        Some(crate::tr::pick(
+            "имя архива не разрешается".to_string(),
+            "the archive name does not resolve".to_string(),
+        ))
+    } else {
+        None
+    };
+    // Код берём из хвоста «… (os error 10061)»: цифры сразу после этой пометки.
+    let code = err.rfind("os error ").map(|i| {
+        err[i + "os error ".len()..]
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect::<String>()
+    });
+    let code = code.filter(|c| !c.is_empty());
+    match (phrase, code) {
+        (Some(phrase), Some(code)) => format!("{phrase} ({code})"),
+        (Some(phrase), None) => phrase.to_string(),
+        (None, _) => err.to_string(),
+    }
+}
+
 /// Предел длины полного пути для текущей платформы (Д-106).
 ///
 /// Windows: манифест объявляет `longPathAware`, поэтому предел — 32 767 знаков,
@@ -5835,6 +5897,26 @@ mod tests {
             .to_string_lossy()
             .to_lowercase();
         assert!(inner.ends_with(r"dev\b"), "получено {inner}");
+    }
+
+    /// Понятная причина сетевой ошибки и код в скобках (визуальный тест 14.11.2026).
+    #[test]
+    fn net_errors_get_plain_reason() {
+        let refused = explain_net(
+            "io: Подключение не установлено, т.к. конечный компьютер отверг запрос на подключение. (os error 10061)",
+        );
+        assert!(refused.contains("10061"), "код потерян: {refused}");
+        assert!(
+            !refused.contains("конечный компьютер"),
+            "системный текст остался: {refused}"
+        );
+        let slow = explain_net("timeout: per read");
+        assert!(
+            slow.to_lowercase().contains("время") || slow.contains("time"),
+            "{slow}"
+        );
+        // Неизвестная ошибка остаётся как есть — врать про причину нельзя.
+        assert_eq!(explain_net("http status 404"), "http status 404");
     }
 
     /// Путь для показа не содержит служебного префикса (Д-105).
