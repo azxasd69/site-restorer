@@ -28,7 +28,7 @@ Python (`legacy/python`) и Go (`ports/go`) переведены в архив: 
 |---|---|---|---|
 | Интерфейс | нативное окно, RU/EN | нативное окно на Tk | CLI |
 | Статус | развивается, публикуется | заморожен, не публикуется | заморожен, не публикуется |
-| Тесты | 50 (`cargo nextest`) | 17 (не запускаются в CI) | 24 (не запускаются в CI) |
+| Тесты | 135 GUI / 132 CLI (`cargo nextest`) | 17 (не запускаются в CI) | 24 (не запускаются в CI) |
 
 Каталоги `legacy/python` и `ports/go` оставлены как история: код читается,
 но сборки из них больше не выпускаются.
@@ -49,7 +49,7 @@ Linux GUI требует системных пакетов: `libxkbcommon-dev li
 libegl1-mesa-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev
 libwayland-dev libfontconfig1-dev`.
 
-Профиль релиза: `opt-level = "z"`, LTO, `panic = "abort"`, strip.
+Профиль релиза: `opt-level = 3`, `lto = "thin"`, `codegen-units = 1`, `debug = "line-tables-only"`, `panic = "abort"`, `strip = "none"` (отладочные символы `.pdb` уходят отдельным артефактом CI).
 Версия тулчейна закреплена в `rust-toolchain.toml` (1.99.1) и используется в CI.
 
 ### Иконки

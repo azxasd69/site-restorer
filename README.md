@@ -223,7 +223,7 @@ site-restorer/
 ## Тесты
 
 ```bash
-cargo nextest run --release --no-default-features   # 113 тестов CLI, без сети
+cargo nextest run --release --no-default-features   # 132 теста CLI, без сети
 cargo fmt --all --check
 cargo clippy --all-targets --release --no-default-features -- -D warnings
 cargo audit && cargo deny check && cargo machete && typos
