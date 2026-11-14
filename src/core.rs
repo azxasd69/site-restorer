@@ -5817,6 +5817,10 @@ mod tests {
     }
 
     /// `..` выше корня не снимает сам корень (найдено на код-ревью).
+    ///
+    /// Проверка про букву диска, поэтому только Windows: на Linux `C:\..\x`
+    /// — обычное относительное имя, и ожидание `C:\x` там бессмысленно.
+    #[cfg(windows)]
     #[test]
     fn parent_dir_does_not_remove_root() {
         let root_case = absolute_dir(Path::new(r"C:\..\x"));
