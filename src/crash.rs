@@ -155,6 +155,9 @@ mod tests {
         let _ = handle.join();
 
         let text = std::fs::read_to_string(&path).expect("файл следа должен появиться");
+        // Печать под --nocapture: так проверка «след есть» видна глазами, а не
+        // только по коду возврата теста.
+        println!("--- crash.log ---\n{text}--- конец ---");
         assert!(
             text.contains("thread=engine-worker"),
             "нет имени потока:\n{text}"
