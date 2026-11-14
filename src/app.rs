@@ -1023,307 +1023,293 @@ impl eframe::App for App {
                     .corner_radius(10)
                     .inner_margin(egui::Margin::same(10))
                     .show(ui, |ui| {
-                        // Карточка по высоте содержимого: при высоком окне она больше
-                        // не растягивается на пустое место (визуальный тест 14.11.2026).
-                        egui::ScrollArea::vertical()
-                            .auto_shrink([false, true])
-                            .show(ui, |ui| {
-                                ui.style_mut().spacing.item_spacing.y = 6.0;
-                                ui.horizontal(|ui| {
-                                    // «Готово» с ошибками — янтарная точка: зелёная рядом
-                                    // с красным счётчиком читалась как «всё в порядке».
-                                    // Пауза тоже янтарная: иначе карточка выглядит работающей.
-                                    let tone = match self.stage {
-                                        _ if self.paused => WARN,
-                                        Stage::Done if self.errors > 0 => WARN,
-                                        Stage::Done => OK,
-                                        Stage::Error => ERR,
-                                        Stage::Stopped => WARN,
-                                        _ => ACCENT,
-                                    };
-                                    let (rect, _) = ui.allocate_exact_size(
-                                        egui::vec2(9.0, 16.0),
-                                        egui::Sense::hover(),
-                                    );
-                                    ui.painter().circle_filled(rect.center(), 4.0, tone);
-                                    ui.label(
-                                        egui::RichText::new(self.stage_label())
-                                            .size(14.5)
-                                            .strong()
-                                            .color(TEXT),
-                                    );
-                                    ui.with_layout(
-                                        egui::Layout::right_to_left(egui::Align::Center),
-                                        |ui| {
-                                            if self.eta > 0 && self.running {
-                                                ui.label(
-                                                    egui::RichText::new(format!(
-                                                        "{} {}",
-                                                        t.eta_hint,
-                                                        human_eta(self.eta, t)
-                                                    ))
-                                                    .size(11.0)
-                                                    .color(MUTED),
-                                                );
-                                                ui.add_space(8.0);
-                                            }
+                        // Карточка по высоте содержимого, без области прокрутки: блоки
+                        // включаются по доступной высоте, поэтому прокручивать нечего, а
+                        // ScrollArea оставлял внутри карточки полосу пустоты.
+                        ui.vertical(|ui| {
+                            ui.style_mut().spacing.item_spacing.y = 6.0;
+                            ui.horizontal(|ui| {
+                                // «Готово» с ошибками — янтарная точка: зелёная рядом
+                                // с красным счётчиком читалась как «всё в порядке».
+                                // Пауза тоже янтарная: иначе карточка выглядит работающей.
+                                let tone = match self.stage {
+                                    _ if self.paused => WARN,
+                                    Stage::Done if self.errors > 0 => WARN,
+                                    Stage::Done => OK,
+                                    Stage::Error => ERR,
+                                    Stage::Stopped => WARN,
+                                    _ => ACCENT,
+                                };
+                                let (rect, _) = ui.allocate_exact_size(
+                                    egui::vec2(9.0, 16.0),
+                                    egui::Sense::hover(),
+                                );
+                                ui.painter().circle_filled(rect.center(), 4.0, tone);
+                                ui.label(
+                                    egui::RichText::new(self.stage_label())
+                                        .size(14.5)
+                                        .strong()
+                                        .color(TEXT),
+                                );
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if self.eta > 0 && self.running {
                                             ui.label(
                                                 egui::RichText::new(format!(
-                                                    "{:.0} %",
-                                                    self.overall
+                                                    "{} {}",
+                                                    t.eta_hint,
+                                                    human_eta(self.eta, t)
                                                 ))
+                                                .size(11.0)
+                                                .color(MUTED),
+                                            );
+                                            ui.add_space(8.0);
+                                        }
+                                        ui.label(
+                                            egui::RichText::new(format!("{:.0} %", self.overall))
                                                 .size(17.0)
                                                 .strong()
                                                 .color(ACCENT),
-                                            );
-                                            // Метка паузы: без неё остановленный прогон
-                                            // не отличить от работающего (визуальный тест
-                                            // 15.11.2026 — признак был только в журнале).
-                                            if self.paused {
-                                                ui.add_space(10.0);
-                                                stage_chip(ui, t.pause, 3);
-                                            }
-                                        },
-                                    );
-                                });
-                                ui.add_space(8.0);
-                                bar(ui, self.overall / 100.0, 8.0, ui.available_width());
-                                ui.add_space(6.0);
-
-                                // Порядок вытеснения при нехватке высоты: сначала
-                                // плашки этапов (украшение), потом строка объёма, потом
-                                // типы файлов. Данные (плитки) держатся до последнего.
-                                let steps = [t.s_inv, t.s_dl, t.s_build, t.s_verify, t.s_report];
-                                let active = step_index(self.stage);
-                                if ui.available_height() >= 104.0 {
-                                    ui.horizontal(|ui| {
-                                        for (idx, name) in steps.iter().enumerate() {
-                                            let state = match active {
-                                                Some(a) if idx < a => 1,
-                                                Some(a) if idx == a => 2,
-                                                _ if self.stage == Stage::Done => 1,
-                                                None if idx == 0 && self.stage == Stage::Idle => 1,
-                                                _ => 0,
-                                            };
-                                            stage_chip(ui, name, state);
+                                        );
+                                        // Метка паузы: без неё остановленный прогон
+                                        // не отличить от работающего (визуальный тест
+                                        // 15.11.2026 — признак был только в журнале).
+                                        if self.paused {
+                                            ui.add_space(10.0);
+                                            stage_chip(ui, t.pause, 3);
                                         }
+                                    },
+                                );
+                            });
+                            ui.add_space(8.0);
+                            bar(ui, self.overall / 100.0, 8.0, ui.available_width());
+                            ui.add_space(6.0);
+
+                            // Порядок вытеснения при нехватке высоты: сначала
+                            // плашки этапов (украшение), потом строка объёма, потом
+                            // типы файлов. Данные (плитки) держатся до последнего.
+                            let steps = [t.s_inv, t.s_dl, t.s_build, t.s_verify, t.s_report];
+                            let active = step_index(self.stage);
+                            if ui.available_height() >= 104.0 {
+                                ui.horizontal(|ui| {
+                                    for (idx, name) in steps.iter().enumerate() {
+                                        let state = match active {
+                                            Some(a) if idx < a => 1,
+                                            Some(a) if idx == a => 2,
+                                            _ if self.stage == Stage::Done => 1,
+                                            None if idx == 0 && self.stage == Stage::Idle => 1,
+                                            _ => 0,
+                                        };
+                                        stage_chip(ui, name, state);
+                                    }
+                                });
+                            }
+                            ui.add_space(3.0);
+
+                            if self.total > 0 || self.running {
+                                let gap = 10.0;
+                                let width = ((ui.available_width() - gap * 3.0) / 4.0).max(80.0);
+                                // Сборка и проверка идут по файлам, загрузка — по адресам:
+                                // одна и та же подпись на всех этапах путала.
+                                let downloading = matches!(self.stage, Stage::Download);
+                                let first_label = if downloading {
+                                    t.k_loaded
+                                } else {
+                                    t.k_processed
+                                };
+                                let first_value = format!("{} / {}", self.done, self.total);
+                                let second_label = if downloading { t.k_speed } else { t.k_rate };
+                                let second_value = if downloading {
+                                    if self.bps >= 1_048_576.0 {
+                                        format!("{:.1} MB/s", self.bps / 1_048_576.0)
+                                    } else {
+                                        format!("{:.0} KB/s", self.bps / 1024.0)
+                                    }
+                                } else {
+                                    format!("{:.1}", self.files_per_sec)
+                                };
+                                if ui.available_height() >= 50.0 {
+                                    ui.horizontal(|ui| {
+                                        tile(ui, width, first_label, first_value, TEXT);
+                                        tile(ui, width, second_label, second_value, TEXT);
+                                        tile(
+                                            ui,
+                                            width,
+                                            t.k_threads,
+                                            format!("{}", self.threads),
+                                            TEXT,
+                                        );
+                                        tile(
+                                            ui,
+                                            width,
+                                            t.k_issues,
+                                            format!("{} / {}", self.missing, self.errors),
+                                            if self.errors > 0 { ERR } else { TEXT },
+                                        );
                                     });
                                 }
                                 ui.add_space(3.0);
-
-                                if self.total > 0 || self.running {
-                                    let gap = 10.0;
-                                    let width =
-                                        ((ui.available_width() - gap * 3.0) / 4.0).max(80.0);
-                                    // Сборка и проверка идут по файлам, загрузка — по адресам:
-                                    // одна и та же подпись на всех этапах путала.
-                                    let downloading = matches!(self.stage, Stage::Download);
-                                    let first_label = if downloading {
-                                        t.k_loaded
-                                    } else {
-                                        t.k_processed
-                                    };
-                                    let first_value = format!("{} / {}", self.done, self.total);
-                                    let second_label =
-                                        if downloading { t.k_speed } else { t.k_rate };
-                                    let second_value = if downloading {
-                                        if self.bps >= 1_048_576.0 {
-                                            format!("{:.1} MB/s", self.bps / 1_048_576.0)
-                                        } else {
-                                            format!("{:.0} KB/s", self.bps / 1024.0)
+                                if ui.available_height() >= 16.0 {
+                                    ui.horizontal(|ui| {
+                                        // «файлов/с» уже есть в плитке скорости: здесь
+                                        // остаются объём и пауза, иначе строка дублирует
+                                        // плитку и зря занимает ширину.
+                                        let mut text =
+                                            format!("{:.1} MB", self.bytes as f64 / 1_048_576.0);
+                                        if self.pause > 0 {
+                                            text.push_str(&format!(
+                                                "   ·   {} {}",
+                                                t.k_pause, self.pause
+                                            ));
                                         }
-                                    } else {
-                                        format!("{:.1}", self.files_per_sec)
-                                    };
-                                    if ui.available_height() >= 50.0 {
-                                        ui.horizontal(|ui| {
-                                            tile(ui, width, first_label, first_value, TEXT);
-                                            tile(ui, width, second_label, second_value, TEXT);
-                                            tile(
-                                                ui,
-                                                width,
-                                                t.k_threads,
-                                                format!("{}", self.threads),
-                                                TEXT,
-                                            );
-                                            tile(
-                                                ui,
-                                                width,
-                                                t.k_issues,
-                                                format!("{} / {}", self.missing, self.errors),
-                                                if self.errors > 0 { ERR } else { TEXT },
-                                            );
-                                        });
-                                    }
-                                    ui.add_space(3.0);
-                                    if ui.available_height() >= 16.0 {
-                                        ui.horizontal(|ui| {
-                                            // «файлов/с» уже есть в плитке скорости: здесь
-                                            // остаются объём и пауза, иначе строка дублирует
-                                            // плитку и зря занимает ширину.
-                                            let mut text = format!(
-                                                "{:.1} MB",
-                                                self.bytes as f64 / 1_048_576.0
-                                            );
-                                            if self.pause > 0 {
-                                                text.push_str(&format!(
-                                                    "   ·   {} {}",
-                                                    t.k_pause, self.pause
-                                                ));
-                                            }
-                                            ui.label(
-                                                egui::RichText::new(text).size(11.5).color(MUTED),
-                                            );
-                                        });
-                                    }
-                                    // Разделитель рисуем сами: `ui.separator()` добавлял
-                                    // по 6 px сверху и снизу, и блок типов уходил за границу
-                                    // окна 900×660 (визуальный тест 14.11.2026).
-                                    ui.add_space(3.0);
-                                    // Линия занимает собственную строку высотой 1 px:
-                                    // иначе `ui.separator()` добавлял по 6 px сверху и снизу.
-                                    let (line_rect, _) = ui.allocate_exact_size(
-                                        egui::vec2(ui.available_width(), 1.0),
-                                        egui::Sense::hover(),
-                                    );
-                                    ui.painter().hline(
-                                        line_rect.x_range(),
-                                        line_rect.center().y,
-                                        egui::Stroke::new(1.0, BORDER),
-                                    );
-                                    ui.add_space(3.0);
-
-                                    if ui.available_height() >= 24.0 {
-                                        let names = [t.t_html, t.t_code, t.t_img, t.t_other];
-                                        let mut halves = self.types;
-                                        // Место под полосы есть не всегда: в окне 900×660
-                                        // (своём размере по умолчанию) вторая пара строк
-                                        // срезалась кромкой. Тогда — одна строка с числами.
-                                        if ui.available_height() < 96.0 {
-                                            let mut parts: Vec<String> = Vec::new();
-                                            for (idx, name) in names.iter().enumerate() {
-                                                parts.push(format!(
-                                                    "{} {}/{}",
-                                                    name,
-                                                    halves[idx * 2],
-                                                    halves[idx * 2 + 1]
-                                                ));
-                                            }
-                                            ui.label(
-                                                egui::RichText::new(parts.join("   ·   "))
-                                                    .size(11.0)
-                                                    .color(MUTED),
-                                            );
-                                            return;
-                                        }
-                                        // Строки идут почти вплотную: иначе вторая пара
-                                        // (изображения и прочее) срезается кромкой карточки
-                                        // при окне 900×660.
-                                        ui.spacing_mut().item_spacing.y = 2.0;
-                                        ui.columns(2, |cols| {
-                                            for (idx, name) in names.iter().enumerate() {
-                                                let col = &mut cols[idx % 2];
-                                                col.horizontal(|ui| {
-                                                    ui.add_sized(
-                                                        [92.0, 12.0],
-                                                        egui::Label::new(
-                                                            egui::RichText::new(*name)
-                                                                .size(11.5)
-                                                                .color(MUTED),
-                                                        ),
-                                                    );
-                                                    let ok = halves[idx * 2];
-                                                    let total = halves[idx * 2 + 1];
-                                                    let frac = if total > 0 {
-                                                        ok as f32 / total as f32
-                                                    } else {
-                                                        0.0
-                                                    };
-                                                    let width =
-                                                        (ui.available_width() - 56.0).max(40.0);
-                                                    bar(ui, frac, 5.0, width);
-                                                    ui.with_layout(
-                                                        egui::Layout::right_to_left(
-                                                            egui::Align::Center,
-                                                        ),
-                                                        |ui| {
-                                                            ui.label(
-                                                                egui::RichText::new(format!(
-                                                                    "{ok} / {total}"
-                                                                ))
-                                                                .monospace()
-                                                                .size(11.0)
-                                                                .color(MUTED),
-                                                            );
-                                                        },
-                                                    );
-                                                });
-                                            }
-                                        });
-                                        let _ = &mut halves;
-                                    }
-                                } else {
-                                    let width = ui.available_width();
-                                    let height = (ui.available_height() - 6.0).clamp(58.0, 190.0);
-                                    let (rect, _) = ui.allocate_exact_size(
-                                        egui::vec2(width, height),
-                                        egui::Sense::hover(),
-                                    );
-                                    let painter = ui.painter();
-                                    let compact = height < 84.0;
-                                    let title = painter.layout(
-                                        t.empty_title.to_owned(),
-                                        egui::FontId::proportional(14.0),
-                                        TEXT,
-                                        rect.width() - 24.0,
-                                    );
-                                    let note = if compact {
-                                        None
-                                    } else {
-                                        Some(painter.layout(
-                                            t.empty_note.to_owned(),
-                                            egui::FontId::proportional(11.5),
-                                            MUTED,
-                                            rect.width() - 40.0,
-                                        ))
-                                    };
-                                    let mut stack = 24.0 + 10.0 + title.size().y;
-                                    if let Some(note) = &note {
-                                        stack += 6.0 + note.size().y;
-                                    }
-                                    let top = rect.center().y - stack / 2.0;
-                                    let icon_y = top + 12.0;
-                                    painter.circle_stroke(
-                                        egui::pos2(rect.center().x, icon_y),
-                                        12.0,
-                                        egui::Stroke::new(
-                                            1.5,
-                                            egui::Color32::from_rgb(203, 213, 225),
-                                        ),
-                                    );
-                                    painter.circle_filled(
-                                        egui::pos2(rect.center().x, icon_y),
-                                        2.5,
-                                        egui::Color32::from_rgb(203, 213, 225),
-                                    );
-                                    let mut y = icon_y + 22.0;
-                                    let title_w = title.size().x;
-                                    let title_h = title.size().y;
-                                    painter.galley(
-                                        egui::pos2(rect.center().x - title_w / 2.0, y),
-                                        title,
-                                        TEXT,
-                                    );
-                                    y += title_h + 6.0;
-                                    if let Some(note) = note {
-                                        painter.galley(
-                                            egui::pos2(rect.center().x - note.size().x / 2.0, y),
-                                            note,
-                                            MUTED,
-                                        );
-                                    }
+                                        ui.label(egui::RichText::new(text).size(11.5).color(MUTED));
+                                    });
                                 }
-                            });
+                                // Разделитель рисуем сами: `ui.separator()` добавлял
+                                // по 6 px сверху и снизу, и блок типов уходил за границу
+                                // окна 900×660 (визуальный тест 14.11.2026).
+                                ui.add_space(3.0);
+                                // Линия занимает собственную строку высотой 1 px:
+                                // иначе `ui.separator()` добавлял по 6 px сверху и снизу.
+                                let (line_rect, _) = ui.allocate_exact_size(
+                                    egui::vec2(ui.available_width(), 1.0),
+                                    egui::Sense::hover(),
+                                );
+                                ui.painter().hline(
+                                    line_rect.x_range(),
+                                    line_rect.center().y,
+                                    egui::Stroke::new(1.0, BORDER),
+                                );
+                                ui.add_space(3.0);
+
+                                if ui.available_height() >= 24.0 {
+                                    let names = [t.t_html, t.t_code, t.t_img, t.t_other];
+                                    let mut halves = self.types;
+                                    // Место под полосы есть не всегда: в окне 900×660
+                                    // (своём размере по умолчанию) вторая пара строк
+                                    // срезалась кромкой. Тогда — одна строка с числами.
+                                    if ui.available_height() < 96.0 {
+                                        let mut parts: Vec<String> = Vec::new();
+                                        for (idx, name) in names.iter().enumerate() {
+                                            parts.push(format!(
+                                                "{} {}/{}",
+                                                name,
+                                                halves[idx * 2],
+                                                halves[idx * 2 + 1]
+                                            ));
+                                        }
+                                        ui.label(
+                                            egui::RichText::new(parts.join("   ·   "))
+                                                .size(11.0)
+                                                .color(MUTED),
+                                        );
+                                        return;
+                                    }
+                                    // Строки идут почти вплотную: иначе вторая пара
+                                    // (изображения и прочее) срезается кромкой карточки
+                                    // при окне 900×660.
+                                    ui.spacing_mut().item_spacing.y = 2.0;
+                                    ui.columns(2, |cols| {
+                                        for (idx, name) in names.iter().enumerate() {
+                                            let col = &mut cols[idx % 2];
+                                            col.horizontal(|ui| {
+                                                ui.add_sized(
+                                                    [92.0, 12.0],
+                                                    egui::Label::new(
+                                                        egui::RichText::new(*name)
+                                                            .size(11.5)
+                                                            .color(MUTED),
+                                                    ),
+                                                );
+                                                let ok = halves[idx * 2];
+                                                let total = halves[idx * 2 + 1];
+                                                let frac = if total > 0 {
+                                                    ok as f32 / total as f32
+                                                } else {
+                                                    0.0
+                                                };
+                                                let width = (ui.available_width() - 56.0).max(40.0);
+                                                bar(ui, frac, 5.0, width);
+                                                ui.with_layout(
+                                                    egui::Layout::right_to_left(
+                                                        egui::Align::Center,
+                                                    ),
+                                                    |ui| {
+                                                        ui.label(
+                                                            egui::RichText::new(format!(
+                                                                "{ok} / {total}"
+                                                            ))
+                                                            .monospace()
+                                                            .size(11.0)
+                                                            .color(MUTED),
+                                                        );
+                                                    },
+                                                );
+                                            });
+                                        }
+                                    });
+                                    let _ = &mut halves;
+                                }
+                            } else {
+                                let width = ui.available_width();
+                                let height = (ui.available_height() - 6.0).clamp(58.0, 190.0);
+                                let (rect, _) = ui.allocate_exact_size(
+                                    egui::vec2(width, height),
+                                    egui::Sense::hover(),
+                                );
+                                let painter = ui.painter();
+                                let compact = height < 84.0;
+                                let title = painter.layout(
+                                    t.empty_title.to_owned(),
+                                    egui::FontId::proportional(14.0),
+                                    TEXT,
+                                    rect.width() - 24.0,
+                                );
+                                let note = if compact {
+                                    None
+                                } else {
+                                    Some(painter.layout(
+                                        t.empty_note.to_owned(),
+                                        egui::FontId::proportional(11.5),
+                                        MUTED,
+                                        rect.width() - 40.0,
+                                    ))
+                                };
+                                let mut stack = 24.0 + 10.0 + title.size().y;
+                                if let Some(note) = &note {
+                                    stack += 6.0 + note.size().y;
+                                }
+                                let top = rect.center().y - stack / 2.0;
+                                let icon_y = top + 12.0;
+                                painter.circle_stroke(
+                                    egui::pos2(rect.center().x, icon_y),
+                                    12.0,
+                                    egui::Stroke::new(1.5, egui::Color32::from_rgb(203, 213, 225)),
+                                );
+                                painter.circle_filled(
+                                    egui::pos2(rect.center().x, icon_y),
+                                    2.5,
+                                    egui::Color32::from_rgb(203, 213, 225),
+                                );
+                                let mut y = icon_y + 22.0;
+                                let title_w = title.size().x;
+                                let title_h = title.size().y;
+                                painter.galley(
+                                    egui::pos2(rect.center().x - title_w / 2.0, y),
+                                    title,
+                                    TEXT,
+                                );
+                                y += title_h + 6.0;
+                                if let Some(note) = note {
+                                    painter.galley(
+                                        egui::pos2(rect.center().x - note.size().x / 2.0, y),
+                                        note,
+                                        MUTED,
+                                    );
+                                }
+                            }
+                        });
                     });
             });
 

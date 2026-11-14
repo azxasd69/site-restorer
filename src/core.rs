@@ -212,6 +212,9 @@ pub struct Head {
     pub content_type: Option<String>,
     /// Фактическое время отданного снимка (`Memento-Datetime`, ФТ-129).
     pub memento: Option<String>,
+    /// Ответ пришёл со `Content-Encoding: gzip` — распаковывать его или нет,
+    /// решает вызывающий (Д-121): индекс разжимаем, файлы копии — никогда.
+    pub gzip: bool,
 }
 
 /// Результат потоковой загрузки (Д-50): файл уже на диске в `.part`,
@@ -680,6 +683,12 @@ impl Shared {
                 .get("memento-datetime")
                 .and_then(|v| v.to_str().ok())
                 .and_then(stamp_from_http_date),
+            gzip: resp
+                .headers()
+                .get("content-encoding")
+                .and_then(|v| v.to_str().ok())
+                .map(|v| v.to_ascii_lowercase().contains("gzip"))
+                .unwrap_or(false),
         };
         Ok((head, resp.into_body()))
     }
@@ -687,9 +696,14 @@ impl Shared {
     /// Прочитать тело целиком. Между блоками проверяется отмена (Д-23):
     /// остановка не ждёт таймаута запроса, соединение закрывается сразу.
     /// Побочно снимается потолок 10 МиБ, который был у `read_to_vec` в ureq 3.
-    fn read_all(&self, body: ureq::Body) -> Result<Vec<u8>, String> {
+    fn read_all(&self, body: ureq::Body, gzip: bool) -> Result<Vec<u8>, String> {
         let mut out: Vec<u8> = Vec::new();
-        let mut reader = body.into_reader();
+        let raw = body.into_reader();
+        let mut reader: Box<dyn std::io::Read + Send> = if gzip {
+            Box::new(flate2::read::GzDecoder::new(raw))
+        } else {
+            Box::new(raw)
+        };
         let mut chunk = [0u8; 64 * 1024];
         loop {
             if self.cancel.load(Ordering::Relaxed) {
@@ -710,12 +724,18 @@ impl Shared {
     fn read_progress(
         &self,
         body: ureq::Body,
+        gzip: bool,
         on_progress: &mut impl FnMut(u64, usize),
     ) -> Result<Vec<u8>, String> {
         let mut out: Vec<u8> = Vec::new();
         let mut lines = 0usize;
         let mut last = Instant::now();
-        let mut reader = body.into_reader();
+        let raw = body.into_reader();
+        let mut reader: Box<dyn std::io::Read + Send> = if gzip {
+            Box::new(flate2::read::GzDecoder::new(raw))
+        } else {
+            Box::new(raw)
+        };
         let mut chunk = [0u8; 64 * 1024];
         loop {
             if self.cancel.load(Ordering::Relaxed) {
@@ -744,7 +764,7 @@ impl Shared {
         let (head, body) = self.open(false, url)?;
         Ok(Fetched {
             status: head.status,
-            body: self.read_all(body)?,
+            body: self.read_all(body, head.gzip)?,
             retry_after: head.retry_after,
         })
     }
@@ -758,7 +778,7 @@ impl Shared {
         let (head, body) = self.open(true, url)?;
         Ok(Fetched {
             status: head.status,
-            body: self.read_progress(body, &mut on_progress)?,
+            body: self.read_progress(body, head.gzip, &mut on_progress)?,
             retry_after: head.retry_after,
         })
     }
