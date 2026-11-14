@@ -15,8 +15,14 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-pub const UA: &str =
-    "SiteRestorer/2.0 (offline mirror tool; respectful crawler; contact: local user)";
+/// Идентификация клиента в архиве (Д-98): версия берётся из `Cargo.toml`, а не
+/// пишется руками — иначе она отстаёт от изделия, и по журналам архива нельзя
+/// понять, какой сборкой сделан запрос. Согласована с `--version` (`APP_VERSION`).
+pub const UA: &str = concat!(
+    "SiteRestorer/",
+    env!("CARGO_PKG_VERSION"),
+    " (offline mirror tool; respectful crawler; contact: local user)"
+);
 const MIN_THREADS: usize = 2;
 const MAX_THREADS: usize = 24;
 const PAGE_LIMIT: usize = 20_000;
@@ -272,6 +278,10 @@ pub struct Outcome {
     /// Самый старый и самый новый снимок в копии: `ГГГГ-ММ-ДД` (ФТ-129).
     pub oldest: String,
     pub newest: String,
+    /// Схема доступа к архиву, с которой прогон закончил: `https` или `http` (Д-97).
+    pub archive: String,
+    /// Сколько запросов к архиву сделано за прогон (Д-97).
+    pub archive_requests: usize,
 }
 
 pub type Cb = Arc<dyn Fn(&Progress) + Send + Sync>;
@@ -471,6 +481,8 @@ struct Shared {
     archive_alt: String,
     archive_switched: AtomicBool,
     archive_switch_logged: AtomicBool,
+    /// Сколько запросов к архиву сделано за прогон (Д-97): видно в RESULT и отчёте.
+    archive_requests: AtomicUsize,
     mirror: PathBuf,
     gate: Gate,
     cancel: Arc<AtomicBool>,
@@ -524,17 +536,39 @@ impl Shared {
         }
     }
 
-    /// Переключает схему доступа к архиву после сетевой ошибки.
+    /// Переключает схему доступа к архиву после сетевой ошибки (ОШ-2).
+    ///
+    /// Переключение «липкое» (ФТ-116, Д-97): схема, выбранная при первой неудаче,
+    /// держится до конца прогона. Обратное переключение (`fetch_xor`) возвращало
+    /// https после первого же удачного запроса, и прогон ходил по кругу: каждый
+    /// третий запрос снова падал по таймауту. Новый прогон начинает с https.
     /// Сообщение в журнал — один раз на прогон, чтобы не засорять его.
     fn switch_archive(&self, reason: &str) {
-        let was_alt = self.archive_switched.fetch_xor(true, Ordering::Relaxed);
-        if !was_alt && !self.archive_switch_logged.swap(true, Ordering::Relaxed) {
+        let first = self
+            .archive_switched
+            .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok();
+        if first && !self.archive_switch_logged.swap(true, Ordering::Relaxed) {
             let to = self.archive_base().to_string();
             self.log(crate::tr::pick(
                 format!("архив: {reason}, переключаюсь на {to}"),
                 format!("archive: {reason}, switching to {to}"),
             ));
         }
+    }
+
+    /// Действующая схема доступа к архиву: `https` или `http` (Д-97).
+    fn archive_scheme(&self) -> &'static str {
+        if self.archive_switched.load(Ordering::Relaxed) {
+            "http"
+        } else {
+            "https"
+        }
+    }
+
+    /// Сколько запросов к архиву сделано за прогон (Д-97).
+    fn archive_requests(&self) -> usize {
+        self.archive_requests.load(Ordering::Relaxed)
     }
 
     /// Считает файл, пришедший не тем типом, чем обещал индекс (ОШ-5).
@@ -566,6 +600,10 @@ impl Shared {
     /// собирались одной шапкой: раньше она была скопирована дважды, и каждая
     /// новая доработка добавляла третью копию.
     fn open(&self, index: bool, url: &str) -> Result<(Head, ureq::Body), String> {
+        // Счётчик запросов к архиву (Д-97): по нему в итоге видно, сколько раз
+        // программа ходила за снимками, — иначе «долго» и «много запросов» не
+        // различить по журналу.
+        self.archive_requests.fetch_add(1, Ordering::Relaxed);
         self.wait_if_paused();
         self.rate_wait();
         let agent = if index {
@@ -585,11 +623,7 @@ impl Shared {
                 .headers()
                 .get("retry-after")
                 .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.parse::<f64>().ok())
-                // `Retry-After: inf` или 1e300 роняли прогон паникой в
-                // `Duration::from_secs_f64`, а большое число вешало его на годы.
-                .filter(|v| v.is_finite())
-                .map(|v| v.clamp(0.0, MAX_RETRY_WAIT)),
+                .and_then(retry_after_secs),
             content_type: resp
                 .headers()
                 .get("content-type")
@@ -1398,6 +1432,7 @@ impl Engine {
                 archive_alt: ARCHIVE_FALLBACK.to_string(),
                 archive_switched: AtomicBool::new(false),
                 archive_switch_logged: AtomicBool::new(false),
+                archive_requests: AtomicUsize::new(0),
                 mirror: out.join("mirror"),
                 gate: Gate::new(MIN_THREADS),
                 cancel: Arc::new(AtomicBool::new(false)),
@@ -3696,6 +3731,19 @@ impl Engine {
             .replace("{{t_snap_new}}", &tr2("Самый новый снимок", "Newest snapshot"))
             .replace("{{t_snap_old}}", &tr2("Самый старый снимок", "Oldest snapshot"))
             .replace("{{t_snap_range}}", &tr2("Годы снимков", "Snapshot years"))
+            .replace(
+                "{{t_archive}}",
+                &tr2("Схема доступа к архиву", "Archive access scheme"),
+            )
+            .replace(
+                "{{archive}}",
+                &format!(
+                    "{} · {} {}",
+                    self.shared.archive_scheme(),
+                    self.shared.archive_requests(),
+                    tr2("запросов", "requests")
+                ),
+            )
             .replace("{{t_old}}", &tr2("Файлов старше трёх лет", "Files older than three years"))
             .replace("{{t_fallbacks}}", &tr2("Добрано к старым снимкам", "Fell back to older snapshots"))
             .replace("{{t_no_snapshot}}", &tr2("Без пригодного снимка", "No usable snapshot"))
@@ -4014,6 +4062,8 @@ impl Engine {
             added_build: self.added_build,
             oldest: self.snapshot_range().0,
             newest: self.snapshot_range().1,
+            archive: self.shared.archive_scheme().to_string(),
+            archive_requests: self.shared.archive_requests(),
         })
     }
 
@@ -4298,7 +4348,7 @@ fn size_text(bytes: u64) -> String {
 }
 
 /// Метка времени «сейчас» в формате архива: ГГГГММДДччммсс по UTC.
-fn stamp_now() -> String {
+pub(crate) fn stamp_now() -> String {
     let secs = now_secs();
     stamp_from_secs(secs)
 }
@@ -4328,6 +4378,46 @@ fn civil_from_days(days: i64) -> (i64, u64, u64) {
     let day = doy - (153 * mp + 2) / 5 + 1;
     let month = if mp < 10 { mp + 3 } else { mp - 9 };
     (if month <= 2 { year + 1 } else { year }, month, day)
+}
+
+/// Пауза из заголовка `Retry-After` (Д-99, RFC 9110 §10.2.3).
+///
+/// Допустимы две формы: число секунд и HTTP-дата. Раньше разбиралось только число,
+/// и дату сервера программа молча игнорировала — шла дальше вопреки просьбе
+/// подождать. Потолок общий для обеих форм: он защищает от `inf`, от 1e300
+/// (паника в `Duration::from_secs_f64`) и от даты на годы вперёд.
+fn retry_after_secs(text: &str) -> Option<f64> {
+    let value = text.trim();
+    if let Ok(number) = value.parse::<f64>() {
+        return number
+            .is_finite()
+            .then(|| number.clamp(0.0, MAX_RETRY_WAIT));
+    }
+    let stamp = stamp_from_http_date(value)?;
+    let target = stamp_to_secs(&stamp)?;
+    let now = now_secs();
+    // Дата в прошлом — ждать нечего, но и отрицательной паузы быть не может.
+    Some((target as f64 - now as f64).clamp(0.0, MAX_RETRY_WAIT))
+}
+
+/// Секунды Unix из метки архива `ГГГГММДДччммсс` (UTC).
+fn stamp_to_secs(stamp: &str) -> Option<u64> {
+    let year: i64 = stamp.get(0..4)?.parse().ok()?;
+    let month: u64 = stamp.get(4..6)?.parse().ok()?;
+    let day: u64 = stamp.get(6..8)?.parse().ok()?;
+    let hour: u64 = stamp.get(8..10)?.parse().ok()?;
+    let minute: u64 = stamp.get(10..12)?.parse().ok()?;
+    let second: u64 = stamp.get(12..14)?.parse().ok()?;
+    if !(1..=12).contains(&month)
+        || !(1..=31).contains(&day)
+        || hour > 23
+        || minute > 59
+        || second > 60
+    {
+        return None;
+    }
+    let days = days_from_civil(year, month, day);
+    Some(days as u64 * 86_400 + hour * 3600 + minute * 60 + second)
 }
 
 /// Разбор `Memento-Datetime` архива: `Tue, 10 Nov 2026 17:07:55 GMT`.
@@ -5088,7 +5178,8 @@ th,td{padding:9px 12px;border-bottom:1px solid #eee;text-align:left}th{backgroun
 <tr><td>{{t_collisions}}</td><td class="n">{{collisions}}</td></tr>
 <tr><td>{{t_rescued}}</td><td class="n">{{rescued}}</td></tr>
 <tr><td>{{t_shared}}</td><td class="n">{{shared}}</td></tr>
-<tr><td>{{t_left}}</td><td class="n">{{left}}</td></tr></table>
+<tr><td>{{t_left}}</td><td class="n">{{left}}</td></tr>
+<tr><td>{{t_archive}}</td><td class="n">{{archive}}</td></tr></table>
 
 <h2>{{t_index}}</h2>
 <table>
@@ -5964,17 +6055,69 @@ mod build_tests {
         let _ = fs::remove_dir_all(&root);
     }
 
-    /// ОШ-2: схема доступа к архиву переключается и возвращается обратно.
+    /// ОШ-2 + Д-97: схема переключается один раз и держится до конца прогона.
     #[test]
-    fn archive_scheme_switches_both_ways() {
+    fn archive_scheme_sticks_after_first_switch() {
         let root = workdir("scheme");
         let engine = Engine::new("example.com", &root, 1, 0).unwrap();
         assert_eq!(engine.shared.archive_base(), "https://web.archive.org");
+        assert_eq!(engine.shared.archive_scheme(), "https");
         engine.shared.switch_archive("тест");
         assert_eq!(engine.shared.archive_base(), "http://web.archive.org");
+        assert_eq!(engine.shared.archive_scheme(), "http");
+        // Две неудачи подряд не возвращают https: переключение липкое.
         engine.shared.switch_archive("тест");
-        assert_eq!(engine.shared.archive_base(), "https://web.archive.org");
+        engine.shared.switch_archive("тест");
+        assert_eq!(engine.shared.archive_base(), "http://web.archive.org");
+        // Новый прогон снова начинает с https — «http» не залипает между запусками.
+        let next = Engine::new("example.com", &root, 1, 0).unwrap();
+        assert_eq!(next.shared.archive_scheme(), "https");
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Д-98: UA содержит версию изделия, а не литерал.
+    #[test]
+    fn user_agent_carries_version() {
+        assert!(UA.starts_with("SiteRestorer/"), "UA: {UA}");
+        assert!(
+            UA.contains(crate::APP_VERSION),
+            "в UA нет версии {}. UA: {UA}",
+            crate::APP_VERSION
+        );
+        assert!(UA.contains("contact:"), "в UA нет контакта: {UA}");
+    }
+
+    /// Д-99: `Retry-After` числом, HTTP-датой и мусором.
+    #[test]
+    fn retry_after_parses_number_and_http_date() {
+        assert_eq!(retry_after_secs("120"), Some(120.0));
+        assert_eq!(retry_after_secs(" 7 "), Some(7.0));
+        // Потолок и защита от бесконечности.
+        assert_eq!(retry_after_secs("100000"), Some(MAX_RETRY_WAIT));
+        assert_eq!(retry_after_secs("inf"), None);
+        // HTTP-дата через минуту: пауза около минуты, а не ноль.
+        let stamp = stamp_from_secs(now_secs() + 60);
+        let date = format!(
+            "Tue, {} {} {} {}:{}:{} GMT",
+            &stamp[6..8],
+            [
+                "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+            ][stamp[4..6].parse::<usize>().unwrap() - 1],
+            &stamp[0..4],
+            &stamp[8..10],
+            &stamp[10..12],
+            &stamp[12..14]
+        );
+        let wait = retry_after_secs(&date).expect("дата должна разбираться");
+        assert!(
+            (55.0..=65.0).contains(&wait),
+            "ожидалось около 60 с, получено {wait} по {date}"
+        );
+        // Прошлое — ждать нечего.
+        assert_eq!(retry_after_secs("Tue, 10 Nov 1999 17:07:55 GMT"), Some(0.0));
+        // Мусор и пустота.
+        assert_eq!(retry_after_secs("не дата"), None);
+        assert_eq!(retry_after_secs(""), None);
     }
 
     #[test]

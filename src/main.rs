@@ -14,6 +14,7 @@ mod app;
 mod clip;
 mod clock;
 mod core;
+mod crash;
 mod encoding;
 #[cfg(feature = "gui")]
 mod i18n;
@@ -181,6 +182,9 @@ fn graphics_available() -> bool {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // Д-95: след паники ставится до всего остального. При `panic = "abort"`
+    // паника убивает процесс без разбора, и без хука от неё не остаётся ничего.
+    crash::install(crash::log_path(&args));
     let console_mode = args
         .iter()
         .any(|a| a == "--cli" || a == "--version" || a == "-V");
@@ -275,6 +279,9 @@ fn main() {
     }
 }
 
+/// Разбор закончен: поля заполнены и проверены (Д-96). `Debug` нужен тестам,
+/// которые печатают удачный разбор при неожиданной ошибке.
+#[derive(Debug)]
 struct Args {
     site: String,
     out: PathBuf,
@@ -307,12 +314,75 @@ struct Args {
     stub_bytes: Option<usize>,
 }
 
-fn parse_args(args: &[String]) -> Args {
+/// Ошибка разбора аргументов: готовый текст для человека (Д-96).
+type ArgError = String;
+
+/// Язык сообщений об ошибке известен до разбора: `--lang en` или `SR_LANG`.
+fn error_is_english(args: &[String]) -> bool {
+    args.windows(2).any(|w| w[0] == "--lang" && w[1] == "en")
+        || std::env::var("SR_LANG").as_deref() == Ok("en")
+}
+
+/// Значение флага отдельной функцией (Д-96).
+///
+/// Раньше значение бралось как `args.get(i + 1)` без проверки: `--limit abc`
+/// молча превращался в 0 («без лимита») и запускал полный прогон, а флаг без
+/// значения давал пустую строку. Ошибка разбора останавливает прогон до сети.
+fn arg_text(args: &[String], i: usize, flag: &str, en: bool) -> Result<String, ArgError> {
+    match args.get(i + 1) {
+        Some(value) if !value.starts_with('-') || value.parse::<f64>().is_ok() => Ok(value.clone()),
+        _ => Err(if en {
+            format!("{flag}: no value")
+        } else {
+            format!("{flag}: нет значения")
+        }),
+    }
+}
+
+/// Числовое значение флага: текст вместо числа — ошибка, а не значение по умолчанию.
+fn arg_num<T: std::str::FromStr>(
+    args: &[String],
+    i: usize,
+    flag: &str,
+    en: bool,
+) -> Result<T, ArgError> {
+    let raw = arg_text(args, i, flag, en)?;
+    raw.parse::<T>().map_err(|_| {
+        if en {
+            format!("{flag}: a number is expected, got {raw:?}")
+        } else {
+            format!("{flag}: ожидается число, получено {raw:?}")
+        }
+    })
+}
+
+/// Проверка диапазона: границы известны из требований (Д-96) и проверяются
+/// до запуска прогона, чтобы не узнать о них через десять минут работы.
+fn arg_range<T: PartialOrd + std::fmt::Display>(
+    value: T,
+    flag: &str,
+    low: T,
+    high: T,
+    en: bool,
+) -> Result<T, ArgError> {
+    if value < low || value > high {
+        return Err(if en {
+            format!("{flag}: {value} is out of range {low}..={high}")
+        } else {
+            format!("{flag}: {value} вне диапазона {low}..={high}")
+        });
+    }
+    Ok(value)
+}
+
+fn parse_args(args: &[String]) -> Result<Args, ArgError> {
+    let en = error_is_english(args);
     let mut parsed = Args {
         site: String::new(),
         out: PathBuf::from("SiteRestore/site"),
         limit: 0,
-        workers: 16,
+        // Число потоков по умолчанию живёт в ядре: один источник истины.
+        workers: crate::core::DEFAULT_WORKERS,
         threads: 0,
         rate: 0.0,
         lang: "ru".to_string(),
@@ -332,53 +402,60 @@ fn parse_args(args: &[String]) -> Args {
     while i < args.len() {
         match args[i].as_str() {
             "--site" => {
-                parsed.site = args.get(i + 1).cloned().unwrap_or_default();
+                parsed.site = arg_text(args, i, "--site", en)?;
                 i += 2;
             }
             "--out" => {
-                parsed.out = PathBuf::from(args.get(i + 1).cloned().unwrap_or_default());
+                parsed.out = PathBuf::from(arg_text(args, i, "--out", en)?);
                 i += 2;
             }
             "--limit" => {
-                parsed.limit = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(0);
+                // 0 — явное «без лимита», любое другое число — предел (ФТ-111).
+                parsed.limit = arg_num(args, i, "--limit", en)?;
                 i += 2;
             }
             "--workers" => {
-                parsed.workers = args
-                    .get(i + 1)
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or(crate::core::DEFAULT_WORKERS);
+                let value: usize = arg_num(args, i, "--workers", en)?;
+                parsed.workers = arg_range(value, "--workers", 1, 64, en)?;
                 i += 2;
             }
             "--threads" => {
-                parsed.threads = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(0);
+                // 0 — по числу ядер; больше 256 потоков сборки смысла не имеет.
+                let value: usize = arg_num(args, i, "--threads", en)?;
+                parsed.threads = arg_range(value, "--threads", 0, 256, en)?;
                 i += 2;
             }
             "--lang" => {
-                parsed.lang = args.get(i + 1).cloned().unwrap_or_else(|| "ru".to_string());
+                parsed.lang = arg_text(args, i, "--lang", en)?;
                 i += 2;
             }
             "--rate" => {
-                parsed.rate = args
-                    .get(i + 1)
-                    .and_then(|v| v.parse::<f64>().ok())
-                    .unwrap_or(0.0);
+                let value: f64 = arg_num(args, i, "--rate", en)?;
+                if !value.is_finite() || value < 0.0 {
+                    return Err(if en {
+                        format!("--rate: {value} is not a pause in seconds")
+                    } else {
+                        format!("--rate: {value} — это не пауза в секундах")
+                    });
+                }
+                parsed.rate = value;
                 i += 2;
             }
             "--snapshot" => {
-                parsed.snapshot = args.get(i + 1).cloned().unwrap_or_default();
+                parsed.snapshot = arg_text(args, i, "--snapshot", en)?;
                 i += 2;
             }
             "--as-of" => {
-                parsed.as_of = args.get(i + 1).cloned().unwrap_or_default();
+                parsed.as_of = arg_text(args, i, "--as-of", en)?;
                 i += 2;
             }
             "--fallback-depth" => {
-                parsed.fallback_depth = args.get(i + 1).and_then(|v| v.parse().ok());
+                parsed.fallback_depth = Some(arg_num(args, i, "--fallback-depth", en)?);
                 i += 2;
             }
             "--refresh-days" => {
-                parsed.refresh_days = args.get(i + 1).and_then(|v| v.parse().ok());
+                let value: u32 = arg_num(args, i, "--refresh-days", en)?;
+                parsed.refresh_days = Some(arg_range(value, "--refresh-days", 0, 3650, en)?);
                 i += 2;
             }
             "--refresh" => {
@@ -386,32 +463,33 @@ fn parse_args(args: &[String]) -> Args {
                 i += 1;
             }
             "--since" => {
-                parsed.since = args.get(i + 1).cloned().unwrap_or_default();
+                parsed.since = arg_text(args, i, "--since", en)?;
                 i += 2;
             }
             "--index-max-pages" => {
-                parsed.index_max_pages = args.get(i + 1).and_then(|v| v.parse().ok());
+                parsed.index_max_pages = Some(arg_num(args, i, "--index-max-pages", en)?);
                 i += 2;
             }
             "--rescue-limit" => {
-                parsed.rescue_limit = args.get(i + 1).and_then(|v| v.parse().ok());
+                parsed.rescue_limit = Some(arg_num(args, i, "--rescue-limit", en)?);
                 i += 2;
             }
             "--rescue-budget" => {
-                parsed.rescue_budget = args.get(i + 1).and_then(|v| v.parse().ok());
+                parsed.rescue_budget = Some(arg_num(args, i, "--rescue-budget", en)?);
                 i += 2;
             }
             "--retry-missing" => {
-                parsed.retry_missing_days = args.get(i + 1).and_then(|v| v.parse().ok());
+                let value: u32 = arg_num(args, i, "--retry-missing", en)?;
+                parsed.retry_missing_days = Some(arg_range(value, "--retry-missing", 0, 3650, en)?);
                 i += 2;
             }
             "--stub-bytes" => {
-                parsed.stub_bytes = args.get(i + 1).and_then(|v| v.parse().ok());
+                parsed.stub_bytes = Some(arg_num(args, i, "--stub-bytes", en)?);
                 i += 2;
             }
             // Служебные флаги разбираются до запуска, в настройки они не попадают
             // и неизвестными не считаются.
-            "--cli" | "--version" | "-V" | "--help" | "-h" => i += 1,
+            "--cli" | "--version" | "-V" | "--help" | "-h" | "--verbose" | "-v" => i += 1,
             other => {
                 // Молча терять аргумент нельзя: опечатка в имени флага давала полный
                 // прогон вместо пробы и выглядела как согласие с командой.
@@ -425,11 +503,19 @@ fn parse_args(args: &[String]) -> Args {
             }
         }
     }
-    parsed
+    Ok(parsed)
 }
 
 fn cli(args: &[String]) -> i32 {
-    let parsed = parse_args(args);
+    // Д-96: кривой аргумент — это ошибка запуска (код 2), а не повод молча
+    // подставить значение по умолчанию и пойти в архив.
+    let parsed = match parse_args(args) {
+        Ok(parsed) => parsed,
+        Err(message) => {
+            eprintln!("{message}");
+            return 2;
+        }
+    };
     // Язык действует и на окно, и на сообщения ядра/CLI.
     let english = parsed.lang == "en" || std::env::var("SR_LANG").as_deref() == Ok("en");
     tr::set_english(english);
@@ -690,7 +776,7 @@ fn cli(args: &[String]) -> i32 {
             );
             // Машиночитаемый итог: одна строка, чтобы прогон разбирался скриптом.
             println!(
-                "RESULT {{\"ok\":{},\"total\":{},\"files\":{},\"mirror\":{},\"unique\":{},\"pages\":{},\"foreign\":{},\"refs\":{},\"broken\":{},\"fallbacks\":{},\"collisions\":{},\"rescued\":{},\"shared\":{},\"left\":{},\"oldest\":\"{}\",\"newest\":\"{}\",\"site\":\"{}\",\"index_total\":{},\"index_pages\":{},\"index_truncated\":{},\"index_failed\":{},\"added_live\":{},\"added_build\":{},\"report\":\"{}\"}}",
+                "RESULT {{\"ok\":{},\"total\":{},\"files\":{},\"mirror\":{},\"unique\":{},\"pages\":{},\"foreign\":{},\"refs\":{},\"broken\":{},\"fallbacks\":{},\"collisions\":{},\"rescued\":{},\"shared\":{},\"left\":{},\"oldest\":\"{}\",\"newest\":\"{}\",\"site\":\"{}\",\"index_total\":{},\"index_pages\":{},\"index_truncated\":{},\"index_failed\":{},\"added_live\":{},\"added_build\":{},\"report\":\"{}\",\"archive\":\"{}\",\"archive_requests\":{}}}",
                 outcome.ok,
                 outcome.total,
                 outcome.site_files,
@@ -715,6 +801,8 @@ fn cli(args: &[String]) -> i32 {
                 outcome.added_live,
                 outcome.added_build,
                 json_escape(&outcome.report.to_string_lossy()),
+                outcome.archive,
+                outcome.archive_requests,
             );
             0
         }
@@ -782,4 +870,103 @@ fn json_escape(text: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    /// Д-96: текст вместо числа — ошибка с понятным текстом, а не «без лимита».
+    #[test]
+    fn limit_must_be_a_number() {
+        let err = parse_args(&args(&["--cli", "--site", "example.com", "--limit", "abc"]))
+            .expect_err("текст вместо числа должен отвергаться");
+        assert!(err.contains("--limit"), "{err}");
+        assert!(err.contains("число"), "{err}");
+    }
+
+    /// Д-96: `--limit 0` — это явное «без лимита» и допустимо (ФТ-111).
+    #[test]
+    fn limit_zero_is_allowed() {
+        let parsed = parse_args(&args(&["--cli", "--site", "example.com", "--limit", "0"]))
+            .expect("ноль допустим");
+        assert_eq!(parsed.limit, 0);
+        let parsed = parse_args(&args(&["--cli", "--site", "example.com", "--limit", "25"]))
+            .expect("число допустимо");
+        assert_eq!(parsed.limit, 25);
+    }
+
+    /// Д-96: флаг без значения называет себя.
+    #[test]
+    fn flag_without_value_is_reported() {
+        let err = parse_args(&args(&["--cli", "--site"])).expect_err("нет значения");
+        assert!(err.contains("--site"), "{err}");
+        assert!(err.contains("нет значения"), "{err}");
+    }
+
+    /// Д-96: диапазоны `--workers` и `--refresh-days`.
+    #[test]
+    fn ranges_are_checked() {
+        assert!(parse_args(&args(&["--site", "e.com", "--workers", "1"])).is_ok());
+        assert!(parse_args(&args(&["--site", "e.com", "--workers", "64"])).is_ok());
+        assert!(parse_args(&args(&["--site", "e.com", "--workers", "0"])).is_err());
+        assert!(parse_args(&args(&["--site", "e.com", "--workers", "65"])).is_err());
+        assert!(parse_args(&args(&["--site", "e.com", "--refresh-days", "0"])).is_ok());
+        assert!(parse_args(&args(&["--site", "e.com", "--refresh-days", "3650"])).is_ok());
+        assert!(parse_args(&args(&["--site", "e.com", "--refresh-days", "3651"])).is_err());
+    }
+
+    /// Д-96: каждый числовой флаг отвергает текст.
+    #[test]
+    fn every_numeric_flag_rejects_text() {
+        const FLAGS: [&str; 10] = [
+            "--limit",
+            "--workers",
+            "--threads",
+            "--rate",
+            "--fallback-depth",
+            "--refresh-days",
+            "--index-max-pages",
+            "--rescue-limit",
+            "--rescue-budget",
+            "--retry-missing",
+        ];
+        for flag in FLAGS {
+            let err = parse_args(&args(&["--site", "e.com", flag, "не число"]))
+                .expect_err(&format!("{flag} должен отвергать текст"));
+            assert!(err.contains(flag), "{flag}: {err}");
+        }
+        // --stub-bytes проверяется отдельно: у него нет пары в списке выше.
+        assert!(parse_args(&args(&["--site", "e.com", "--stub-bytes", "много"])).is_err());
+    }
+
+    /// Д-96: отрицательная и бесконечная пауза — ошибка.
+    #[test]
+    fn rate_must_be_a_pause() {
+        assert!(parse_args(&args(&["--site", "e.com", "--rate", "-1"])).is_err());
+        assert!(parse_args(&args(&["--site", "e.com", "--rate", "inf"])).is_err());
+        assert!(parse_args(&args(&["--site", "e.com", "--rate", "0.5"])).is_ok());
+    }
+
+    /// Д-96: сообщение на английском, если запрошен `--lang en`.
+    #[test]
+    fn error_language_follows_flag() {
+        let err = parse_args(&args(&[
+            "--site", "e.com", "--limit", "abc", "--lang", "en",
+        ]))
+        .expect_err("ошибка");
+        assert!(err.contains("a number is expected"), "{err}");
+    }
+
+    /// Служебные флаги не считаются ни значениями, ни неизвестными.
+    #[test]
+    fn service_flags_are_skipped() {
+        let parsed = parse_args(&args(&["--cli", "--verbose", "--site", "e.com"]))
+            .expect("служебные флаги допустимы");
+        assert_eq!(parsed.site, "e.com");
+    }
 }
