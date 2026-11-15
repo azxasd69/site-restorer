@@ -14,11 +14,11 @@ Python (`legacy/python`) и Go (`ports/go`) переведены в архив: 
 |---|---|---|---|
 | `SiteRestorer-windows-x64.exe` | Windows 10/11 x64 | 9,0 МБ | **основной вариант**: окно egui, RU/EN, статический CRT |
 | `SiteRestorer-windows-x64-cli.exe` | Windows x64 | 4,1 МБ | только командная строка |
-| `SiteRestorer-linux-x64-gui` | Linux x64 | 27,5 МБ | окно egui (нужны системные X11/GL) |
-| `SiteRestorer-linux-x64-cli` | Linux x64 | 12,5 МБ | статический ELF (`ldd` → not a dynamic executable) |
-| `SiteRestorer-linux-x64.tar.gz` | Linux x64 | 12,5 МБ | оба бинарника + `.desktop`, иконка, `install.sh` |
+| `SiteRestorer-linux-x64-gui` | Linux x64 | 27,8 МБ | окно egui (нужны системные X11/GL) |
+| `SiteRestorer-linux-x64-cli` | Linux x64 | 12,8 МБ | статический ELF (`ldd` → not a dynamic executable) |
+| `SiteRestorer-linux-x64.tar.gz` | Linux x64 | 12,7 МБ | оба бинарника + `.desktop`, иконка, `install.sh` |
 
-Размеры Windows сняты со сборки **3.6.6** (15.11.2026), Linux — по факту `v3.6.5` (уточняются после CI `v3.6.6`). Имя не содержит версию — ссылки
+Размеры сняты с релиза **v3.6.6** (15.11.2026) — все пять ассетов. Имя не содержит версию — ссылки
 `releases/latest/download/<имя>` постоянны; версию печатает `--version`
 и первая строка журнала окна.
 
