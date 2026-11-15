@@ -12,13 +12,13 @@ Python (`legacy/python`) и Go (`ports/go`) переведены в архив: 
 
 | Файл | Платформа | Размер | Что внутри |
 |---|---|---|---|
-| `SiteRestorer-windows-x64.exe` | Windows 10/11 x64 | 8,9 МБ | **основной вариант**: окно egui, RU/EN, статический CRT |
-| `SiteRestorer-windows-x64-cli.exe` | Windows x64 | 3,9 МБ | только командная строка |
+| `SiteRestorer-windows-x64.exe` | Windows 10/11 x64 | 9,0 МБ | **основной вариант**: окно egui, RU/EN, статический CRT |
+| `SiteRestorer-windows-x64-cli.exe` | Windows x64 | 4,1 МБ | только командная строка |
 | `SiteRestorer-linux-x64-gui` | Linux x64 | 27,5 МБ | окно egui (нужны системные X11/GL) |
 | `SiteRestorer-linux-x64-cli` | Linux x64 | 12,5 МБ | статический ELF (`ldd` → not a dynamic executable) |
 | `SiteRestorer-linux-x64.tar.gz` | Linux x64 | 12,5 МБ | оба бинарника + `.desktop`, иконка, `install.sh` |
 
-Размеры сняты с релиза **v3.6.5** (15.11.2026) — все пять ассетов. Имя не содержит версию — ссылки
+Размеры Windows сняты со сборки **3.6.6** (15.11.2026), Linux — по факту `v3.6.5` (уточняются после CI `v3.6.6`). Имя не содержит версию — ссылки
 `releases/latest/download/<имя>` постоянны; версию печатает `--version`
 и первая строка журнала окна.
 
@@ -28,7 +28,7 @@ Python (`legacy/python`) и Go (`ports/go`) переведены в архив: 
 |---|---|---|---|
 | Интерфейс | нативное окно, RU/EN | нативное окно на Tk | CLI |
 | Статус | развивается, публикуется | заморожен, не публикуется | заморожен, не публикуется |
-| Тесты | 135 GUI / 132 CLI (`cargo nextest`) | 17 (не запускаются в CI) | 24 (не запускаются в CI) |
+| Тесты | 150 GUI / 147 CLI (`cargo nextest`) | 17 (не запускаются в CI) | 24 (не запускаются в CI) |
 
 Каталоги `legacy/python` и `ports/go` оставлены как история: код читается,
 но сборки из них больше не выпускаются.
@@ -77,8 +77,10 @@ python scripts/make-icons.py
 
 ```
 site-restorer --cli --site <адрес> --out <папка> [--limit N] [--workers N] [--threads N]
-                [--snapshot newest|oldest|<дата>] [--as-of ГГГГ[-ММ[-ДД]]] [--since ГГГГ[-ММ]]
-                [--refresh-days N] [--refresh] [--fallback-depth N] [--rescue-limit N]
+                [--include-host <домен>] [--snapshot newest|oldest|<дата>] [--as-of ГГГГ[-ММ[-ДД]]]
+                [--since ГГГГ[-ММ]] [--refresh-days N] [--refresh] [--fallback-depth N]
+                [--rescue-limit N] [--rescue-budget N]
+site-restorer --serve <папка> [--port N]
 site-restorer --version
 ```
 
@@ -94,7 +96,9 @@ site-restorer --version
 - `--refresh-days` / `--refresh` — срок свежести файла и принудительная проверка;
 - `--since` — окно адресов для страниц; `--rescue-limit` и `--rescue-budget` — добор по ссылкам и его бюджет времени;
 - `--retry-missing` — срок повтора адресов, у которых не было снимка;
-- `--lang` — язык окна (`ru`/`en`); сообщения CLI остаются русскими.
+- `--include-host` — включить дополнительный домен/поддомен в копию;
+- `--serve` / `--port` — встроенный локальный HTTP-сервер копии;
+- `--lang` — язык окна (`ru`/`en`); сообщения CLI и ядра переключаются.
 
 У архивного Go-варианта были свои `--stage` и `--sanitize`; в актуальной
 реализации их нет.

@@ -28,13 +28,13 @@ Python-версия (`legacy/python`) и порт на Go (`ports/go`) оста�
 
 | Файл | Платформа | Размер |
 |---|---|---|
-| `SiteRestorer-windows-x64.exe` | Windows 10/11 x64 — **основной** | 8,9 МБ |
-| `SiteRestorer-windows-x64-cli.exe` | Windows x64, только командная строка | 3,9 МБ |
+| `SiteRestorer-windows-x64.exe` | Windows 10/11 x64 — **основной** | 9,0 МБ |
+| `SiteRestorer-windows-x64-cli.exe` | Windows x64, только командная строка | 4,1 МБ |
 | `SiteRestorer-linux-x64-gui` | Linux x64, нативное окно (X11/GL) | 27,5 МБ |
 | `SiteRestorer-linux-x64-cli` | Linux x64, статический бинарник (musl) | 12,5 МБ |
 | `SiteRestorer-linux-x64.tar.gz` | Linux x64: оба бинарника + `.desktop`, иконка, `install.sh` | 12,5 МБ |
 
-Размеры — по ассетам релиза 3.6.5 (15.11.2026): собрано конвейером GitHub Actions;
+Размеры Windows — по сборке 3.6.6 (15.11.2026), Linux — по факту `3.6.5` (уточняются после CI);
 размеры Linux больше прежних, потому что в поставку идут отладочные строки (см. `docs/RELEASE.md`).
 
 Имена не содержат версию — ссылки `releases/latest/download/<имя>` постоянны.
@@ -63,7 +63,8 @@ site-restorer --cli --site example.com --out ~/SiteRestore/site
 | **Адаптивная конкурентность** | 2 → 24 потока по AIMD: разгон при росте скорости, срез при ошибках 429 |
 | **Докачка** | уже скачанное не качается повторно, запуск продолжает с места остановки |
 | **Работа с лимитами** | Retry-After, экспоненциальные паузы, «предохранитель» на серию 429 |
-| **Сборка оффлайн-копии** | ссылки → относительные, кодировки → UTF-8, эвристики кэша CMS и миниатюр |
+| **Встроенный сервер** | просмотр готовой копии кнопкой **«Открыть копию»** или `--serve <папка>` без стороннего софта |
+| **Сборка оффлайн-копии** | автораспаковка gzip, поддомены, минификаторы, ссылки → относительные, кодировки → UTF-8, эвристики кэша CMS |
 | **Проверка** | подсчёт внутренних и битых ссылок, отчёт `report.html` |
 | **Любой ввод адреса** | ссылка из письма, поиска, архива; русская раскладка; IDN-домены |
 | **RU / EN** | переключение языка на лету |
@@ -120,20 +121,20 @@ site-restorer --cli --site example.com --out ~/SiteRestore/site
 └── report.html  отчёт о покрытии
 ```
 
-Открыть копию:
+Открыть копию: нажмите кнопку **«Открыть копию»** в окне программы или запустите встроенный сервер:
 
 ```bash
-cd <папка>/site
-python -m http.server 8080
-# http://127.0.0.1:8080/
+site-restorer --serve <папка> [--port 8080]
 ```
 
 ## Командная строка
 
 ```
 site-restorer --cli --site <адрес> --out <папка> [--limit N] [--workers N] [--threads N]
-                [--snapshot newest|oldest|<дата>] [--as-of ГГГГ[-ММ[-ДД]]] [--since ГГГГ[-ММ]]
-                [--refresh-days N] [--refresh] [--fallback-depth N] [--rescue-limit N]
+                [--include-host <домен>] [--snapshot newest|oldest|<дата>] [--as-of ГГГГ[-ММ[-ДД]]]
+                [--since ГГГГ[-ММ]] [--refresh-days N] [--refresh] [--fallback-depth N]
+                [--rescue-limit N] [--rescue-budget N]
+site-restorer --serve <папка> [--port N]
 site-restorer --version
 ```
 
@@ -154,7 +155,10 @@ site-restorer --version
 | `--rescue-budget` | предел времени на добор по ссылкам, секунд (30; 0 — без предела) |
 | `--retry-missing` | через сколько дней повторять адрес, у которого не было снимка (7; 0 — каждый раз) |
 | `--stub-bytes` | порог «пустой страницы» в байтах: короче — берём более старый снимок (256) |
-| `--limit` | ограничить число адресов (быстрая проба) |
+| `--limit` | стратифицированная проба на N адресов |
+| `--include-host` | добавить поддомен или домен в копию (можно несколько раз) |
+| `--serve` | запустить встроенный локальный сервер для папки копии |
+| `--port` | порт для `--serve` (`0` — случайный свободный) |
 | `--lang` | язык интерфейса и сообщений: `ru` / `en` |
 
 Повторный прогон в ту же папку не пересобирает неизменённые файлы: рядом с копией лежит
@@ -202,7 +206,7 @@ site-restorer --version
 
 ```
 site-restorer/
-├── src/                 Rust: main.rs, app.rs (egui), core.rs, paths.rs, sanitize.rs, i18n.rs
+├── src/                 Rust: main.rs, app.rs (egui), core.rs, serve.rs, paths.rs, encoding.rs, sanitize.rs, i18n.rs
 ├── examples/            вспомогательные примеры (fetch.rs)
 ├── tests/               Rust-тесты (в src/*.rs, модули #[cfg(test)])
 ├── legacy/python/       архив: исходная реализация на Python (не развивается)
@@ -223,7 +227,7 @@ site-restorer/
 ## Тесты
 
 ```bash
-cargo nextest run --release --no-default-features   # 132 теста CLI, без сети
+cargo nextest run --release --no-default-features   # 147 тестов CLI, без сети
 cargo fmt --all --check
 cargo clippy --all-targets --release --no-default-features -- -D warnings
 cargo audit && cargo deny check && cargo machete && typos
