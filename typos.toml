@@ -16,5 +16,10 @@ EXCED = "EXCED"
 Tilda = "Tilda"
 tilda = "tilda"
 
+[default.extend-identifiers]
+"caf70d5" = "caf70d5"
+
 [files]
 extend-exclude = ["target/", "legacy/", "landing/assets/"]
+
+
