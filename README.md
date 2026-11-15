@@ -1,320 +1,250 @@
 # Site Restorer
 
-**Восстановление сайта из веб-архива в один клик.** Портативное приложение: скачивает
-сохранённую копию сайта из Wayback Machine (Internet Archive), собирает её для
-локального просмотра и показывает отчёт о полноте.
+**Восстановление сайта из веб-архива в один клик.** Портативное приложение на Rust: инвентаризирует сохранённые страницы и ресурсы в Wayback Machine (Internet Archive), параллельно скачивает их, собирает рабочую статическую копию, открывает её встроенным локальным сервером и формирует подробный отчёт о полноте.
 
 [![Build](https://img.shields.io/github/actions/workflow/status/azxasd69/site-restorer/build.yml?label=build)](https://github.com/azxasd69/site-restorer/actions/workflows/build.yml) [![Release](https://img.shields.io/github/v/release/azxasd69/site-restorer)](https://github.com/azxasd69/site-restorer/releases/latest) [![Downloads](https://img.shields.io/github/downloads/azxasd69/site-restorer/total)](https://github.com/azxasd69/site-restorer/releases) [![License](https://img.shields.io/github/license/azxasd69/site-restorer)](LICENSE)
 
-Сайт: **[lastcopy.ru](https://lastcopy.ru/)** · English: [lastcopy.ru/en](https://lastcopy.ru/en/)
+Сайт: **[lastcopy.ru](https://lastcopy.ru/)** · English site: **[lastcopy.ru/en](https://lastcopy.ru/en/)** · [English README summary](#english-summary)
 
-Реализация — **Rust**: нативный интерфейс на egui и CLI в одном исходнике.
-Python-версия (`legacy/python`) и порт на Go (`ports/go`) оставлены в репозитории
-как история и **больше не разрабатываются и не публикуются**.
+> Реализация — **Rust** (единый исходник для нативного окна на `egui` и консольной сборки CLI). Прежние реализации на Python ([legacy/python](legacy/python)) и Go ([ports/go](ports/go)) переведены в архив: они больше не развиваются и не публикуются.
 
-![Главное окно](docs/screenshots/01-idle.png)
+[Скачать](#скачать) · [Быстрый старт](#быстрый-старт) · [Возможности](#возможности) · [Командная строка](#командная-строка) · [Как это работает](#как-это-работает) · [Сборка и тесты](#сборка-и-тесты)
 
-| Инвентаризация архива | Скачивание файлов |
-|---|---|
-| ![Инвентаризация](docs/screenshots/02-inventory.png) | ![Скачивание](docs/screenshots/03-download.png) |
+![Главное окно Site Restorer после завершения прогона](docs/screenshots/04-done.png)
 
-![Итог прогона](docs/screenshots/04-done.png)
+<details>
+<summary>Ещё скриншоты интерфейса (стартовый экран, инвентаризация, загрузка)</summary>
+
+| Стартовый экран | Инвентаризация архива | Загрузка файлов |
+|---|---|---|
+| ![Главное окно](docs/screenshots/01-idle.png) | ![Инвентаризация](docs/screenshots/02-inventory.png) | ![Скачивание](docs/screenshots/03-download.png) |
+
+</details>
+
+---
 
 ## Скачать
 
-Все сборки — на странице [Releases](https://github.com/azxasd69/site-restorer/releases);
-ссылки `releases/latest/download/<имя>` всегда ведут на последнюю версию.
-Полная матрица и команды сборки — в [BUILD.md](BUILD.md).
+Актуальная версия — **[v3.6.6](https://github.com/azxasd69/site-restorer/releases/latest)** (15.11.2026). Постоянные ссылки `releases/latest/download/<имя>` всегда ведут на последний выпуск; полная матрица и требования к платформам описаны в [BUILD.md](BUILD.md) и [docs/PLATFORMS.md](docs/PLATFORMS.md).
 
-| Файл | Платформа | Размер |
-|---|---|---|
-| `SiteRestorer-windows-x64.exe` | Windows 10/11 x64 — **основной** | 9,0 МБ |
-| `SiteRestorer-windows-x64-cli.exe` | Windows x64, только командная строка | 4,1 МБ |
-| `SiteRestorer-linux-x64-gui` | Linux x64, нативное окно (X11/GL) | 27,8 МБ |
-| `SiteRestorer-linux-x64-cli` | Linux x64, статический бинарник (musl) | 12,8 МБ |
-| `SiteRestorer-linux-x64.tar.gz` | Linux x64: оба бинарника + `.desktop`, иконка, `install.sh` | 12,7 МБ |
+| Файл | Платформа | Размер | Назначение |
+|---|---|---|---|
+| [`SiteRestorer-windows-x64.exe`](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64.exe) | Windows 10/11 x64 | 9,0 МБ | **основной вариант**: окно `egui` + встроенный CLI |
+| [`SiteRestorer-windows-x64-cli.exe`](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64-cli.exe) | Windows x64 | 4,1 МБ | только командная строка (для скриптов и серверов) |
+| [`SiteRestorer-linux-x64-gui`](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64-gui) | Linux x64 | 27,8 МБ | нативное окно (нужны `libxkbcommon-x11-0`, `libgl1`, `libegl1`) |
+| [`SiteRestorer-linux-x64-cli`](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64-cli) | Linux x64 | 12,8 МБ | статический ELF (`musl`, без внешних библиотек) |
+| [`SiteRestorer-linux-x64.tar.gz`](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64.tar.gz) | Linux x64 | 12,7 МБ | оба Linux-бинарника + `install.sh`, `.desktop`, иконка |
 
-Размеры — по ассетам релиза 3.6.6 (15.11.2026): собрано конвейером GitHub Actions;
-размеры Linux больше прежних, потому что в поставку идут отладочные строки (см. `docs/RELEASE.md`).
+К каждому релизу также прикладываются [`SHA256SUMS.txt`](https://github.com/azxasd69/site-restorer/releases/latest/download/SHA256SUMS.txt) и перечень зависимостей [`SBOM-site-restorer.cdx.json`](https://github.com/azxasd69/site-restorer/releases/latest/download/SBOM-site-restorer.cdx.json). Последняя 32-битная сборка для x86 — в архивном релизе [`v3.6.0`](https://github.com/azxasd69/site-restorer/releases/tag/v3.6.0) (причина прекращения описана в [docs/PLATFORMS.md](docs/PLATFORMS.md)).
 
-Имена не содержат версию — ссылки `releases/latest/download/<имя>` постоянны.
-Версию печатает `--version` и первая строка журнала.
-
-Каждый релиз содержит `SHA256SUMS.txt` — контрольные суммы всех файлов.
-
-Установка не требуется: распакуйте и запустите. Если Windows покажет SmartScreen
-(«Windows защитила ваш компьютер») — «Подробнее» → «Выполнить всё равно».
-
-Для Linux:
+- **Установка не требуется:** распакуйте или запустите `.exe` напрямую. Если Windows SmartScreen покажет предупреждение («Windows защитила ваш компьютер»), нажмите «Подробнее» → «Выполнить всё равно».
+- **Linux (`tar.gz`):**
 
 ```bash
 tar -xzf SiteRestorer-linux-x64.tar.gz
-./site-restorer-linux-x64/install.sh          # в ~/.local, без root
-site-restorer-gui                              # окно
-site-restorer --cli --site example.com --out ~/SiteRestore/site
+cd site-restorer-linux-x64
+./install.sh                  # в ~/.local/bin (или PREFIX=/usr/local sudo ./install.sh)
+site-restorer-gui             # графическое окно (без OpenGL 2.0+ используйте CLI)
 ```
+
+---
+
+## Быстрый старт
+
+### Графический режим
+
+1. Запустите `SiteRestorer-windows-x64.exe` (`site-restorer-gui`). Поле адреса уже в фокусе — нажмите `Ctrl+V`: можно вставить домен, ссылку из поиска, письма или самого `web.archive.org`, адрес очистится автоматически (включая русскую раскладку и IDN/Punycode).
+2. При необходимости выберите папку результата (по умолчанию `%USERPROFILE%\SiteRestore\site` в Windows и `~/SiteRestore/site` в Linux).
+3. Нажмите **Начать** (или `Enter`).
+4. После сборки нажмите **Открыть копию** — программа поднимет встроенный локальный HTTP-сервер на `127.0.0.1` и откроет сайт в браузере. Сторонний софт и Python не требуются.
+
+### Командная строка
+
+```powershell
+# Восстановить сайт (включая поддомен со статикой при необходимости)
+SiteRestorer-windows-x64-cli.exe --cli --site example.com --out D:\copy --workers 8 --include-host cdn.example.com
+
+# Открыть собранную копию встроенным сервером
+SiteRestorer-windows-x64-cli.exe --serve D:\copy --port 8080
+```
+
+### Что появляется в папке результата
+
+```text
+<папка>/
+├── site/        готовая оффлайн-копия (открывается кнопкой «Открыть копию» или --serve)
+├── mirror/      сырые файлы из архива (база для повторного запуска и пересборки)
+├── data/        inventory.jsonl   — инвентарь адресов и метаданные
+│                build.jsonl       — инкрементальный журнал сборки
+│                content-types.tsv — карта Content-Type ответов
+│                snapshots.tsv     — даты снимков (переживают обновление версии)
+│                no-snapshot.tsv   — адреса без снимка (повтор через --retry-missing дней)
+└── report.html  подробный отчёт о покрытии, распаковке, подменах и битых ссылках
+```
+
+---
 
 ## Возможности
 
-| Возможность | Детали |
+| Направление | Что делает программа |
 |---|---|
-| **Инвентаризация архива** | CDX-индекс: все сохранённые URL домена, постраничный обход для больших сайтов |
-| **Параллельная загрузка** | HTML, CSS/JS, изображения и прочие файлы качаются одновременно |
-| **Адаптивная конкурентность** | 2 → 24 потока по AIMD: разгон при росте скорости, срез при ошибках 429 |
-| **Докачка** | уже скачанное не качается повторно, запуск продолжает с места остановки |
-| **Работа с лимитами** | Retry-After, экспоненциальные паузы, «предохранитель» на серию 429 |
-| **Встроенный сервер** | просмотр готовой копии кнопкой **«Открыть копию»** или `--serve <папка>` без стороннего софта |
-| **Сборка оффлайн-копии** | автораспаковка gzip, поддомены, минификаторы, ссылки → относительные, кодировки → UTF-8, эвристики кэша CMS |
-| **Проверка** | подсчёт внутренних и битых ссылок, отчёт `report.html` |
-| **Любой ввод адреса** | ссылка из письма, поиска, архива; русская раскладка; IDN-домены |
-| **RU / EN** | переключение языка на лету |
-| **Диагностика** | журнал с URL, HTTP-кодом, размером и временем каждого запроса |
+| **Полнота CDX-индекса** | Пробует `showNumPages`, при `numpages > 1` обходит страницы параллельно в `2` потока (до `5` попыток, автооткат к `1` потоку при `503`/`429` и переход `domain → prefix` на `504`), не обрывает остаток при отказе одной страницы |
+| **Оптимизированная загрузка** | Постоянный пул `keep-alive` (`64` общих / `32` на хост, `60 с`), дренирование коротких ответов `!= 200`, адаптивный `AIMD` (`2 с`) с учётом `429`, `5xx`, таймаутов и роста задержки без ложных спадов на мелких файлах |
+| **Умный добор и докачка** | Перебор соседних лет (`--fallback-depth`), фоновый добор свежих URL (`recheck`), параллельный добор по отсутствующим ссылкам (`rescue`, до `4` потоков с приоритетом `CSS/JS → изображения → остальное`), продолжение прерванного прогона без перекачки готового и автоматическая уборка `.part` |
+| **Сборка рабочей копии** | Сегментный разбор HTML (не портит `<script>`, `<style>`, `<!--...-->`), переписывание ссылок и `srcset`/`url(...)`, связывание поддоменов (`*.<host>` и `--include-host`), склейка минификаторов `?f=a.css,b.css` в `_min/`, перевод отсутствующих `/...` на живой адрес `https://<host>...` |
+| **Автораспаковка и защита типов** | Побитовая распаковка `gzip` (`1f 8b`) в `.css`/`.js`/`.svg`/`.html` даже без заголовка `Content-Encoding`; отсев HTML-заглушек, отданных под видом иконок/шрифтов/стилей |
+| **Кодировки** | Цепочка `BOM → UTF-8 → Content-Type / <meta> / XML / @charset → статистика`, починка двойного кодирования и смешанных `windows-1251 + UTF-8` вкраплений; результат всегда в UTF-8 |
+| **Встроенный сервер (`--serve`)** | Локальный HTTP/1.1 сервер на `127.0.0.1` без зависимостей: `GET`/`HEAD`, точный маппинг `?query`, `Range` (`206`/`416`), `ETag`/`304`, защита от `..` и `%2e%2e` |
+| **Честный отчёт и JSON** | `report.html` с карточкой `--serve`, разбивкой по типам, датами снимков, предупреждением при отсутствии CSS и строкой `RESULT {…}` для автоматизации |
+| **Интерфейс RU / EN** | Нативное окно без зависимостей от браузера и Python, живой журнал с подсчётом повторов (`×N`), переключение языка на лету, запоминание настроек в профиле |
 
-## Использование
-
-1. Введите адрес — можно вставить что угодно: `example.com`,
-   `https://www.example.com/catalog/?utm_source=x`, ссылку из архива или поиска.
-   Адрес очистится автоматически.
-2. Выберите папку. По умолчанию — `%USERPROFILE%\SiteRestore\site` (в Linux
-   `~/SiteRestore/site`); в командной строке без параметра папки — `SiteRestore/site`
-   от текущего каталога.
-3. Нажмите **Начать** (или Enter в поле адреса).
-
-Адрес, папка, язык и размер окна запоминаются: в Windows — `%APPDATA%\SiteRestorer\config.json`,
-в Linux — `$XDG_CONFIG_HOME/site-restorer/config.json`. Сбросить значения — кнопка в окне
-справки.
-
-### Вставка адреса
-
-Поле адреса получает фокус сразу при запуске — `Ctrl+V` работает без клика мышью.
-Раскладка не важна: при русской раскладке Ctrl+V всё равно попадает в поле
-(работает физическая клавиша V).
-
-| Способ | Windows | Linux | macOS |
-|---|---|---|---|
-| `Ctrl+V` / `Cmd+V` | да | да | да |
-| `Shift+Insert` | да | да | — |
-| `Ctrl+Shift+V` | да | да | да |
-| средняя кнопка мыши (PRIMARY) | — | да | — |
-
-Что происходит после вставки: текст из буфера чистится (BOM, невидимые символы,
-переводы строк, markdown `[текст](ссылка)`, кавычки, `<...>`), из него берётся
-первый валидный адрес, поле заменяется чистым доменом, подсказка внизу показывает
-разбор, а в журнал пишется строка `адрес: <было> → <стало>`. Если разобрать
-ничего не удалось, поле не трогаем — только предупреждение.
-
-Во время набора подсказка обновляется сама через 0,4 с после последней клавиши.
-`Enter` — разобрать и запустить, `Esc` — снять фокус с поля, уход фокуса
-(клик в другое место) — нормализовать поле до домена.
-
-Результат:
-
-```
-<папка>
-├── site\        готовая копия (открывать локальным веб-сервером)
-├── mirror\      сырые файлы из архива
-├── data\        inventory.jsonl   — список адресов
-│                content-types.tsv — карта типов содержимого
-│                build.jsonl       — журнал сборки (пропуск неизменённого)
-│                snapshots.tsv     — даты снимков, переживают обновление
-│                no-snapshot.tsv   — адреса без пригодного снимка (повтор через 7 дней)
-└── report.html  отчёт о покрытии
-```
-
-Открыть копию: нажмите кнопку **«Открыть копию»** в окне программы или запустите встроенный сервер:
-
-```bash
-site-restorer --serve <папка> [--port 8080]
-```
+---
 
 ## Командная строка
 
-```
-site-restorer --cli --site <адрес> --out <папка> [--limit N] [--workers N] [--threads N]
-                [--include-host <домен>] [--snapshot newest|oldest|<дата>] [--as-of ГГГГ[-ММ[-ДД]]]
-                [--since ГГГГ[-ММ]] [--refresh-days N] [--refresh] [--fallback-depth N]
-                [--rescue-limit N] [--rescue-budget N]
+Для работы в консоли используйте `SiteRestorer-windows-x64-cli.exe` (или оконный `.exe` с флагом `--cli` / `--serve` — он автоматически подключится к консоли).
+
+```text
+site-restorer --cli --site <адрес> [параметры]
 site-restorer --serve <папка> [--port N]
-site-restorer --version
+site-restorer --version [--verbose]
 ```
 
-| Флаг | Значение |
-|---|---|
-| `--site` | адрес сайта в любом виде |
-| `--out` | папка результата |
-| `--workers` | потолок параллельных загрузок (по умолчанию 16) |
-| `--threads` | потоков сборки копии и проверки ссылок (0 — по числу ядер, не больше 32) |
-| `--rate` | максимум запросов в секунду (0 — без ограничения) |
-| `--snapshot` | что брать из архива: `newest` — самый свежий снимок (по умолчанию), `oldest` — самый ранний, как в 3.4.0, или дата `ГГГГ-ММ-ДД` |
-| `--as-of` | снимок, ближайший к указанной дате; то же, что `--snapshot <дата>` |
-| `--fallback-depth` | сколько более старых снимков пробовать, если свежий пуст или непригоден (5; 0 — выключить) |
-| `--refresh-days` | через сколько дней с последней проверки файл перекачивается (30) |
-| `--refresh` | проверить свежесть всех файлов заново |
-| `--since` | окно для страниц: `ГГГГ` или `ГГГГ-ММ`; ресурсы (стили, картинки) берутся из полной истории |
-| `--rescue-limit` | сколько отсутствующих целей догружать по ссылкам (500; 0 — выключить) |
-| `--rescue-budget` | предел времени на добор по ссылкам, секунд (30; 0 — без предела) |
-| `--retry-missing` | через сколько дней повторять адрес, у которого не было снимка (7; 0 — каждый раз) |
-| `--stub-bytes` | порог «пустой страницы» в байтах: короче — берём более старый снимок (256) |
-| `--limit` | стратифицированная проба на N адресов |
-| `--include-host` | добавить поддомен или домен в копию (можно несколько раз) |
-| `--serve` | запустить встроенный локальный сервер для папки копии |
-| `--port` | порт для `--serve` (`0` — случайный свободный) |
-| `--lang` | язык интерфейса и сообщений: `ru` / `en` |
+| Флаг | По умолчанию | Описание |
+|---|---|---|
+| `--cli` | — | Запуск в консольном режиме без графического окна |
+| `--site <адрес>` | обязателен в `--cli` | Домен, URL, ссылка из поиска/архива, IDN или ошибочная раскладка |
+| `--out <папка>` | `SiteRestore/site` | Корневой каталог результата (`site/`, `mirror/`, `data/`, `report.html`) |
+| `--workers <1..64>` | `16` | Потолок потоков скачивания (`Gate` регулируется в `1..=min(workers, 24)`) |
+| `--threads <0..256>` | `0` (по ядрам, до `32`) | Число потоков для локальной сборки и проверки ссылок |
+| `--rate <число>` | `0` | Максимум запросов в секунду суммарно по всем воркерам (`0` — без предела) |
+| `--limit <N>` | `0` | Стратифицированная проба на `N` адресов (`0` — весь индекс) |
+| `--include-host <домен>` | — | Включить поддомен или дополнительный хост (можно указывать несколько раз) |
+| `--index-max-pages <N>` | `200` | Предел страниц индекса CDX (`0` — без ограничения) |
+| `--snapshot <режим>` | `newest` | Стратегия выбора снимка: `newest`, `oldest` или дата (`ГГГГ[-ММ[-ДД]]`) |
+| `--as-of <дата>` | — | То же, что `--snapshot <дата>` (`ГГГГ[-ММ[-ДД]]`) |
+| `--since <дата>` | — | Нижняя граница даты для HTML-страниц (`ГГГГ` или `ГГГГ-ММ`; ассеты — из всей истории) |
+| `--fallback-depth <N>` | `5` | Сколько более старых снимков пробовать при `404`/заглушке (`0` — выключить) |
+| `--refresh-days <0..3650>` | `30` | Через сколько дней с последней проверки перекачивать уже сохранённый файл |
+| `--refresh` | выкл | Проверить свежесть всех файлов заново (`TTL = 0`) |
+| `--rescue-limit <N>` | `500` | Сколько отсутствующих целей догружать по ссылкам после сборки (`0` — выключить) |
+| `--rescue-budget <сек>` | `30` | Лимит времени на этап добора по ссылкам (`0` — без ограничения) |
+| `--retry-missing <0..3650>` | `7` | Через сколько дней повторять адреса, для которых не нашлось пригодного снимка |
+| `--stub-bytes <N>` | `256` | Порог «пустой страницы» в байтах (короче — пробуется более старый снимок) |
+| `--text-limit <байт>` | `4194304` (4 МБ) | Предел размера файла для переписывания ссылок (`0` — без предела) |
+| `--serve <папка>` | — | Запустить встроенный локальный HTTP-сервер (`--serve --out <папка>` тоже поддерживается) |
+| `--port <0..65535>` | `0` | Порт для `--serve` (`0` — случайный свободный порт на `127.0.0.1`) |
+| `--lang <ru\|en>` | `ru` | Язык интерфейса, отчёта, журнала и CLI-сообщений (можно также через `SR_LANG`) |
+| `--verbose` / `-v` | — | С `--version` печатает поддерживаемые инструкции CPU (`avx2`, `sha-ni`, `popcnt`) |
 
-Повторный прогон в ту же папку не пересобирает неизменённые файлы: рядом с копией лежит
-журнал `data/build.jsonl`, и в журнал работы идёт строка «сборка: без изменений N, обновлено M».
-Журнал помечен версией программы и хостом: после обновления или смены сайта копия собирается
-заново. Файлы, исчезнувшие из зеркала, удаляются только при полном прогоне, без `--limit`.
+Неизвестный флаг с `--` или запись `--flag=value` (вместо пробела) немедленно отклоняются с кодом возврата `2` без сетевых запросов.
 
-По завершении печатается строка `RESULT {…}` — тот же итог в JSON, чтобы прогон разбирался
-скриптом: `ok` (скачано адресов), `total` (адресов в инвентаре), `files` (файлов в копии),
-`mirror` (файлов в зеркале), `unique` (уникальных путей), `pages`, `foreign` (файлов не того
-типа), `refs`, `broken`, `site`, `report`. Адресов может быть больше, чем файлов: разные
-адреса ведут на один файл.
+### Машиночитаемый итог (`RESULT`)
+
+По завершении `--cli` выводит строку вида `RESULT {…}` в JSON со следующими полями: `ok`, `total`, `files`, `mirror`, `unique`, `pages`, `foreign`, `refs`, `broken`, `fallbacks`, `collisions`, `rescued`, `shared`, `left`, `oldest`, `newest`, `site`, `index_total`, `index_pages`, `index_truncated`, `index_failed`, `added_live`, `added_build`, `report`, `archive`, `unreadable`, `archive_requests`.
+
+---
 
 ## Как это работает
 
-Подробно — в [ARCHITECTURE.md](ARCHITECTURE.md). Коротко:
+Подробное описание архитектуры — в [ARCHITECTURE.md](ARCHITECTURE.md), проектных решений — в [DESIGN.md](DESIGN.md), требований — в [TZ.md](TZ.md).
 
-1. **CDX-индекс** — узнаём, что архив сохранил (постранично для больших доменов). Адрес
-   архива — `https://web.archive.org`, при закрытом 80-м или 443-м порте программа переходит
-   на вторую схему и запоминает рабочую; отказ индекса повторяется до пяти раз с паузой
-   от 5 до 80 секунд.
-2. **Загрузка** — `id_`-режим Wayback отдаёт исходные байты без панели и переписанных ссылок;
-   при 404 перебираются соседние годы.
-3. **Сборка** — ссылки переписываются в относительные, кодировки приводятся к UTF-8,
-   для кэша CMS с хэшем в имени подставляется файл того же типа, миниатюры заменяются оригиналом.
-4. **Проверка** — обход HTML и подсчёт битых ссылок.
-5. **Отчёт** — покрытие по типам, объёмы, ошибки.
+1. **Инвентаризация (`inventory`):** запрос `showNumPages=true` в CDX API; при одной странице — быстрый запрос с `collapse=urlkey`, при `numpages > 1` — постраничный обход `0..pages` (2 потока, до 5 попыток, автооткат на `prefix` при `504`). URL нормализуются, коллизии путей отсеиваются по самому свежему снимку.
+2. **Параллельная загрузка (`download`):** задачи перемешиваются по типам (`html`, `code`, `img`, `other`), готовые непустые файлы в `mirror/` пропускаются, дубликаты по `digest` получают жёсткие ссылки. Воркеры работают через общий `keep-alive` пул и шлюз `Gate` под управлением `AIMD`; запись идёт через `.part` с автораспаковкой скрытого `gzip`, проверкой на HTML-подмену и периодическим сбросом метаданных.
+3. **Сборка копии (`build_dirty`):** инкрементальная обработка по `data/build.jsonl` в пуле `rayon`; сегментный разбор HTML, переписывание URL, поддоменов и минификаторов `?f=`, перевод отсутствующих корневых ссылок на `https://<host>...`, приведение кодировок к UTF-8 ([docs/encodings.md](docs/encodings.md)).
+4. **Добор и проверка (`rescue` + `verify`):** отсутствующие цели добираются в приоритете `CSS/JS → изображения → остальное` (до `4` потоков в пределах `--rescue-budget`), затронутые страницы пересобираются, затем выполняется подсчёт внутренних и битых ссылок.
+5. **Отчёт (`report.html`):** сводка покрытия, статистика снимков, распаковки, подмен, предупреждения и команда для запуска `--serve`.
 
-## Ограничения
+---
 
-- Восстанавливается только то, что архив сохранил. Файлы, которые краулер не забирал
-  (часто — картинки товаров), отсутствуют навсегда.
-- Динамика CMS (корзина, вход, поиск, AJAX) в статической копии не работает.
-- Архив ограничивает скорость с одного IP — большие сайты качаются часами.
-- Кэпы: 50 000 адресов и 200 страниц CDX.
+## Ограничения и этика
 
-## Этика и право
+- Восстанавливается **только** то, что когда-либо сохранил Internet Archive. Файлы, не попавшие в краул (например, часть картинок каталога), отсутствуют во всех снимках.
+- Динамика CMS (корзина, авторизация, личный кабинет, поиск по базе, серверные формы и AJAX) в статической копии не работает.
+- Скорость скачивания больших сайтов зависит от лимитов Internet Archive с одного IP.
+- По умолчанию установлен предел `200` страниц CDX (`--index-max-pages 0` снимает его) и переписывания текста `4 МБ` (`--text-limit`).
+- **Этика и право:** инструмент предназначен для личного архивирования и восстановления **собственных** сайтов. Он не обходит защиту, не маскирует `User-Agent` под браузер и не отправляет пользовательские данные на сторонние серверы. Уважайте условия Internet Archive и авторские права владельцев сайтов.
 
-Инструмент предназначен для личного архивирования и восстановления **своих** сайтов.
-Он не обходит защиту, не подменяет User-Agent и не маскируется под браузер.
-Уважайте условия Internet Archive и авторские права владельцев контента:
-копия чужого сайта — не основание для его публикации.
+---
 
 ## Структура репозитория
 
-```
+```text
 site-restorer/
-├── src/                 Rust: main.rs, app.rs (egui), core.rs, serve.rs, paths.rs, encoding.rs, sanitize.rs, i18n.rs
-├── examples/            вспомогательные примеры (fetch.rs)
-├── tests/               Rust-тесты (в src/*.rs, модули #[cfg(test)])
-├── legacy/python/       архив: исходная реализация на Python (не развивается)
-├── ports/go/            архив: порт на Go (не развивается)
-├── landing/             лендинг проекта (RU/EN) для GitHub Pages
-├── docs/                скриншоты, кейс, заметки по сборке под Windows
-├── .github/workflows/   CI: тесты, сборки всех стеков, релиз по тегу
-├── Cargo.toml           Rust-пакет (бинарь + фича gui)
-├── BUILD.md             матрица сборок и размеров
-├── ARCHITECTURE.md      как устроено внутри
-├── TZ.md                техническое задание
-├── DESIGN.md            техническое решение
-├── PLAN.md              план доработок
-├── CHANGELOG.md         история версий
-└── LICENSE              MIT
+├── src/                 Исходники Rust (17 модулей):
+│                        core.rs (движок), serve.rs (встроенный сервер), app.rs (egui),
+│                        main.rs (CLI/точка входа), paths.rs, encoding.rs, sanitize.rs,
+│                        puny.rs, settings.rs, crash.rs, isa.rs, pick.rs, clip.rs,
+│                        clock.rs, links.rs, i18n.rs, tr.rs
+├── scripts/             Вспомогательные скрипты (check-flags.py, check_downloads.py, make-icons.py)
+├── tools/               Генерация SBOM (sbom.py)
+├── packaging/           Иконки, манифест Windows, install.sh и .desktop для Linux
+├── landing/             Лендинг проекта (RU/EN, Markdown-версии и гайды) для GitHub Pages
+├── docs/                Документация по платформам, кодировкам, релизам, снимкам и скриншоты
+├── plans/               Аналитические отчёты, ревью и отчёты о выпусках
+├── .github/workflows/   CI: гейты, сборки Windows/Linux, MSRV, проверка ссылок и релиз
+├── legacy/python/       Архив: исходная реализация на Python (не развивается)
+├── ports/go/            Архив: порт на Go (не развивается)
+├── TZ.md                Техническое задание
+├── DESIGN.md            Техническое решение
+├── ARCHITECTURE.md      Архитектура
+├── PLAN.md              План развития и реестр решений
+├── BUILD.md             Матрица сборок и размеров
+├── CHANGELOG.md         История версий
+└── LICENSE              Лицензия MIT
 ```
 
-## Тесты
+---
+
+## Сборка и тесты
+
+Версия тулчейна закреплена в `rust-toolchain.toml` (`1.99.1`, минимальная поддерживаемая версия Rust — `1.88`). На Windows используется MSVC + статический CRT (`+crt-static`, настроено в `.cargo/config.toml`).
 
 ```bash
-cargo nextest run --release --no-default-features   # 147 тестов CLI, без сети
-cargo fmt --all --check
-cargo clippy --all-targets --release --no-default-features -- -D warnings
+# Сборка
+cargo build --release                                   # GUI + CLI (нативное окно)
+cargo build --release --no-default-features             # только CLI
+cargo build --release --target x86_64-unknown-linux-musl --no-default-features  # статический Linux
+
+# Локальные проверки качества (без сети; те же гейты в CI)
+cargo fmt --all -- --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo clippy --all-targets --no-default-features -- -D warnings
+cargo nextest run --all-features                        # 150 тестов (GUI + CLI)
+cargo nextest run --no-default-features                 # 147 тестов (CLI)
+python scripts/check-flags.py
 cargo audit && cargo deny check && cargo machete && typos
 ```
 
-Те же команды выполняет CI на каждый push и pull request.
+Инструкция по установке системных зависимостей Linux GUI и проверкам манифеста/glibc — в [BUILD.md](BUILD.md) и [docs/RELEASE.md](docs/RELEASE.md).
 
-## Сборка из исходников
+## Участие и лицензия
 
-Rust (версия тулчейна закреплена в `rust-toolchain.toml` — 1.99.1; для Windows — MSVC):
-
-```bash
-cargo build --release                                   # GUI + CLI, нативное окно
-cargo build --release --no-default-features             # только CLI
-cargo build --release --target x86_64-unknown-linux-musl --no-default-features   # статический Linux
-```
-
-32-битные сборки прекращены 12.11.2026: последняя версия для 32-битных Windows —
-3.6.0, её файлы остаются в релизе по тегу `v3.6.0`. Причина — в `docs/PLATFORMS.md`
-(раздел 6): политика платформ запрещает `i686`, а поддержка удваивала матрицу и
-нормы размера.
-
-Python-версия и порт на Go больше не собираются: их каталоги оставлены как
-архив исходников, сборки из них в релиз не попадают.
-
-## Участие
-
-- [TZ.md](TZ.md) — техническое задание: требования и критерии приёмки.
-- [DESIGN.md](DESIGN.md) — техническое решение; [PLAN.md](PLAN.md) — план доработок.
-- [docs/DEFECTS.md](docs/DEFECTS.md) — реестр дефектов: что сломано, почему, в какой версии исправлено.
-- [CONTRIBUTING.md](CONTRIBUTING.md) — окружение, правила кода, коммиты, PR.
-- [SECURITY.md](SECURITY.md) — как приватно сообщить об уязвимости.
-- Баги и идеи — через [issues](https://github.com/azxasd69/site-restorer/issues).
-
-## Лицензия
-
-MIT. Подробности — [LICENSE](LICENSE).
+- Сообщить о проблеме или предложить доработку: [GitHub Issues](https://github.com/azxasd69/site-restorer/issues).
+- Правила оформления изменений: [CONTRIBUTING.md](CONTRIBUTING.md); политика уязвимостей: [SECURITY.md](SECURITY.md).
+- Реестр известных и устранённых дефектов: [docs/DEFECTS.md](docs/DEFECTS.md).
+- Лицензия: **MIT** ([LICENSE](LICENSE)).
 
 ---
 
 ## English summary
 
-**Site Restorer** rebuilds a website from the Internet Archive. It is written in
-Rust (native egui window + CLI, 2–9 MB). The original Python/Tk version
-(`legacy/python`) and the Go port (`ports/go`) are kept as history only — they
-are no longer developed or published.
+**Site Restorer** rebuilds a website from the Internet Archive (Wayback Machine). Written in **Rust** (`egui` desktop UI + CLI + built-in HTTP copy server in a single portable binary, MIT-licensed).
 
-It inventories the domain via the CDX API, downloads every archived file in
-parallel with adaptive concurrency (AIMD, 2–24 threads), politely handles rate
-limits, rewrites links into a browsable offline copy, converts charsets to UTF-8,
-checks for broken references and writes a coverage report.
+### Key capabilities (v3.6.6)
 
-```bash
-site-restorer --cli --site example.com --out ./mirror
-```
+- **Archive inventory:** queries Wayback CDX API (`showNumPages`, parallel `2`-thread paging when `numpages > 1` with `503`/`429` backoff and `504 domain → prefix` fallback), normalises URLs and deduplicates collisions by newest snapshot.
+- **Optimised multithreaded download:** persistent `keep-alive` connection pool (`64` total / `32` per host), short non-200 body draining, `AIMD` (`2s` window) driven by `429`/overload/latency signals without false drops on small files, streaming byte counters, `.part` atomic writes with automatic cleanup, and resumable runs.
+- **Offline assembly & built-in server (`--serve`):** segment-aware HTML/CSS/JS rewriting, automatic `gzip` (`1f 8b`) decompression even without `Content-Encoding`, HTML-in-resource filtering, subdomain/CDN linking (`--include-host`), minifier bundle recovery (`?f=`), mixed `windows-1251 + UTF-8` repair, and a built-in read-only `127.0.0.1` HTTP/1.1 server (`Range`, `ETag`, traversal protection) accessible via **Open copy** in the GUI or `--serve <folder>`.
 
-Windows 10/11 builds (x64) are published on the Releases page together
-with Linux binaries and `SHA256SUMS.txt`. Only what the archive actually saved
-can be recovered; dynamic CMS features do not work in a static copy. Use it for
-your own sites and respect the Internet Archive terms and copyright law.
-
-## Linux
-
-В релизе есть `SiteRestorer-linux-x64.tar.gz`: консольная (`site-restorer`,
-статическая musl) и оконная (`site-restorer-gui`) сборки, `install.sh`, `.desktop`
-и иконка.
+### Quick start
 
 ```bash
-tar -xzf SiteRestorer-linux-x64.tar.gz
-cd site-restorer-linux-x64
-./install.sh          # в ~/.local, или PREFIX=/usr/local sudo ./install.sh
+# Restore a website in CLI mode
+site-restorer --cli --site example.com --out ./copy --workers 8
+
+# Browse the restored copy with the built-in local server (no Python required)
+site-restorer --serve ./copy --port 8080
 ```
 
-Окну нужны `libxkbcommon-x11-0`, `libgl1`, `libegl1`
-(`sudo apt install libxkbcommon-x11-0 libgl1 libegl1`). Без OpenGL 2.0+ (ВМ, RDP)
-окно покажет сообщение — используйте консольную версию.
-
-## Кодировки
-
-Копия всегда собирается в UTF-8. Кодировка исходной страницы определяется по
-цепочке: BOM → валидный UTF-8 → `Content-Type` → `<meta charset>` →
-`<?xml encoding?>` → `@charset` → статистика по содержимому (`chardetng`).
-Объявление не считается приказом: если по нему текст нечитаем, а альтернатива
-читается, выбирается альтернатива — заголовки веб-архива часто не совпадают
-с телом. Если `<meta charset>` оказалась глубже первых 1024 байт (браузер
-дальше не смотрит), сразу после `<head>` вставляется `<meta charset="utf-8">`.
-Двоичные файлы под текстовым расширением (JPEG или PDF с адресом `.html`)
-копируются без изменений. Подробный разбор и варианты решения —
-[docs/encodings.md](docs/encodings.md).
-
+Download prebuilt binaries for **Windows x64** (`9.0 MB` GUI / `4.1 MB` CLI) and **Linux x64** (`27.8 MB` GUI / `12.8 MB` static `musl` CLI / `12.7 MB` `.tar.gz`) with `SHA256SUMS.txt` from [GitHub Releases](https://github.com/azxasd69/site-restorer/releases). Only content actually captured by the Internet Archive can be recovered; dynamic backend features (cart, login, search) do not run in a static copy. Use it responsibly for your own websites.

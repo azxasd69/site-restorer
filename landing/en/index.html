@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Site Restorer — rebuild a website from the Internet Archive</title>
-<meta name="description" content="Downloads a site's archived copy from the Internet Archive, assembles it locally and shows honestly what came back and what is lost. One exe, no install.">
+<meta name="description" content="Downloads a site's archived copy from the Internet Archive, builds it locally, opens it with a built-in server and shows honestly what came back. One exe, no Python.">
 <meta name="theme-color" content="#f3f4f5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#15181c" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
@@ -30,7 +30,7 @@
 
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="../assets/img/touch-icon.png">
-<link rel="stylesheet" href="../assets/style.css?v=5">
+<link rel="stylesheet" href="../assets/style.css?v=6">
 <link rel="describedby" href="../llms.txt">
 <link rel="alternate" type="text/markdown" href="index.md" title="Markdown version of this page">
 <script src="../assets/app.js?v=2" defer></script>
@@ -44,7 +44,7 @@
       "@id": "https://lastcopy.ru/en/#app",
       "name": "Site Restorer",
       "url": "https://lastcopy.ru/en/",
-      "description": "Portable Windows application: rebuilds a website from the Internet Archive, fixes links and produces a completeness report.",
+      "description": "Portable Windows and Linux app: rebuilds a website from the Internet Archive, unpacks gzipped assets, serves the copy locally and writes a completeness report.",
       "applicationCategory": "UtilitiesApplication",
       "operatingSystem": "Windows 10, Windows 11",
       "inLanguage": ["ru", "en"],
@@ -73,7 +73,7 @@
           "name": "Do I need Python or other software?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "No. The main build is a single self-contained Rust binary and runs on a clean Windows install. Python is only needed if you choose python -m http.server as your local server; any static server will do."
+            "text": "No. The main build is a single self-contained Rust binary with zero dependencies. A local HTTP server is built right in (Open copy button or --serve), so no external server or Python is needed even to view the copy."
           }
         },
         {
@@ -147,16 +147,16 @@
     </nav>
 
     <div class="header-actions">
-      <a class="header-support" href="/en/support/">
+      <a class="header-support" aria-label="Support" href="/en/support/">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 1 0 -7.1 7.1L12 21l8.8-8.3a5 5 0 0 0 0-7.1Z"/></svg>
         <span class="label">Support</span>
       </a>
-      <span class="lang" aria-label="Language">
+      <nav class="lang" aria-label="Language">
         <a href="../" hreflang="ru" lang="ru">RU</a>
         <span class="sep" aria-hidden="true">/</span>
         <a href="./" aria-current="true" hreflang="en" lang="en">EN</a>
-      </span>
-      <a class="btn btn-primary btn-small" href="#download">
+      </nav>
+      <a class="btn btn-primary btn-small" aria-label="Download" href="#download">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v10"/><path d="M8 11l4 4 4-4"/><path d="M5 19h14"/></svg>
         <span>Download</span>
       </a>
@@ -173,7 +173,7 @@
   <section class="hero">
     <div class="wrap hero-grid">
       <div class="hero-copy">
-        <p class="eyebrow">windows 10/11 · mit · no install</p>
+        <p class="eyebrow">windows &amp; linux · v3.6.6 · mit · no install</p>
         <h1>Bring back a site from the web archive when no copy is left</h1>
         <p class="lead">Site Restorer pulls the archived version of a website out of the Internet Archive, assembles it into a local copy and shows honestly what came back and what is lost.</p>
 
@@ -189,8 +189,8 @@
         </div>
 
         <p class="hero-note">
-          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>No Python needed</span>
-          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Portable exe</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Built-in server</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Single exe, no Python</span>
           <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Any CMS</span>
         </p>
       </div>
@@ -246,11 +246,11 @@
         <article class="benefit">
           <span class="benefit-num">01 · SPEED</span>
           <h3>Multithreaded download</h3>
-          <p>Pages, styles, scripts and images are fetched at the same time, and the thread count adapts to the archive's response: it grows while speed holds and drops when the server starts to slow down.</p>
+          <p>A persistent keep-alive pool holds up to 24 workers without extra TLS handshakes, and AIMD adapts to 429, 5xx and response latency without false drops on small files.</p>
           <ul>
-            <li>starts with two threads, working ceiling is 24</li>
-            <li>HTTP 429 means a pause as the server asks, not a failed file</li>
-            <li>optional rate limit when the link is shared</li>
+            <li>parallel CDX paging and up to 4-thread link rescue</li>
+            <li>HTTP 429 triggers a Retry-After pause, not a lost file</li>
+            <li>optional --rate cap when bandwidth is shared</li>
           </ul>
           <span class="benefit-fact">1,200 files ≈ 4 minutes</span>
         </article>
@@ -258,11 +258,11 @@
         <article class="benefit">
           <span class="benefit-num">02 · RESULT</span>
           <h3>Automatic local assembly</h3>
-          <p>What you get is not a folder of downloaded files but a working site: links are rewritten to relative paths, so the copy opens without the original domain and without the internet.</p>
+          <p>What you get is a working site: links and subdomains are rewritten, hidden gzip in CSS/JS is unpacked, and the built-in local server opens the copy in one click.</p>
           <ul>
-            <li>attributes, image source sets, URLs inside styles and scripts</li>
-            <li>CMS cache files with a hash in the name, thumbnails instead of originals</li>
-            <li>the base tag is removed so paths resolve from the file</li>
+            <li>automatic gzip decompression and ?f= minifier bundle assembly</li>
+            <li>asset subdomains (--include-host), CMS cache and thumbnails</li>
+            <li>built-in 127.0.0.1 server (--serve) — no external server needed</li>
           </ul>
           <span class="benefit-fact">75,387 links rewritten</span>
         </article>
@@ -284,9 +284,9 @@
           <h3>Addresses from every archived year</h3>
           <p>The index returns everything the crawler stored over ten years, not just the latest snapshot. When there is no snapshot for the chosen date, neighbouring years are tried.</p>
           <ul>
-            <li>up to 50,000 addresses and 200 index pages per run</li>
-            <li>the index response is streamed: size and record count are visible</li>
-            <li>truncation is not hidden — the log says so</li>
+            <li>stratified --limit samples all site sections instead of one directory</li>
+            <li>link rescue prioritises CSS, JS and images before HTML pages</li>
+            <li>partial or failed index pages are reported explicitly</li>
           </ul>
           <span class="benefit-fact">9,476 snapshots in one run</span>
         </article>
@@ -296,9 +296,9 @@
           <h3>Resume and re-run</h3>
           <p>A large site takes hours. You can stop the run, close the program and come back later: finished files are not requested again and work continues from where it stopped.</p>
           <ul>
-            <li>a file counts as done only if it exists and is not empty</li>
-            <li>an unfinished file stays under a temporary name</li>
-            <li>folder structure and inventory are read by newer versions</li>
+            <li>finished files are skipped, stale .part files are cleaned on start</li>
+            <li>mid-stream body drops are retried automatically</li>
+            <li>periodic metadata flushes preserve progress on interruption</li>
           </ul>
           <span class="benefit-fact">re-run without re-downloading</span>
         </article>
@@ -309,8 +309,8 @@
           <p>Older sites were written in windows-1251 and KOI8-R. The program converts text to UTF-8 based on the content rather than the declaration, so Cyrillic does not turn into garbage.</p>
           <ul>
             <li>byte order mark, declared charset, statistical assessment</li>
-            <li>double-encoded text is repaired</li>
-            <li>binary files behind a page address are copied as-is</li>
+            <li>double-encoding and mixed windows-1251 + UTF-8 repair</li>
+            <li>HTML error pages disguised as icons, fonts or CSS are rejected</li>
           </ul>
           <span class="benefit-fact">7 encodings → UTF-8</span>
         </article>
@@ -349,8 +349,8 @@
           <p>The run continues in the background: progress by file type, request log, a stop button at any moment.</p>
         </li>
         <li>
-          <h3>Open the report</h3>
-          <p><code>report.html</code> shows coverage, size and broken links. The copy is opened through a local server.</p>
+          <h3>Open the copy &amp; report</h3>
+          <p>Press <strong>“Open copy”</strong> to launch the built-in <code>127.0.0.1</code> server. <code>report.html</code> breaks down coverage and broken links.</p>
         </li>
       </ol>
 
@@ -368,10 +368,10 @@
               <span data-copy-label>Copy</span>
             </button>
           </div>
-          <pre class="code-body"><code id="cli-cmd">SiteRestorer-windows-x64-cli.exe --site yoursite.ru --out D:\mirror --lang en</code></pre>
+          <pre class="code-body" tabindex="0"><code id="cli-cmd">SiteRestorer-windows-x64-cli.exe --cli --site yoursite.ru --out D:\copy --workers 8 --lang en</code></pre>
         </div>
-        <div class="folder-tree" aria-label="Result structure">
-          <div class="ft-row"><code>site\</code><span>the finished copy, open it with a local server</span></div>
+        <div class="folder-tree" role="region" aria-label="Result structure">
+          <div class="ft-row"><code>site\</code><span>the finished copy, “Open copy” button or --serve</span></div>
           <div class="ft-row"><code>mirror\</code><span>raw files from the archive</span></div>
           <div class="ft-row"><code>data\</code><span>inventory.jsonl — what was fetched and when</span></div>
           <div class="ft-row"><code>report.html</code><span>coverage and losses</span></div>
@@ -381,18 +381,17 @@
       <div class="output mt-18">
         <div class="code-panel">
           <div class="code-head">
-            <span class="code-lang">PowerShell · local server</span>
+            <span class="code-lang">PowerShell · built-in server</span>
             <button class="copy-btn" type="button" data-copy="srv-cmd" data-copied-text="Copied" data-fail-text="Failed" aria-label="Copy command">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
               <span data-copy-label>Copy</span>
             </button>
           </div>
-          <pre class="code-body"><code id="srv-cmd">cd Documents\SiteRestore\site
-python -m http.server 8080</code></pre>
+          <pre class="code-body" tabindex="0"><code id="srv-cmd">SiteRestorer-windows-x64-cli.exe --serve D:\copy --port 8080</code></pre>
         </div>
         <div class="prose small">
-          <p><strong>Why a server is needed.</strong> The copy is plain HTML files, but links like <code>/catalog/</code> will not open by double-click. Any local static server works; if Python is installed, the two lines on the left are enough.</p>
-          <p class="muted mt-14">For scripts and schedulers there is a command line mode: <code>--site</code>, <code>--out</code>, <code>--workers</code>, <code>--rate</code>, <code>--limit</code>, <code>--lang</code>, and at the end a <code>RESULT {…}</code> line with a JSON summary.</p>
+          <p><strong>Built-in copy server.</strong> A read-only <code>127.0.0.1</code> HTTP server supporting <code>?query</code> routes, <code>Range</code> and <code>ETag</code> is built into the app: click <strong>“Open copy”</strong> in the window or run <code>--serve</code> in the terminal — no Python needed.</p>
+          <p class="muted mt-14">CLI automation flags: <code>--site</code>, <code>--out</code>, <code>--workers</code>, <code>--include-host</code>, <code>--rate</code>, <code>--limit</code>, <code>--rescue-budget</code>, <code>--serve</code>, <code>--lang</code>, ending with a <code>RESULT {…}</code> JSON summary.</p>
         </div>
       </div>
     </div>
@@ -609,7 +608,7 @@ python -m http.server 8080</code></pre>
       <div class="faq">
         <details>
           <summary>Do I need Python or other software?</summary>
-          <div class="answer">No. The main build is a Rust binary with no interpreter: the application starts on a clean Windows install. Python is only needed if you choose <code>python -m http.server</code> as your local server — any other static server works too.</div>
+          <div class="answer">No. The main build is a Rust binary with no interpreter or runtime dependencies. A local HTTP server is built right into the app (click <strong>“Open copy”</strong> in the UI or run <code>--serve</code> in the terminal), so no external server or Python is required.</div>
         </details>
         <details>
           <summary>What if the archive kept nothing?</summary>
@@ -645,19 +644,19 @@ python -m http.server 8080</code></pre>
       </div>
             <div class="grid-2">
         <article class="card">
-          <h3 style="margin-top:0"><a href="/en/guide/how-to-rebuild-a-website-from-the-wayback-machine/">How to rebuild a website from the Wayback Machine</a></h3>
+          <h3 class="h-card-top"><a href="/en/guide/how-to-rebuild-a-website-from-the-wayback-machine/">How to rebuild a website from the Wayback Machine</a></h3>
           <p>Coverage check, CDX export, the id_ mode, assembly and verification — in English.</p>
         </article>
         <article class="card">
-          <h3 style="margin-top:0"><a href="/en/guide/hosting-lost-your-data-first-hours/">Hosting lost your data: what to do in the first hours</a></h3>
+          <h3 class="h-card-top"><a href="/en/guide/hosting-lost-your-data-first-hours/">Hosting lost your data: what to do in the first hours</a></h3>
           <p>What to freeze, which backups to ask for, and how to keep the domain and email.</p>
         </article>
         <article class="card">
-          <h3 style="margin-top:0"><a href="/guide/vosstanovit-sajt-iz-veb-arhiva/" hreflang="ru" lang="ru">Как восстановить сайт из веб-архива</a></h3>
+          <h3 class="h-card-top"><a href="/guide/vosstanovit-sajt-iz-veb-arhiva/" hreflang="ru" lang="ru">Как восстановить сайт из веб-архива</a></h3>
           <p>Полный порядок: проверка индекса, загрузка, сборка, кодировки, проверка ссылок.</p>
         </article>
         <article class="card">
-          <h3 style="margin-top:0"><a href="/guide/chto-delat-esli-hosting-poteryal-dannye/" hreflang="ru" lang="ru">Хостинг потерял данные: первые часы</a></h3>
+          <h3 class="h-card-top"><a href="/guide/chto-delat-esli-hosting-poteryal-dannye/" hreflang="ru" lang="ru">Хостинг потерял данные: первые часы</a></h3>
           <p>Что заморозить, где искать бэкапы, как спасти домен и почту.</p>
         </article>
       </div>

@@ -27,7 +27,7 @@
   --graphite: #2d3748;
   --graphite-2: #232a35;
   --lost: #8e9aa8;
-  --lost-ink: #5f6a76;
+  --lost-ink: #57626e;
   --lost-soft: #f1f2f4;
   --lost-line: #d9dde2;
 
@@ -819,6 +819,7 @@ a:hover { text-decoration-color: currentColor; }
 
 .h-plain { font-size: 1rem; margin: 0 0 8px; }
 .h-plain-tight { font-size: 1rem; margin: 0 0 6px; }
+.h-card-top { margin-top: 0; }
 .h-sub { font-size: 1rem; margin: 38px 0 14px; }
 .mt-14 { margin-top: 14px; }
 .mt-18 { margin-top: 18px; }

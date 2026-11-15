@@ -1,6 +1,6 @@
 # Site Restorer — rebuild a website from the web archive
 
-> Site Restorer is a portable Windows app that rebuilds a site from the Internet Archive: it inventories captured URLs via the CDX index, downloads files in parallel, rewrites links to relative paths, checks for broken references and writes a coverage report. The primary build is a single self-contained Rust binary — no installer, no runtime, no dependencies. MIT licensed. UI in Russian and English.
+> Site Restorer (v3.6.6) is a portable Windows and Linux app that rebuilds a site from the Internet Archive: it inventories URLs via the CDX index, downloads files in parallel over a persistent keep-alive pool, unpacks hidden gzipped assets, rewrites links, serves the copy via a built-in HTTP server and writes a completeness report. Single self-contained Rust binary — no installer, no Python, MIT licensed.
 
 Key point: the app recovers only what the archive actually saved; dynamic CMS features (cart, sign-in, search, AJAX) do not work in a static copy.
 
@@ -10,7 +10,7 @@ Key point: the app recovers only what the archive actually saved; dynamic CMS fe
 - Platform: Windows 10 (1809+) and Windows 11, x64. CLI and GUI builds for Linux (x64) are published too.
   From 3.6.1 only 64-bit builds are published; the last 32-bit build is 3.6.0.
 - Implementation: Rust with an egui GUI, plus a CLI-only binary. The Python build (`legacy/python`) and the Go port (`ports/go`) are archived in the repository and no longer released.
-- Sizes: Windows GUI x64 — 6.2 MB, CLI — 1.8 MB, static Linux CLI — 2.1 MB, Linux GUI — 7.5 MB, Linux `.tar.gz` package — 4.5 MB.
+- Sizes (v3.6.6): Windows GUI x64 — 9.0 MB, CLI — 4.1 MB, static Linux CLI — 12.8 MB, Linux GUI — 27.8 MB, Linux `.tar.gz` package — 12.7 MB.
 - Distribution: GitHub Releases, with a `SHA256SUMS.txt` checksum file attached.
 - License: MIT, source code is open.
 - UI languages: Russian, English, switched on the fly.
@@ -19,12 +19,12 @@ Key point: the app recovers only what the archive actually saved; dynamic CMS fe
 
 Six things that decide whether a copy works out:
 
-1. **Multithreaded download.** Up to 24 workers, adaptive pace driven by the archive's response, `Retry-After` pauses instead of failed files, optional rate limit. 1,200 files ≈ 4 minutes.
-2. **Automatic local assembly.** Links in attributes, image source sets, styles and scripts are rewritten to relative paths and the base tag is removed — the copy opens without the original domain.
-3. **Honest completeness report.** Recovered, never-archived and failed counts are kept apart; coverage by file type, size from the actual files, broken links, and a warning that the copy is static.
-4. **Addresses from every archived year.** Up to 50,000 addresses and 200 index pages, streamed index response, neighbouring years tried, truncation stated explicitly.
-5. **Resume and re-run.** A file counts as done only when it exists and is not empty, unfinished files stay under a temporary name, and a newer version reads the same folder and inventory.
-6. **Encodings and file integrity.** Byte order mark, declared charset and statistical content assessment, double-encoding repair; binary files behind a page address are copied untouched.
+1. **Multithreaded download.** Persistent keep-alive pool (up to 24 workers) without extra TLS handshakes, AIMD driven by 429/5xx/latency without false drops on small files, parallel CDX paging and up to 4-thread link rescue, `Retry-After` pauses.
+2. **Automatic local assembly.** Automatic hidden `gzip` (`1f 8b`) decompression for CSS/JS/SVG, asset subdomains (`--include-host`), `?f=` minifier bundling, root-relative miss promotion to `https://<host>...` and built-in HTTP server (`--serve`).
+3. **Honest completeness report.** Recovered, never-archived and failed counts kept apart; `--serve` launch banner, `N of M` index pages, decompression/mismatch counters and missing-CSS warning.
+4. **Addresses from every archived year.** Up to 50,000 addresses and 200 index pages, stratified `--limit` sampling across sections, neighbouring-year fallbacks and prioritised asset rescue.
+5. **Resume and re-run.** Done files are skipped, stale `.part` leftovers are cleaned on start, mid-stream read drops are retried automatically, and metadata is flushed periodically.
+6. **Encodings and file integrity.** BOM, declared charset and statistical detection, double-encoding and mixed `windows-1251 + UTF-8` repair, rejection of HTML error pages disguised as icons/fonts/CSS.
 
 ## Features
 
@@ -40,37 +40,37 @@ Six things that decide whether a copy works out:
 - Any address format: links from email, search or the archive, wrong keyboard layout, IDN domains.
 - Any CMS: tested on Bitrix, WordPress, MODX, Craft CMS, Laravel.
 - Diagnostics: a log entry with URL, HTTP status, size and timing for every request.
-- CLI: `--site`, `--out`, `--workers`, `--rate`, `--limit`, `--lang`, `--version`.
+- Built-in `127.0.0.1` HTTP server (`Range`, `ETag`, `?query` routing): **Open copy** button in the UI or `--serve <folder> [--port N]` in CLI.
+- CLI: `--site`, `--out`, `--workers`, `--include-host`, `--rate`, `--limit`, `--rescue-budget`, `--serve`, `--port`, `--lang`, `--version`.
 
 ## How it works
 
 1. Paste a site address — a domain, a link with tracking parameters or an archive URL. Input is normalised automatically.
 2. Choose an output folder (default `Documents\SiteRestore\site`).
 3. Press "Start". Downloading runs in the background: progress by file type, request log, a "Stop" button.
-4. Open `report.html` — coverage, size, broken links. Serve the copy with a local static server.
+4. Click **“Open copy”** to start the built-in local server on `127.0.0.1` and browse the site; `report.html` breaks down coverage and broken links.
 
 Output structure:
 
 ```
 <folder>/
-├── site/        the browsable copy (serve it locally)
+├── site/        the browsable copy (“Open copy” button or --serve)
 ├── mirror/      raw files from the archive
 ├── data/        inventory.jsonl — the URL list
 └── report.html  coverage report
 ```
 
-Serving the copy locally:
+Serving locally with the built-in server (no Python required):
 
 ```powershell
-cd Documents\SiteRestore\site
-python -m http.server 8080
+SiteRestorer-windows-x64-cli.exe --serve D:\copy --port 8080
 # http://127.0.0.1:8080/
 ```
 
 Command line:
 
 ```powershell
-SiteRestorer-windows-x64.exe --cli --site example.com --out D:\mirror --workers 16
+SiteRestorer-windows-x64-cli.exe --cli --site example.com --out D:\copy --workers 8
 ```
 
 ## Case study
@@ -121,7 +121,7 @@ The site also has a “Support” link in the header and under the advantages, a
 
 ## FAQ
 
-**Do I need Python?** No — the primary build is a single Rust binary with no interpreter. Python is only useful for `python -m http.server`; any static server will do.
+**Do I need Python?** No — the primary build is a single Rust binary with no interpreter or dependencies. A local HTTP server is built right in (**Open copy** button or `--serve`), so no external server or Python is needed.
 
 **What if the archive saved nothing?** The report will say so; the app does not invent content. Try domain variants (with and without `www`) and nearby years: the closest snapshots are probed for every URL.
 

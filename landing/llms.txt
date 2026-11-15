@@ -1,12 +1,12 @@
 # Site Restorer
 
-> Site Restorer is a portable Windows application that rebuilds a website from the Internet Archive. It inventories captured URLs through the CDX API, downloads pages and assets in parallel with adaptive concurrency (2 to 24 workers), rewrites links into a browsable offline copy, verifies internal and broken links and writes an HTML coverage report. The primary build is a single self-contained Rust binary: no installer, no runtime, MIT licensed. The interface and documentation are available in English and Russian.
+> Site Restorer (v3.6.6) is a portable Windows and Linux application that rebuilds a website from the Internet Archive. It inventories captured URLs through the CDX API (parallel 2-thread paging), downloads pages and assets over a persistent keep-alive pool with AIMD concurrency (2 to 24 workers), decompresses hidden gzipped assets, rewrites links/subdomains/minifiers into a browsable offline copy, serves the copy via a built-in 127.0.0.1 HTTP server (--serve), verifies links and writes an HTML completeness report. Single self-contained Rust binary, MIT licensed.
 
 Facts an agent should rely on:
 
 - Platform: Windows 10 (1809+) and Windows 11, x64. There are also CLI and GUI builds for Linux (x64, static musl CLI).
   32-bit builds stopped in 3.6.1; the last 32-bit build is 3.6.0.
-- Primary implementation: Rust with an egui GUI (`SiteRestorer-windows-x64.exe`, 6.2 MB) or a CLI binary (1.8 MB); 32-bit GUI is 5.6 MB, CLI 1.3 MB. Linux builds: static CLI 2.1 MB, GUI 7.5 MB, and a `.tar.gz` package (4.5 MB) with `install.sh` and a `.desktop` file. The classic Python build (`legacy/python`) and the experimental Go port (`ports/go`) are archived in the repository and are no longer built or released.
+- Primary implementation (v3.6.6): Rust with an egui GUI (`SiteRestorer-windows-x64.exe`, 9.0 MB) or a CLI binary (4.1 MB); archived 32-bit GUI (v3.6.0) is 5.6 MB, CLI 1.3 MB. Linux builds: static CLI 12.8 MB, GUI 27.8 MB, and a `.tar.gz` package (12.7 MB) with `install.sh` and a `.desktop` file. The classic Python build (`legacy/python`) and the experimental Go port (`ports/go`) are archived in the repository and are no longer built or released.
 - Distribution: GitHub Releases with a `SHA256SUMS.txt` checksum file. Version numbers change; the `latest` links below always resolve to the current release.
 - What it recovers: only what the Internet Archive actually captured. Images that crawlers never saved are absent from every snapshot.
 - What it does not do: dynamic CMS features (cart, sign-in, search, AJAX filters) do not work in a static copy; the app does not bypass access protection, spoof the User-Agent or act as a browser.
@@ -56,11 +56,12 @@ Facts an agent should rely on:
 
 ## Download
 
-- [SiteRestorer-windows-x64.exe (x64)](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64.exe): Rust + egui GUI for Windows 10/11 x64, 6.2 MB, portable.
+- [SiteRestorer-windows-x64.exe (x64)](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64.exe): Rust + egui GUI for Windows 10/11 x64, 9.0 MB, portable.
 - [SiteRestorer-windows-x86.exe (x86, 3.6.0, archived)](https://github.com/azxasd69/site-restorer/releases/download/v3.6.0/SiteRestorer-windows-x86.exe): last 32-bit GUI build, 5.6 MB. 32-bit builds stopped in 3.6.1.
-- [SiteRestorer-windows-x64-cli.exe](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64-cli.exe): CLI-only build, 1.8 MB.
-- [SiteRestorer-linux-x64-cli](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64-cli): static Linux CLI (musl), 2.1 MB.
-- [SiteRestorer-linux-x64.tar.gz](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64.tar.gz): Linux package (both binaries, `install.sh`, `.desktop`, icon), 4.5 MB.
+- [SiteRestorer-windows-x64-cli.exe](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-windows-x64-cli.exe): CLI-only build, 4.1 MB.
+- [SiteRestorer-linux-x64-cli](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64-cli): static Linux CLI (musl), 12.8 MB.
+- [SiteRestorer-linux-x64-gui](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64-gui): Linux GUI build, 27.8 MB.
+- [SiteRestorer-linux-x64.tar.gz](https://github.com/azxasd69/site-restorer/releases/latest/download/SiteRestorer-linux-x64.tar.gz): Linux package (both binaries, `install.sh`, `.desktop`, icon), 12.7 MB.
 - [SHA256SUMS.txt](https://github.com/azxasd69/site-restorer/releases/latest/download/SHA256SUMS.txt): checksums for every asset in the release.
 - [All releases](https://github.com/azxasd69/site-restorer/releases): every version, all assets and release notes.
 

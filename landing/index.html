@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Site Restorer — восстановление сайта из веб-архива</title>
-<meta name="description" content="Скачивает копию сайта из Internet Archive, собирает её локально и показывает, что удалось вернуть, а что потеряно. Один exe, без установки.">
+<meta name="description" content="Скачивает копию сайта из Internet Archive, собирает её локально, открывает встроенным сервером и показывает, что удалось вернуть. Один exe, без Python.">
 <meta name="theme-color" content="#f3f4f5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#15181c" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
@@ -30,7 +30,7 @@
 
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/img/touch-icon.png">
-<link rel="stylesheet" href="assets/style.css?v=5">
+<link rel="stylesheet" href="assets/style.css?v=6">
 <link rel="describedby" href="llms.txt">
 <link rel="alternate" type="text/markdown" href="index.md" title="Markdown-версия страницы">
 <script src="assets/app.js?v=2" defer></script>
@@ -45,7 +45,7 @@
       "@id": "https://lastcopy.ru/#app",
       "name": "Site Restorer",
       "url": "https://lastcopy.ru/",
-      "description": "Портативное приложение для Windows: собирает копию сайта из Internet Archive, восстанавливает ссылки и формирует отчёт о полноте.",
+      "description": "Портативное приложение для Windows и Linux: собирает копию сайта из Internet Archive, распаковывает ресурсы, открывает сайт встроенным сервером и формирует отчёт о полноте.",
       "applicationCategory": "UtilitiesApplication",
       "operatingSystem": "Windows 10, Windows 11",
       "inLanguage": ["ru", "en"],
@@ -74,7 +74,7 @@
           "name": "Нужен ли Python или другие программы?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Нет. Основная сборка — один самодостаточный бинарник на Rust, запускается на чистой Windows. Python нужен только для локального сервера python -m http.server, но подойдёт любой статический сервер."
+            "text": "Нет. Основная сборка — один самодостаточный бинарник на Rust без зависимостей. В программу уже встроен локальный HTTP-сервер (кнопка «Открыть копию» или команда --serve), поэтому даже для просмотра копии сторонний софт не нужен."
           }
         },
         {
@@ -148,16 +148,16 @@
     </nav>
 
     <div class="header-actions">
-      <a class="header-support" href="/support/">
+      <a class="header-support" aria-label="Поддержать" href="/support/">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 1 0 -7.1 7.1L12 21l8.8-8.3a5 5 0 0 0 0-7.1Z"/></svg>
         <span class="label">Поддержать</span>
       </a>
-      <span class="lang" aria-label="Язык">
+      <nav class="lang" aria-label="Язык">
         <a href="./" aria-current="true" hreflang="ru" lang="ru">RU</a>
         <span class="sep" aria-hidden="true">/</span>
         <a href="en/" hreflang="en" lang="en">EN</a>
-      </span>
-      <a class="btn btn-primary btn-small" href="#download">
+      </nav>
+      <a class="btn btn-primary btn-small" aria-label="Скачать" href="#download">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v10"/><path d="M8 11l4 4 4-4"/><path d="M5 19h14"/></svg>
         <span>Скачать</span>
       </a>
@@ -174,7 +174,7 @@
   <section class="hero">
     <div class="wrap hero-grid">
       <div class="hero-copy">
-        <p class="eyebrow">windows 10/11 · mit · без установки</p>
+        <p class="eyebrow">windows &amp; linux · v3.6.6 · mit · без установки</p>
         <h1>Вернуть сайт из веб-архива, когда копии не осталось</h1>
         <p class="lead">Site Restorer достаёт сохранённую версию сайта из Internet Archive, собирает её в локальную копию и честно показывает, что удалось вернуть, а что потеряно.</p>
 
@@ -190,8 +190,8 @@
         </div>
 
         <p class="hero-note">
-          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Python не нужен</span>
-          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Портативный exe</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Встроенный сервер</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Один exe без Python</span>
           <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Любая CMS</span>
         </p>
       </div>
@@ -247,11 +247,11 @@
         <article class="benefit">
           <span class="benefit-num">01 · СКОРОСТЬ</span>
           <h3>Многопоточная загрузка</h3>
-          <p>Страницы, стили, скрипты и картинки качаются одновременно, а число потоков подстраивается под ответ архива: растёт, пока скорость держится, и снижается, когда сервер начинает притормаживать.</p>
+          <p>Постоянный пул keep-alive держит до 24 потоков без лишних TLS-рукопожатий, а регулятор AIMD адаптируется по 429, 5xx и задержке ответа без ложных просадок на мелких файлах.</p>
           <ul>
-            <li>старт с двух потоков, рабочий предел — 24</li>
-            <li>отказ 429 — пауза по указанию сервера, а не ошибка файла</li>
-            <li>ограничение темпа, если канал общий</li>
+            <li>параллельный обход страниц CDX и добор отсутствующих ресурсов</li>
+            <li>отказ 429 — пауза по Retry-After, а не потеря файла</li>
+            <li>ограничение темпа --rate, если канал общий</li>
           </ul>
           <span class="benefit-fact">1 200 файлов ≈ 4 минуты</span>
         </article>
@@ -259,11 +259,11 @@
         <article class="benefit">
           <span class="benefit-num">02 · РЕЗУЛЬТАТ</span>
           <h3>Автосборка локальной копии</h3>
-          <p>На выходе не папка скачанных файлов, а рабочий сайт: ссылки переписаны в относительные, поэтому копия открывается без исходного домена и без интернета.</p>
+          <p>На выходе рабочий сайт: ссылки и поддомены переписаны, сжатый gzip из архива распакован, а копия открывается встроенным локальным сервером в один клик.</p>
           <ul>
-            <li>атрибуты, наборы источников изображений, адреса в стилях и скриптах</li>
-            <li>кэш CMS с хэшем в имени и миниатюры вместо оригинала</li>
-            <li>тег базового адреса удаляется, чтобы пути считались от файла</li>
+            <li>автораспаковка gzip в CSS/JS/SVG и сборка минификаторов ?f=</li>
+            <li>поддомены статики (--include-host), кэш CMS и миниатюры</li>
+            <li>встроенный сервер на 127.0.0.1 (--serve) — сторонний софт не нужен</li>
           </ul>
           <span class="benefit-fact">75 387 ссылок переписано</span>
         </article>
@@ -285,9 +285,9 @@
           <h3>Адреса со всех лет архива</h3>
           <p>Индекс отдаёт всё, что краулер сохранял за десять лет, а не только последний снимок. Если на нужную дату снимка нет, программа перебирает соседние годы.</p>
           <ul>
-            <li>до 50 000 адресов и 200 страниц индекса за прогон</li>
-            <li>ответ индекса читается потоково: видно объём и число записей</li>
-            <li>усечение не скрывается — в журнале есть предупреждение</li>
+            <li>стратифицированный --limit берёт все разделы, а не одну рубрику</li>
+            <li>добор по ссылкам (rescue) с приоритетом CSS, JS и картинок</li>
+            <li>неполный обход или отказ страницы не скрываются в отчёте</li>
           </ul>
           <span class="benefit-fact">9 476 снимков в одном прогоне</span>
         </article>
@@ -297,9 +297,9 @@
           <h3>Докачка и повторный запуск</h3>
           <p>Большой сайт качается часами. Можно остановить прогон, закрыть программу и вернуться позже: готовые файлы не запрашиваются заново, работа идёт с места остановки.</p>
           <ul>
-            <li>файл считается готовым, только если он есть и непуст</li>
-            <li>недокачанный файл остаётся под временным именем</li>
-            <li>структура папки и инвентарь читаются новой версией</li>
+            <li>готовые файлы не качаются повторно, .part убираются при старте</li>
+            <li>при обрыве чтения тела срабатывает повторная попытка</li>
+            <li>периодический сброс метаданных сохраняет прогресс</li>
           </ul>
           <span class="benefit-fact">повтор без перекачки</span>
         </article>
@@ -310,8 +310,8 @@
           <p>Старые сайты писали в windows-1251 и KOI8-R. Программа приводит текст к UTF-8 по содержимому, а не по объявлению, поэтому кириллица не превращается в мусор.</p>
           <ul>
             <li>метка порядка байтов, объявление, статистическая оценка</li>
-            <li>исправление двойного кодирования</li>
-            <li>двоичные файлы под адресом страницы копируются как есть</li>
+            <li>починка двойного кодирования и смешанного windows-1251 + UTF-8</li>
+            <li>отсев HTML-заглушек под видом иконок, шрифтов и стилей</li>
           </ul>
           <span class="benefit-fact">7 кодировок → UTF-8</span>
         </article>
@@ -350,8 +350,8 @@
           <p>Загрузка идёт в фоне: прогресс по типам файлов, журнал запросов, кнопка «Остановить» в любой момент.</p>
         </li>
         <li>
-          <h3>Откройте отчёт</h3>
-          <p><code>report.html</code> показывает покрытие, объём и битые ссылки. Копию открывают локальным сервером.</p>
+          <h3>Откройте копию и отчёт</h3>
+          <p>Нажмите <strong>«Открыть копию»</strong> — запустится встроенный сервер на <code>127.0.0.1</code>. В <code>report.html</code> собраны покрытие и битые ссылки.</p>
         </li>
       </ol>
 
@@ -369,10 +369,10 @@
               <span data-copy-label>Копировать</span>
             </button>
           </div>
-          <pre class="code-body"><code id="cli-cmd">SiteRestorer-windows-x64-cli.exe --site yoursite.ru --out D:\mirror</code></pre>
+          <pre class="code-body" tabindex="0"><code id="cli-cmd">SiteRestorer-windows-x64-cli.exe --cli --site yoursite.ru --out D:\copy --workers 8</code></pre>
         </div>
-        <div class="folder-tree" aria-label="Структура результата">
-          <div class="ft-row"><code>site\</code><span>готовая копия, открывать локальным сервером</span></div>
+        <div class="folder-tree" role="region" aria-label="Структура результата">
+          <div class="ft-row"><code>site\</code><span>готовая копия, кнопка «Открыть копию» или --serve</span></div>
           <div class="ft-row"><code>mirror\</code><span>сырые файлы из архива</span></div>
           <div class="ft-row"><code>data\</code><span>inventory.jsonl — что и когда скачано</span></div>
           <div class="ft-row"><code>report.html</code><span>отчёт о покрытии и потерях</span></div>
@@ -382,18 +382,17 @@
       <div class="output mt-18">
         <div class="code-panel">
           <div class="code-head">
-            <span class="code-lang">PowerShell · локальный сервер</span>
+            <span class="code-lang">PowerShell · встроенный сервер</span>
             <button class="copy-btn" type="button" data-copy="srv-cmd" data-copied-text="Скопировано" data-fail-text="Не вышло" aria-label="Скопировать команду">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
               <span data-copy-label>Копировать</span>
             </button>
           </div>
-          <pre class="code-body"><code id="srv-cmd">cd Документы\SiteRestore\site
-python -m http.server 8080</code></pre>
+          <pre class="code-body" tabindex="0"><code id="srv-cmd">SiteRestorer-windows-x64-cli.exe --serve D:\copy --port 8080</code></pre>
         </div>
         <div class="prose small">
-          <p><strong>Почему нужен сервер.</strong> Копия — это обычные HTML-файлы, но ссылки вида <code>/catalog/</code> браузер по двойному клику не откроет. Достаточно любого локального статического сервера; если установлен Python — хватит двух строк слева.</p>
-          <p class="muted mt-14">Для скриптов и планировщика есть режим командной строки: <code>--site</code>, <code>--out</code>, <code>--workers</code>, <code>--rate</code>, <code>--limit</code>, <code>--lang</code>, а по завершении печатается строка <code>RESULT {…}</code> с итогом в JSON.</p>
+          <p><strong>Встроенный сервер копии.</strong> В программу встроен HTTP-сервер на <code>127.0.0.1</code> с поддержкой <code>?query</code>-маршрутов, <code>Range</code> и <code>ETag</code>: в окне нажмите <strong>«Открыть копию»</strong>, а в консоли достаточно одной команды <code>--serve</code> — Python больше не нужен.</p>
+          <p class="muted mt-14">Для автоматизации есть CLI: <code>--site</code>, <code>--out</code>, <code>--workers</code>, <code>--include-host</code>, <code>--rate</code>, <code>--limit</code>, <code>--rescue-budget</code>, <code>--serve</code>, <code>--lang</code> и итоговая строка <code>RESULT {…}</code> в JSON.</p>
         </div>
       </div>
     </div>
@@ -610,7 +609,7 @@ python -m http.server 8080</code></pre>
       <div class="faq">
         <details>
           <summary>Нужен ли Python или другие программы?</summary>
-          <div class="answer">Нет. Основная сборка — один бинарник на Rust, без интерпретатора: приложение запускается на чистой Windows. Python понадобится только если вы захотите поднять локальный сервер командой <code>python -m http.server</code> — но подойдёт и любой другой статический сервер.</div>
+          <div class="answer">Нет. Основная сборка — один бинарник на Rust без интерпретатора и зависимостей. В программу уже встроен локальный HTTP-сервер (кнопка <strong>«Открыть копию»</strong> в окне или команда <code>--serve</code> в консоли), поэтому сторонние серверы и Python не нужны даже для просмотра копии.</div>
         </details>
         <details>
           <summary>Что если архив ничего не сохранил?</summary>
@@ -646,19 +645,19 @@ python -m http.server 8080</code></pre>
       </div>
       <div class="grid-2">
         <article class="card">
-          <h3 style="margin-top:0"><a href="/guide/skachat-sajt-iz-wayback-machine/">Как скачать сайт из Wayback Machine</a></h3>
+          <h3 class="h-card-top"><a href="/guide/skachat-sajt-iz-wayback-machine/">Как скачать сайт из Wayback Machine</a></h3>
           <p>Адреса архива, режим id_, выгрузка списка через CDX, wget и HTTrack.</p>
         </article>
         <article class="card">
-          <h3 style="margin-top:0"><a href="/guide/vosstanovit-sajt-iz-veb-arhiva/">Как восстановить сайт из веб-архива</a></h3>
+          <h3 class="h-card-top"><a href="/guide/vosstanovit-sajt-iz-veb-arhiva/">Как восстановить сайт из веб-архива</a></h3>
           <p>Полный порядок: проверка индекса, загрузка, сборка, кодировки, проверка ссылок.</p>
         </article>
         <article class="card">
-          <h3 style="margin-top:0"><a href="/guide/sajt-ne-otkryvaetsya-diagnostika/">Сайт не открывается: диагностика за 15 минут</a></h3>
+          <h3 class="h-card-top"><a href="/guide/sajt-ne-otkryvaetsya-diagnostika/">Сайт не открывается: диагностика за 15 минут</a></h3>
           <p>Цепочка от DNS до сервера: где именно ломается, что означает 502 и когда писать в поддержку.</p>
         </article>
         <article class="card">
-          <h3 style="margin-top:0"><a href="/guide/chto-delat-esli-sajt-udalili/">Сайт удалили: что делать в первые часы</a></h3>
+          <h3 class="h-card-top"><a href="/guide/chto-delat-esli-sajt-udalili/">Сайт удалили: что делать в первые часы</a></h3>
           <p>Пять сценариев аварии, домен, источники контента, восстановление и чек-лист.</p>
         </article>
       </div>
