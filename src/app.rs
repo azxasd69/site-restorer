@@ -90,6 +90,8 @@ pub struct App {
     focus_site: bool,
     /// Момент последнего изменения поля адреса — для разбора по паузе.
     site_dirty_at: Option<f64>,
+    /// Встроенный локальный сервер просмотра копии (Д-49).
+    server: Option<crate::serve::CopyServer>,
 }
 
 /// Светлая тема одним местом: границы полей, фон всплывающих окон, скругления.
@@ -191,6 +193,7 @@ impl App {
                 .unwrap_or(false),
             focus_site: true,
             site_dirty_at: None,
+            server: None,
         }
     }
 
@@ -253,6 +256,36 @@ impl App {
 
     /// Внешняя ссылка: открываем браузером по умолчанию. Неудачу показываем
     /// предупреждением в журнале — окно и прогон продолжают работать (ФТ-114).
+    /// Запуск и остановка встроенного сервера копии по кнопке (Д-49, ФТ-136).
+    fn toggle_server(&mut self) {
+        let t = self.lang.t();
+        if let Some(mut srv) = self.server.take() {
+            srv.stop();
+            self.push_log(t.server_stopped, Level::Info);
+            return;
+        }
+        let raw = PathBuf::from(self.out.trim());
+        let Some(site_dir) = crate::serve::resolve_site_dir(&raw) else {
+            self.push_log(t.server_no_copy, Level::Warn);
+            return;
+        };
+        if !crate::serve::has_files(&site_dir) {
+            self.push_log(t.server_no_copy, Level::Warn);
+            return;
+        }
+        match crate::serve::CopyServer::start(&site_dir, 0) {
+            Ok(srv) => {
+                let url = srv.url();
+                self.push_log(format!("{}: {}", t.server_started, url), Level::Ok);
+                self.server = Some(srv);
+                self.open_link(&url);
+            }
+            Err(err) => {
+                self.push_log(format!("{}: {err}", t.server_failed), Level::Warn);
+            }
+        }
+    }
+
     fn open_link(&mut self, url: &str) {
         if let Err(err) = crate::links::open(url) {
             let text = format!("{}{}", self.lang.t().link_failed, err);
@@ -341,6 +374,10 @@ impl App {
     fn start(&mut self) {
         if self.running {
             return;
+        }
+        // Перед новой сборкой останавливаем встроенный сервер, чтобы он не держал файлы.
+        if let Some(mut srv) = self.server.take() {
+            srv.stop();
         }
         let t = self.lang.t();
         let Some((host, _)) = sanitize_site(&self.site) else {
@@ -691,6 +728,9 @@ impl eframe::App for App {
     /// Настройки пишутся с задержкой 1,5 с: при закрытии окна её надо снять,
     /// иначе последний сдвиг окна или набранный адрес потеряются.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        if let Some(mut srv) = self.server.take() {
+            srv.stop();
+        }
         self.persist(true);
     }
 
@@ -911,6 +951,14 @@ impl eframe::App for App {
                     ui.add_space(2.0);
                     if action_button(ui, t.open, 2, true, 116.0, MUTED) {
                         open_folder(&self.out);
+                    }
+                    let srv_label = if self.server.is_some() {
+                        t.stop_server
+                    } else {
+                        t.open_copy
+                    };
+                    if action_button(ui, srv_label, 1, !self.running, 148.0, ACCENT) {
+                        self.toggle_server();
                     }
                 });
                 let band = ui.max_rect().expand2(egui::vec2(20.0, 14.0));

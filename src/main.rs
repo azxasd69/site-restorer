@@ -27,6 +27,7 @@ mod paths;
 mod pick;
 mod puny;
 mod sanitize;
+mod serve;
 mod settings;
 mod tr;
 
@@ -187,7 +188,7 @@ fn main() {
     crash::install(crash::resolve_install_path(&args));
     let console_mode = args
         .iter()
-        .any(|a| a == "--cli" || a == "--version" || a == "-V");
+        .any(|a| a == "--cli" || a == "--serve" || a == "--version" || a == "-V");
     if console_mode || !cfg!(feature = "gui") {
         attach_parent_console();
         ensure_console_utf8();
@@ -200,6 +201,9 @@ fn main() {
             println!("CPU: {}", isa::describe());
         }
         return;
+    }
+    if args.iter().any(|a| a == "--serve") {
+        std::process::exit(serve_cli(&args));
     }
     if args.iter().any(|a| a == "--cli") {
         std::process::exit(cli(&args));
@@ -314,6 +318,12 @@ struct Args {
     stub_bytes: Option<usize>,
     /// Предел размера текстового файла для переписывания ссылок (ФТ-142).
     text_limit: Option<usize>,
+    /// Папка для встроенного сервера копии (Д-49, ФТ-141).
+    serve: Option<PathBuf>,
+    /// Порт встроенного сервера (`0` — случайный свободный).
+    port: u16,
+    /// Дополнительные хосты/поддомены (`--include-host`, Д-142).
+    include_hosts: Vec<String>,
 }
 
 /// Ошибка разбора аргументов: готовый текст для человека (Д-96).
@@ -400,6 +410,9 @@ fn parse_args(args: &[String]) -> Result<Args, ArgError> {
         retry_missing_days: None,
         stub_bytes: None,
         text_limit: None,
+        serve: None,
+        port: 0,
+        include_hosts: Vec::new(),
     };
     let mut i = 0;
     while i < args.len() {
@@ -494,6 +507,30 @@ fn parse_args(args: &[String]) -> Result<Args, ArgError> {
                 parsed.text_limit = Some(arg_num(args, i, "--text-limit", en)?);
                 i += 2;
             }
+            "--serve" => {
+                // Поддерживаются и `--serve <папка>`, и `--serve --out <папка>`.
+                if let Some(next) = args.get(i + 1)
+                    && !next.starts_with('-')
+                {
+                    parsed.serve = Some(PathBuf::from(next));
+                    i += 2;
+                } else {
+                    parsed.serve = Some(PathBuf::new());
+                    i += 1;
+                }
+            }
+            "--port" => {
+                let value: u32 = arg_num(args, i, "--port", en)?;
+                let value = arg_range(value, "--port", 0, 65535, en)?;
+                parsed.port = value as u16;
+                i += 2;
+            }
+            "--include-host" => {
+                parsed
+                    .include_hosts
+                    .push(arg_text(args, i, "--include-host", en)?);
+                i += 2;
+            }
             // Служебные флаги разбираются до запуска, в настройки они не попадают
             // и неизвестными не считаются.
             "--cli" | "--version" | "-V" | "--help" | "-h" | "--verbose" | "-v" => i += 1,
@@ -542,8 +579,8 @@ fn cli(args: &[String]) -> i32 {
         eprintln!(
             "{}",
             tr::t(
-                "использование: site-restorer --cli --site <адрес> [--out <папка>] [--workers N] [--threads N] [--rate N] [--limit N] [--index-max-pages N]\n  снимки: [--snapshot newest|oldest|<дата>] [--as-of ГГГГ[-ММ[-ДД]]] [--fallback-depth N] [--refresh-days N] [--refresh] [--since ГГГГ[-ММ]] [--rescue-limit N] [--stub-bytes N]",
-                "usage: site-restorer --cli --site <address> [--out <folder>] [--workers N] [--threads N] [--rate N] [--limit N] [--index-max-pages N]\n  snapshots: [--snapshot newest|oldest|<date>] [--as-of YYYY[-MM[-DD]]] [--fallback-depth N] [--refresh-days N] [--refresh] [--since YYYY[-MM]] [--rescue-limit N] [--stub-bytes N]",
+                "использование: site-restorer --cli --site <адрес> [--out <папка>] [--workers N] [--threads N] [--rate N] [--limit N] [--index-max-pages N] [--include-host <домен>]\n  снимки: [--snapshot newest|oldest|<дата>] [--as-of ГГГГ[-ММ[-ДД]]] [--fallback-depth N] [--refresh-days N] [--refresh] [--since ГГГГ[-ММ]] [--rescue-limit N] [--rescue-budget N] [--stub-bytes N] [--text-limit N]\n  сервер: site-restorer --serve <папка> [--port N]",
+                "usage: site-restorer --cli --site <address> [--out <folder>] [--workers N] [--threads N] [--rate N] [--limit N] [--index-max-pages N] [--include-host <host>]\n  snapshots: [--snapshot newest|oldest|<date>] [--as-of YYYY[-MM[-DD]]] [--fallback-depth N] [--refresh-days N] [--refresh] [--since YYYY[-MM]] [--rescue-limit N] [--rescue-budget N] [--stub-bytes N] [--text-limit N]\n  server: site-restorer --serve <folder> [--port N]",
             )
         );
         return 2;
@@ -620,6 +657,9 @@ fn cli(args: &[String]) -> i32 {
     }
     if let Some(bytes) = parsed.text_limit {
         engine.set_text_limit(bytes);
+    }
+    if !parsed.include_hosts.is_empty() {
+        engine.set_include_hosts(parsed.include_hosts.clone());
     }
     engine.set_progress_handler(|p: &Progress| match p.stage {
         "log" => println!("{}", p.text),
@@ -836,6 +876,142 @@ fn cli(args: &[String]) -> i32 {
     }
 }
 
+static SERVE_STOP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(windows)]
+fn install_ctrl_c() {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn SetConsoleCtrlHandler(
+            handler: Option<unsafe extern "system" fn(u32) -> i32>,
+            add: i32,
+        ) -> i32;
+    }
+    unsafe extern "system" fn handler(_ctrl_type: u32) -> i32 {
+        SERVE_STOP.store(true, std::sync::atomic::Ordering::Relaxed);
+        1
+    }
+    // SAFETY: стандартный обработчик Ctrl+C / закрытия консоли.
+    unsafe {
+        let _ = SetConsoleCtrlHandler(Some(handler), 1);
+    }
+}
+
+#[cfg(unix)]
+fn install_ctrl_c() {
+    extern "C" fn handler(_sig: libc::c_int) {
+        SERVE_STOP.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    // SAFETY: обработчик только пишет в AtomicBool.
+    unsafe {
+        libc::signal(libc::SIGINT, handler as *const () as usize);
+        libc::signal(libc::SIGTERM, handler as *const () as usize);
+    }
+}
+
+#[cfg(not(any(windows, unix)))]
+fn install_ctrl_c() {}
+
+/// Режим встроенного сервера `--serve <папка> [--port N]` (Д-49, ФТ-141).
+fn serve_cli(args: &[String]) -> i32 {
+    let parsed = match parse_args(args) {
+        Ok(parsed) => parsed,
+        Err(message) => {
+            eprintln!("{message}");
+            return 2;
+        }
+    };
+    let english = parsed.lang == "en" || std::env::var("SR_LANG").as_deref() == Ok("en");
+    tr::set_english(english);
+    let Some(mut raw_dir) = parsed.serve else {
+        eprintln!(
+            "{}",
+            tr::t(
+                "использование: site-restorer --serve <папка> [--port N]",
+                "usage: site-restorer --serve <folder> [--port N]"
+            )
+        );
+        return 2;
+    };
+    if raw_dir.as_os_str().is_empty() {
+        if args.iter().any(|a| a == "--out") {
+            raw_dir = parsed.out;
+        } else {
+            eprintln!("{}", tr::t("--serve: нет значения", "--serve: no value"));
+            return 2;
+        }
+    }
+    let Some(site_dir) = serve::resolve_site_dir(&raw_dir) else {
+        eprintln!(
+            "{}",
+            tr::pick(
+                format!(
+                    "ошибка: папка копии не найдена: {}",
+                    crate::core::show_path(&raw_dir)
+                ),
+                format!(
+                    "error: copy folder not found: {}",
+                    crate::core::show_path(&raw_dir)
+                ),
+            )
+        );
+        return 1;
+    };
+    if !serve::has_files(&site_dir) {
+        eprintln!(
+            "{}",
+            tr::pick(
+                format!(
+                    "ошибка: в папке копии нет файлов: {}",
+                    crate::core::show_path(&site_dir)
+                ),
+                format!(
+                    "error: copy folder is empty: {}",
+                    crate::core::show_path(&site_dir)
+                ),
+            )
+        );
+        return 1;
+    }
+    let mut server = match serve::CopyServer::start(&site_dir, parsed.port) {
+        Ok(s) => s,
+        Err(err) => {
+            eprintln!(
+                "{}",
+                tr::pick(format!("ошибка: {err}"), format!("error: {err}"))
+            );
+            return 1;
+        }
+    };
+    SERVE_STOP.store(false, std::sync::atomic::Ordering::Relaxed);
+    install_ctrl_c();
+    println!(
+        "{}",
+        tr::pick(
+            format!(
+                "сервер копии: {} ({})",
+                server.url(),
+                crate::core::show_path(&site_dir)
+            ),
+            format!(
+                "copy server: {} ({})",
+                server.url(),
+                crate::core::show_path(&site_dir)
+            ),
+        )
+    );
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+    while !SERVE_STOP.load(std::sync::atomic::Ordering::Relaxed) {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    server.stop();
+    println!(
+        "{}",
+        tr::t("сервер копии остановлен", "copy server stopped")
+    );
+    130
+}
+
 /// Иконка окна: знак продукта с сайта lastcopy.ru.
 /// Байты готовит `scripts/make-icons.py` (64×64, RGBA); готовый массив — `packaging/icons/site-restorer-64.rgba`.
 /// Декодировать PNG в рантайме не нужно, поэтому лишней зависимости нет.
@@ -985,5 +1161,25 @@ mod tests {
             crate::core::parse_stamp_input("2026-11-15").as_deref(),
             Some("20261115000000")
         );
+    }
+
+    /// Д-49: разбор --serve и --port.
+    #[test]
+    fn serve_flags_are_parsed_and_validated() {
+        let parsed = parse_args(&args(&["--serve", "D:/copy", "--port", "8080"]))
+            .expect("--serve и --port должны разбираться");
+        assert_eq!(
+            parsed.serve.as_deref(),
+            Some(std::path::Path::new("D:/copy"))
+        );
+        assert_eq!(parsed.port, 8080);
+
+        let parsed_out = parse_args(&args(&["--serve", "--out", "D:/copy"]))
+            .expect("--serve --out должен разбираться");
+        assert_eq!(parsed_out.out, std::path::PathBuf::from("D:/copy"));
+        assert!(parse_args(&args(&["--serve", "D:/copy", "--port", "70000"])).is_err());
+        let inc = parse_args(&args(&["--site", "e.com", "--include-host", "r.e.com"]))
+            .expect("--include-host");
+        assert_eq!(inc.include_hosts, vec!["r.e.com"]);
     }
 }

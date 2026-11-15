@@ -1,6 +1,6 @@
 [package]
 name = "site-restorer"
-version = "3.6.5"
+version = "3.6.6"
 license = "MIT"
 edition = "2024"
 # Минимальная поддерживаемая версия (Д-61). Edition 2024 требует 1.85,

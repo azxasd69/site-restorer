@@ -109,14 +109,101 @@ pub fn decode_document(data: &[u8], content_type: Option<&str>) -> Decoded {
         }
     }
 
-    match best {
+    let chosen = match best {
         Some((cand, score)) if score > 0.35 => cand,
         // совсем плохой результат — лучше windows-1251, как в 90-е
         _ => {
             let (text, _, _) = WINDOWS_1251.decode(data);
             Decoded::new(text.into_owned(), "windows-1251", "fallback", 20)
         }
+    };
+    if chosen.label == "windows-1251"
+        && let Some(repaired) = repair_mixed_utf8_in_cp1251(data)
+        && quality(&repaired) >= quality(&chosen.text)
+    {
+        return Decoded::new(
+            repaired,
+            "windows-1251",
+            "windows-1251+utf8",
+            chosen.confidence,
+        );
     }
+    chosen
+}
+
+/// Починка смешанной кодировки (П-12, Д-145): когда в страницу windows-1251
+/// вставлены отдельные символы или фрагменты UTF-8 (`e2 80 93` → `вЂ“` и т.п.).
+fn repair_mixed_utf8_in_cp1251(data: &[u8]) -> Option<String> {
+    if data.len() > 4_000_000 {
+        return None;
+    }
+    let mut out = String::with_capacity(data.len());
+    let mut i = 0usize;
+    let mut fixed = 0usize;
+    let mut plain_buf: Vec<u8> = Vec::new();
+    let flush_cp1251 = |buf: &mut Vec<u8>, out: &mut String| {
+        if !buf.is_empty() {
+            let (decoded, _, _) = WINDOWS_1251.decode(buf);
+            out.push_str(&decoded);
+            buf.clear();
+        }
+    };
+
+    while i < data.len() {
+        let b0 = data[i];
+        // 3-байтовые типографские знаки UTF-8 (–, —, …, №, кавычки, €): в cp1251 дают «вЂ...» / «в„–».
+        if b0 == 0xE2
+            && i + 2 < data.len()
+            && (0x80..=0x84).contains(&data[i + 1])
+            && (0x80..=0xBF).contains(&data[i + 2])
+            && let Ok(s) = std::str::from_utf8(&data[i..i + 3])
+        {
+            flush_cp1251(&mut plain_buf, &mut out);
+            out.push_str(s);
+            fixed += 1;
+            i += 3;
+            continue;
+        }
+        // Серия 2-байтовых UTF-8 кириллических символов (D0/D1 + 80..BF) внутри cp1251.
+        if (b0 == 0xD0 || b0 == 0xD1)
+            && i + 1 < data.len()
+            && (0x80..=0xBF).contains(&data[i + 1])
+            && let Ok(s) = std::str::from_utf8(&data[i..i + 2])
+        {
+            // Одиночный `0xD0`/`0xD1` с байтом из `0xA0..=0xBF` может быть «Р»/«С» перед
+            // пробелом/кавычкой/Ё (`С«...»`). Считаем вкраплением UTF-8, если либо
+            // второй байт из небуквенной зоны `0x80..=0x9F` (кроме 0x96/0x97),
+            // либо подряд идут >= 2 таких UTF-8 пары (целое слово).
+            let mut end = i + 2;
+            while end + 1 < data.len()
+                && (data[end] == 0xD0 || data[end] == 0xD1)
+                && (0x80..=0xBF).contains(&data[end + 1])
+                && std::str::from_utf8(&data[end..end + 2]).is_ok()
+            {
+                end += 2;
+            }
+            let pairs = (end - i) / 2;
+            let b1 = data[i + 1];
+            let unlikely_cp1251 = (0x80..=0x9F).contains(&b1) && !matches!(b1, 0x85 | 0x96 | 0x97);
+            if (pairs >= 2 || unlikely_cp1251)
+                && let Ok(seg) = std::str::from_utf8(&data[i..end])
+            {
+                flush_cp1251(&mut plain_buf, &mut out);
+                out.push_str(seg);
+                fixed += pairs;
+                i = end;
+                continue;
+            }
+            let _ = s;
+        }
+        plain_buf.push(b0);
+        i += 1;
+    }
+    if fixed == 0 {
+        return None;
+    }
+    flush_cp1251(&mut plain_buf, &mut out);
+    Some(out)
 }
 
 /// Стабильное имя кодировки для журнала.
@@ -722,5 +809,29 @@ mod tests {
             chi_square_ru(RU),
             chi_square_ru(&WINDOWS_1251.decode(&encoded(encoding_rs::KOI8_R)).0)
         );
+    }
+
+    /// П-12 / Д-145: смешанный документ windows-1251 со вставками UTF-8 (`–`, слова).
+    #[test]
+    fn mixed_cp1251_with_utf8_dash_is_repaired() {
+        let (head, _, _) = WINDOWS_1251
+            .encode("<html><head><meta charset=\"windows-1251\"></head><body><h1>\"НЕФАЗ\" ");
+        let (mid, _, _) = WINDOWS_1251.encode(" партнёр ");
+        let (tail, _, _) = WINDOWS_1251.encode(" и С«текст»</h1></body></html>");
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&head);
+        raw.extend_from_slice(b"\xe2\x80\x93"); // UTF-8 '–'
+        raw.extend_from_slice(&mid);
+        raw.extend_from_slice("Привет".as_bytes()); // UTF-8 слово
+        raw.extend_from_slice(&tail);
+
+        let dec = decode_document(&raw, None);
+        assert!(dec.text.contains("– партнёр Привет"), "текст: {}", dec.text);
+        assert!(
+            dec.text.contains("С«текст»"),
+            "обычный cp1251 не сломан: {}",
+            dec.text
+        );
+        assert!(!dec.text.contains("вЂ"), "мойибейк остался: {}", dec.text);
     }
 }

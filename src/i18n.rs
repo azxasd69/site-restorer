@@ -23,6 +23,12 @@ pub struct T {
     pub paused: &'static str,
     pub resumed: &'static str,
     pub open: &'static str,
+    pub open_copy: &'static str,
+    pub stop_server: &'static str,
+    pub server_started: &'static str,
+    pub server_stopped: &'static str,
+    pub server_no_copy: &'static str,
+    pub server_failed: &'static str,
     pub help: &'static str,
     pub log: &'static str,
     pub stage_idle: &'static str,
@@ -93,6 +99,12 @@ pub static RU: T = T {
     paused: "Пауза: новые запросы остановлены",
     resumed: "Продолжаю",
     open: "Открыть папку",
+    open_copy: "Открыть копию",
+    stop_server: "Остановить сервер",
+    server_started: "сервер копии",
+    server_stopped: "сервер копии остановлен",
+    server_no_copy: "сначала соберите копию в этой папке",
+    server_failed: "не удалось запустить сервер",
     help: "Справка",
     log: "Журнал",
     stage_idle: "Готов к запуску",
@@ -156,11 +168,12 @@ prokupol.ru · https://www.prokupol.ru/catalog/ · PROKUPOL.RU\n\
 отсутствуют — их нет ни в одной версии. Динамика (корзина, вход, поиск)\n\
 в статической копии не работает.\n\n\
 РЕЗУЛЬТАТ\n\
-<папка>/site        — готовая копия (открывать локальным веб-сервером)\n\
+<папка>/site        — готовая копия (кнопка «Открыть копию» или --serve)\n\
 <папка>/mirror      — исходные файлы из архива\n\
 <папка>/report.html — отчёт о покрытии\n\n\
 КОМАНДНАЯ СТРОКА\n\
-site-restorer --cli --site <адрес> --out <папка> [--limit N] [--workers N]\n",
+site-restorer --cli --site <адрес> --out <папка> [--limit N] [--workers N]\n\
+site-restorer --serve <папка> [--port N]\n",
 };
 
 pub static EN: T = T {
@@ -180,6 +193,12 @@ pub static EN: T = T {
     paused: "Paused: no new requests",
     resumed: "Resumed",
     open: "Open folder",
+    open_copy: "Open copy",
+    stop_server: "Stop server",
+    server_started: "copy server",
+    server_stopped: "copy server stopped",
+    server_no_copy: "build a copy in this folder first",
+    server_failed: "failed to start server",
     help: "Help",
     log: "Log",
     stage_idle: "Ready",
@@ -242,11 +261,12 @@ WHAT IS RECOVERED\n\
 Only what the archive actually saved. Files the crawler never fetched are\n\
 absent from every version. Dynamic features (cart, login, search) do not work.\n\n\
 OUTPUT\n\
-<folder>/site        — ready copy (serve it with a local web server)\n\
+<folder>/site        — ready copy (use Open copy button or --serve)\n\
 <folder>/mirror      — raw archived files\n\
 <folder>/report.html — coverage report\n\n\
 COMMAND LINE\n\
-site-restorer --cli --site <address> --out <folder> [--limit N] [--workers N]\n",
+site-restorer --cli --site <address> --out <folder> [--limit N] [--workers N]\n\
+site-restorer --serve <folder> [--port N]\n",
 };
 
 impl Lang {
